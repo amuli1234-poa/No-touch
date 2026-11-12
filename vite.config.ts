@@ -5,6 +5,8 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
+    // GitHub Pages serves project sites from a subpath; dev keeps the root base.
+    base: process.env.VITE_BASE ?? '/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
