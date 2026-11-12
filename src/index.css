@@ -1,53 +1,207 @@
 @import "tailwindcss";
 
+/* ==========================================================================
+   DERIV NO TOUCH SCANNER V4.0 PRO — Design System
+   Dark-first, enterprise fintech SaaS. Tokens are the single source of truth.
+   ========================================================================== */
+
 :root {
   color-scheme: dark;
+
+  /* Surfaces */
   --app-bg: #080D18;
   --surface: #101829;
   --surface-raised: #172238;
   --surface-elevated: #1B2740;
+
+  /* Accents */
   --accent: #635BFF;
+  --accent-strong: #7C75FF;
   --accent-cyan: #38BDF8;
+
+  /* Semantic */
+  --success: #10B981;
+  --warning: #F59E0B;
+  --danger: #F43F5E;
+
+  /* Text */
   --text-primary: #F8FAFC;
   --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+
+  /* Structure */
   --border: #273449;
+  --border-soft: #1E293B;
+  --ring: rgba(99, 91, 255, 0.45);
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+
+  /* Elevation */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 24px -12px rgba(0, 0, 0, 0.65);
+  --shadow-lg: 0 24px 60px -24px rgba(0, 0, 0, 0.75);
+
+  /* Layout */
+  --nav-width: 244px;
+  --topbar-height: 60px;
 }
 
 @layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
     min-width: 320px;
     background: var(--app-bg);
     color: var(--text-primary);
     font-family: Inter, 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-    font-feature-settings: 'ss01' on;
+    font-feature-settings: 'ss01' on, 'cv01' on;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
-  code, pre, .font-mono {
-    font-family: 'JetBrains Mono', monospace;
+
+  code,
+  pre,
+  .font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Financial figures align on the decimal across every surface. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' on, 'lnum' on;
   }
 }
 
-button, input, select { font: inherit; }
-button { -webkit-tap-highlight-color: transparent; }
-button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent-cyan); outline-offset: 2px; }
-::selection { background: rgba(99, 91, 255, .35); color: #fff; }
-
-@media (max-width: 640px) {
-  #root { overflow-x: clip; }
-  table { font-size: 11px; }
+button,
+input,
+select,
+textarea {
+  font: inherit;
 }
 
-/* Custom scrollbars for data tables and scan feeds */
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgba(99, 91, 255, 0.35);
+  color: #fff;
+}
+
+/* ---- Scrollbars ---------------------------------------------------------- */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #090d16;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
-  border-radius: 3px;
+  background: #22304a;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: #33456a;
+  background-clip: content-box;
+}
+
+/* ---- Utilities ----------------------------------------------------------- */
+.surface-grid {
+  background-image:
+    linear-gradient(rgba(39, 52, 73, 0.35) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(39, 52, 73, 0.35) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--surface-raised);
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+  animation: shimmer 1.6s infinite;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-in {
+  animation: fade-in 0.22s ease-out both;
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 5px rgba(16, 185, 129, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+.pulse-live {
+  animation: pulse-ring 2.2s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+@media (max-width: 640px) {
+  #root {
+    overflow-x: clip;
+  }
 }
