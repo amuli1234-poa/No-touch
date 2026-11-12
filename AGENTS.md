@@ -22,6 +22,22 @@ npx tsx src/tests/strategy_engine.test.ts   # engine test suite (18 tests)
 There is no unit-test framework; the engine suite is a plain `tsx` script with
 its own assertion helper. Run it directly, do not expect `bun test` to pick it up.
 
+### Running the public preview
+
+The workspace proxy maps the public host to port **12000**, not 3000, and Vite
+needs `server.allowedHosts` to include `.prod-runtime.all-hands.dev` or it
+returns 403 for the proxied Host header (already set in `vite.config.ts`).
+
+`bun` is not always present in a fresh sandbox. When it is missing, start Vite
+with node directly:
+
+```bash
+node node_modules/vite/bin/vite.js --port=12000 --host=0.0.0.0
+```
+
+Run it detached (`setsid nohup ... & disown`) so it survives the command
+returning, and log to a file (e.g. `/tmp/vite-live.log`).
+
 ## Architecture
 
 - `src/engines/*` — pure analytical engines (MarketStructureEngine,
