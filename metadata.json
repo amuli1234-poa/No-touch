@@ -1,0 +1,6 @@
+{
+  "name": "Deriv No Touch Scanner V4",
+  "description": "Live multi-timeframe market-analysis and No Touch opportunity scanner for Deriv synthetic indices, featuring market structure, fair value gaps, liquidity sweeps, and adaptive barrier risk calculations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

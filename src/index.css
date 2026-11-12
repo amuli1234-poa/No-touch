@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --app-bg: #080D18;
+  --surface: #101829;
+  --surface-raised: #172238;
+  --surface-elevated: #1B2740;
+  --accent: #635BFF;
+  --accent-cyan: #38BDF8;
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --border: #273449;
+}
+
+@layer base {
+  body {
+    min-width: 320px;
+    background: var(--app-bg);
+    color: var(--text-primary);
+    font-family: Inter, 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    font-feature-settings: 'ss01' on;
+  }
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+button, input, select { font: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent-cyan); outline-offset: 2px; }
+::selection { background: rgba(99, 91, 255, .35); color: #fff; }
+
+@media (max-width: 640px) {
+  #root { overflow-x: clip; }
+  table { font-size: 11px; }
+}
+
+/* Custom scrollbars for data tables and scan feeds */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #090d16;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
