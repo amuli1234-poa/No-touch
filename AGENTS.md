@@ -104,3 +104,31 @@ illustrative — never present mock numbers as live market data.
   components are presentation only.
 - Every settings/display control must drive real behaviour — no decorative
   controls.
+
+## Design language
+
+The UI follows the design language of reatech360.com. Keep to it:
+
+- Base surface is near-black navy `#060b16`; there is one primary blue
+  `#0068B5` (hover `#2E8AD8`) and one light-blue accent `#60A5FA`. The
+  previous indigo/violet brand (`#635BFF`, `#8057E5`) is retired — do not
+  reintroduce it.
+- The palette is defined once in `src/index.css` `:root`. Components still
+  use Tailwind arbitrary values in places; when you touch them, prefer the
+  tokens.
+- Cards are `16px` radius with a multi-layer shadow (inset top highlight +
+  ambient + deep) and an optional `glass` variant
+  (`backdrop-blur-xl backdrop-saturate-150`). Radii scale is 8/10/14/18.
+- Typography is Plus Jakarta Sans for headings, Inter for body, JetBrains
+  Mono for figures.
+
+## Pushing to GitHub
+
+The dev-container `GITHUB_TOKEN` and the OpenHands git credential helper both
+resolve to a GitHub **App** installation token with **read-only** access. It can
+read the repo (and reports `push: true` in the API permissions map) but any
+write — `git push`, creating a ref via the API — fails with
+`403 Resource not accessible by integration`. The App installation is missing
+the `contents: write` permission. Do not burn time retrying different
+credential forms; the fix is to grant the App write access, or push from a
+session that has a user PAT with `repo` scope.
