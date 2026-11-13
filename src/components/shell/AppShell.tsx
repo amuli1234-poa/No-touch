@@ -2,7 +2,7 @@ import React from 'react';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
 import { MobileNav } from './MobileNav';
-import { NAV_ITEMS, Route, navItemFor } from './navigation';
+import { MOBILE_ROUTES, NAV_ITEMS, Route, navItemFor } from './navigation';
 
 interface AppShellProps {
   activeRoute: Route;
@@ -13,6 +13,9 @@ interface AppShellProps {
   isScanning: boolean;
   onScanAll: () => void;
   scanDisabled?: boolean;
+  latencyMs?: number | null;
+  missedTicks?: number;
+  signalBadge?: number;
   mobileNavOpen: boolean;
   onOpenMobileNav: () => void;
   onCloseMobileNav: () => void;
@@ -28,12 +31,16 @@ export const AppShell: React.FC<AppShellProps> = ({
   isScanning,
   onScanAll,
   scanDisabled,
+  latencyMs,
+  missedTicks,
+  signalBadge,
   mobileNavOpen,
   onOpenMobileNav,
   onCloseMobileNav,
   children
 }) => {
   const item = navItemFor(activeRoute);
+  const mobileItems = MOBILE_ROUTES.map((r) => navItemFor(r));
 
   return (
     <div className="flex min-h-screen bg-app">
@@ -67,6 +74,9 @@ export const AppShell: React.FC<AppShellProps> = ({
           onScanAll={onScanAll}
           onOpenMobileNav={onOpenMobileNav}
           scanDisabled={scanDisabled}
+          latencyMs={latencyMs}
+          missedTicks={missedTicks}
+          signalBadge={signalBadge}
         />
 
         <main className="min-w-0 flex-1 px-3 pb-24 pt-4 sm:px-5 sm:pt-5 lg:pb-8">
@@ -75,8 +85,8 @@ export const AppShell: React.FC<AppShellProps> = ({
 
         {/* Mobile bottom tab bar */}
         <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-line-soft bg-surface-deep/95 backdrop-blur-xl lg:hidden">
-          <div className="grid grid-cols-4">
-            {NAV_ITEMS.map((nav) => {
+          <div className="grid grid-cols-5">
+            {mobileItems.map((nav) => {
               const Icon = nav.icon;
               const active = nav.route === activeRoute;
               return (
@@ -98,3 +108,5 @@ export const AppShell: React.FC<AppShellProps> = ({
     </div>
   );
 };
+
+export { NAV_ITEMS };

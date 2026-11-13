@@ -1,5 +1,5 @@
 import React from 'react';
-import { NAV_ITEMS, Route } from './navigation';
+import { NAV_GROUPS, NAV_ITEMS, Route } from './navigation';
 import { ThemeToggle } from '../ui/ThemeToggle';
 
 interface SidebarProps {
@@ -37,51 +37,62 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="min-w-0">
         <div className="flex items-center gap-1.5">
           <span className="truncate text-[13px] font-extrabold tracking-tight text-fg-1">
-            DERIV NO TOUCH
+            WICKSENTINEL
           </span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="truncate text-[10.5px] font-semibold tracking-[0.14em] text-fg-5">
-            SCANNER
+            SIGNAL ENGINE
           </span>
           <span className="rounded border border-accent/40 bg-accent/15 px-1 py-px text-[9px] font-bold text-accent-soft">
-            V4.0 PRO
+            PRO
           </span>
         </div>
       </div>
     </div>
 
     {/* Navigation */}
-    <nav className="flex-1 space-y-1 overflow-y-auto p-2.5">
-      <div className="px-2 pb-1.5 pt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-6">
-        Workspace
-      </div>
-      {NAV_ITEMS.map((item) => {
-        const Icon = item.icon;
-        const active = item.route === activeRoute;
+    <nav className="flex-1 space-y-3 overflow-y-auto p-2.5">
+      {NAV_GROUPS.map((group) => {
+        const items = NAV_ITEMS.filter((item) => item.group === group);
+        if (items.length === 0) return null;
         return (
-          <button
-            key={item.route}
-            onClick={() => onNavigate(item.route)}
-            aria-current={active ? 'page' : undefined}
-            className={`group relative flex w-full items-center gap-3 rounded-[10px] px-3 py-2.5 text-left transition-colors ${
-              active
-                ? 'bg-surface-raised text-fg-1'
-                : 'text-fg-4 hover:bg-surface-raised hover:text-fg-1'
-            }`}
-          >
-            {active && (
-              <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-accent" />
-            )}
-            <Icon
-              className={`h-4 w-4 shrink-0 ${active ? 'text-accent-strong' : 'text-fg-5 group-hover:text-fg-3'}`}
-            />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[12.5px] font-semibold tracking-tight">
-                {item.label}
-              </span>
-            </span>
-          </button>
+          <div key={group}>
+            <div className="px-2 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-6">
+              {group}
+            </div>
+            <div className="space-y-0.5">
+              {items.map((item) => {
+                const Icon = item.icon;
+                const active = item.route === activeRoute;
+                return (
+                  <button
+                    key={item.route}
+                    onClick={() => onNavigate(item.route)}
+                    aria-current={active ? 'page' : undefined}
+                    title={item.description}
+                    className={`group relative flex w-full items-center gap-3 rounded-[10px] px-3 py-2 text-left transition-colors ${
+                      active
+                        ? 'bg-surface-raised text-fg-1'
+                        : 'text-fg-4 hover:bg-surface-raised hover:text-fg-1'
+                    }`}
+                  >
+                    {active && (
+                      <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-accent" />
+                    )}
+                    <Icon
+                      className={`h-4 w-4 shrink-0 ${active ? 'text-accent-strong' : 'text-fg-5 group-hover:text-fg-3'}`}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[12.5px] font-semibold tracking-tight">
+                        {item.label}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         );
       })}
     </nav>
@@ -97,7 +108,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           Engine
         </div>
         <div className="mt-1 text-[11px] leading-relaxed text-fg-5">
-          2m displacement · 5m alignment imbalance model
+          Top-down H4 → H1 → M15 → M5 → M1 price-action model
         </div>
       </div>
     </div>

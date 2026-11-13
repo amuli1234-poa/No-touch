@@ -57,27 +57,61 @@ character-for-character.
 
 ## Architecture
 
-- `src/engines/*` — pure analytical engines (MarketStructureEngine,
-  CandlestickEngine, FvgEngine, MarketShiftEngine, TradeableRangeEngine,
-  AdaptiveBarrierEngine, DualExpiryEngine, OpportunityScoringEngine,
-  SupportResistanceEngine, PathTouchProbability). No React, no I/O.
+WickSentinel is a **multi-timeframe price-action signal engine** (H4 → H1 →
+M15 → M5 → M1). The original No Touch barrier product was replaced wholesale;
+no barrier / path-touch logic remains in the app.
+
+- `src/engines/*` — pure analytical engines, no React and no I/O:
+  `MarketStructureEngine`, `MarketShiftEngine`, `CandlestickEngine`, `FvgEngine`,
+  `SupportResistanceEngine`, `TrendlineAndRangeEngine`, `ChartPatternEngine`,
+  `TechnicalIndicatorsEngine`, `MultiStrategyEngine`, `AdaptiveFillEngine`,
+  and `OpportunityScoringEngine` (the top-down orchestrator that produces the
+  56-field `OpportunitySignal`).
 - `src/services/DerivWebSocketManager.ts` — feed, symbol discovery, and
   multi-timeframe candle construction. **Mutates candle arrays in place**:
   `candles: Map<symbol, Map<timeframe, Candle[]>>`. Consumers must copy the
-  array (`list.slice()`) and force re-derivation; a bare `useMemo` keyed only
-  on symbol/timeframe will never update.
-- `src/services/IndexedDbStorage.ts` — persistence plus `computeAnalytics()`
-  for calibration stats.
-- `src/services/PathSettlementTracker.ts` — tick-by-tick settlement tracking of
-  registered contracts.
+  array (`[...list]`) and force re-derivation; a bare `useMemo` keyed only on
+  symbol/timeframe will never update (App bumps a `candleRevision` counter).
+- `src/services/IndexedDbStorage.ts` — persistence (DB `WickSentinel_DB`) plus
+  `computeHistoryAnalytics()` for signal-outcome stats.
+- `src/services/WhatsAppService.ts` — client for `/api/whatsapp/*`; formats the
+  alert payload and evaluates dispatch events (NEW_SIGNAL / MATERIAL_UPDATE /
+  INVALIDATED). Secrets stay server-side.
 - `src/App.tsx` — orchestrator. Owns scanner state, the `scanMarket` pipeline,
-  the auto-scan interval, and route selection.
+  the auto-scan interval, signal resolution on live ticks, and route selection.
 - `src/components/shell/*` — AppShell, Sidebar, Topbar, MobileNav, navigation.
-- `src/components/pages/*` — one page per route (Scanner, Analysis, Performance,
-  Settings, Overview).
+  `navigation.ts` is the single source of truth for the 10 routes.
+- `src/components/views/*` — one view per route (BestMarket, StrategyScanner,
+  MtfPrecisionEntry, LiveMarketScannerTable reused for Plain/1s, DerivAdvancedChart,
+  OpportunityCard, Signals, PerformanceDashboard, Settings).
+- `src/components/landing/*` — public marketing site (unchanged by the scanner
+  work; still carries legacy "No Touch barrier" copy in the hero preview).
 - `src/components/ui/*` — design-system primitives and `format.ts` helpers.
-- `src/types/scanner.ts` — domain types; `src/types/preferences.ts` — display
-  preferences.
+- `src/types/scanner.ts` — domain types (single source of truth).
+
+## Scanner pipeline
+
+`OpportunityScoringEngine.analyzeTopDown({ symbolInfo, c4h, c1h, c15m, c5m, c1m,
+minScoreThreshold, fvgMinDisplacement })` returns an `OpportunitySignal` or null.
+Confluence is weighted 20/20/20/15/15/10 (market structure, valid range & POI,
+price-action trigger, momentum, MTF alignment, technical confirmation). The
+minimum score floor is hard-clamped to 75%. A setup can score ≥75% and still
+report `WAIT` when a mandatory gate fails.
+
+## WhatsApp alerts (server-side)
+
+`server/routes/whatsapp.ts` mounts on the existing Express app (no separate
+server):
+
+- `GET /api/whatsapp/status` — public, masked (provider, masked recipient,
+  missing field names only; never a secret).
+- `POST /api/whatsapp/send` — requires a session; body `{ message, metadata }`.
+
+Providers are chosen from env: `WHATSAPP_PROVIDER` = `meta` | `twilio` |
+`callmebot` | `webhook`, plus `WHATSAPP_RECIPIENT` and the provider credentials
+(`WHATSAPP_PHONE_NUMBER_ID`/`WHATSAPP_ACCESS_TOKEN`, `TWILIO_*`,
+`CALLMEBOT_API_KEY`, or `WHATSAPP_WEBHOOK_URL`/`_SECRET`). Credentials never
+reach the browser.
 
 ## Authentication (Deriv OAuth 2.0 + PKCE)
 
@@ -123,15 +157,15 @@ to the backend (`vite.config.ts`). Auth tests: `npm run test:auth` (14 cases).
 
 ## Public site (WickSentinel)
 
-The product's public-facing brand is **WickSentinel**; the scanner keeps its
-internal "Deriv No Touch" naming. `src/Root.tsx` is the entry component mounted
-by `main.tsx` and decides which surface to render from the pathname:
+The product's public-facing brand is **WickSentinel**. `src/Root.tsx` is the
+entry component mounted by `main.tsx` and decides which surface to render from
+the pathname:
 
 | Path | Surface |
 | --- | --- |
-| `/` | `components/landing/LandingPage.tsx` — public homepage |
-| `/app` (and `/app/*`) | `App.tsx` — the existing scanner workspace, unchanged |
-| `/login`, `/get-started` | `components/landing/AccessPage.tsx` — access placeholders |
+| `/` | `components/landing/LandingPage.tsx` — public homepage (unchanged by scanner work) |
+| `/app` (and `/app/*`) | `App.tsx` — the WickSentinel scanner workspace |
+| `/login`, `/get-started` | `components/landing/AccessPage.tsx` — Deriv OAuth entry |
 | `/privacy`, `/terms`, `/risk-disclaimer` | `components/landing/LegalPage.tsx` |
 | anything else | `components/landing/NotFoundPage.tsx` |
 
@@ -145,12 +179,16 @@ by `main.tsx` and decides which surface to render from the pathname:
 - Public-site palette lives in `src/index.css` as `--ws-*` tokens; the scanner
   keeps the original `--surface` / `--accent` tokens. Do not mix the two.
 
-**There is no authentication system and no backend.** The app is fully
-client-side (IndexedDB). The `/login` and `/get-started` routes are deliberate
-placeholders that hand the visitor to the working scanner; do not build a fake
-auth flow. Landing-page copy must only advertise features that exist in
-`src/engines` / `src/services`, and preview graphics must stay labelled as
-illustrative — never present mock numbers as live market data.
+**Authentication is Deriv OAuth 2.0 (PKCE) with server-side sessions** — see the
+section above. The scanner's analytics run entirely client-side (IndexedDB), but
+the app is served by `server/index.ts`, which also exposes the WhatsApp dispatch
+endpoints. Do not build a fake auth flow. Landing-page copy must only advertise
+features that exist in `src/engines` / `src/services`, and preview graphics must
+stay labelled as illustrative — never present mock numbers as live market data.
+
+> Legacy note: the landing hero copy still mentions an "adaptive No Touch
+> barrier". That product was removed; the copy is a known leftover and the
+> landing page is intentionally left untouched.
 
 ## Conventions
 

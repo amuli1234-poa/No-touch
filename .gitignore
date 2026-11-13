@@ -10,3 +10,6 @@ coverage/
 
 # Server-side auth state (users, sessions, oauth transactions)
 data/
+
+# Supplied source archive (not part of the app)
+*.zip

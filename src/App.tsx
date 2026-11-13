@@ -1,79 +1,93 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { DerivWebSocketManager } from './services/DerivWebSocketManager';
 import { IndexedDbStorage } from './services/IndexedDbStorage';
-import { PathSettlementTracker, ActiveObservedContract } from './services/PathSettlementTracker';
-import { MarketStructureEngine } from './engines/MarketStructureEngine';
-import { SupportResistanceEngine } from './engines/SupportResistanceEngine';
-import { CandlestickEngine } from './engines/CandlestickEngine';
-import { FvgEngine } from './engines/FvgEngine';
-import { MarketShiftEngine } from './engines/MarketShiftEngine';
-import { TradeableRangeEngine } from './engines/TradeableRangeEngine';
-import { AdaptiveBarrierEngine } from './engines/AdaptiveBarrierEngine';
-import { DualExpiryEngine } from './engines/DualExpiryEngine';
+import { WhatsAppService } from './services/WhatsAppService';
 import { OpportunityScoringEngine } from './engines/OpportunityScoringEngine';
 import { AppShell } from './components/shell/AppShell';
 import { Route } from './components/shell/navigation';
-import { OverviewPage } from './components/pages/OverviewPage';
-import { ScannerPage } from './components/pages/ScannerPage';
-import { AnalysisPage } from './components/pages/AnalysisPage';
-import { PerformancePage } from './components/pages/PerformancePage';
-import { SettingsPage } from './components/pages/SettingsPage';
-import { ActiveSymbol, OpportunitySignal, ScannerSettings, Timeframe, PerformanceRecord } from './types/scanner';
-import { DEFAULT_DISPLAY_PREFERENCES, DisplayPreferences } from './types/preferences';
-import { ScannerFilter } from './components/LiveMarketScannerTable';
+import { BestMarketView } from './components/views/BestMarketView';
+import { StrategyScannerView } from './components/views/StrategyScannerView';
+import { MtfPrecisionEntryView } from './components/views/MtfPrecisionEntryView';
+import { LiveMarketScannerTable } from './components/views/LiveMarketScannerTable';
+import { DerivAdvancedChart } from './components/views/DerivAdvancedChart';
+import { OpportunityCard } from './components/views/OpportunityCard';
+import { SignalsView } from './components/views/SignalsView';
+import { PerformanceDashboard } from './components/views/PerformanceDashboard';
+import { SettingsView } from './components/views/SettingsView';
+import { Card, CardHeader, CardBody, EmptyState } from './components/ui';
+import { SectionTitle } from './components/ui/StatCard';
+import { formatPrice } from './components/ui/format';
+import { LineChart, Clock } from 'lucide-react';
+import {
+  ActiveSymbol,
+  OpportunitySignal,
+  ScannerSettings,
+  SignalHistoryEntry,
+  Timeframe,
+  WhatsAppProviderStatus,
+  WhatsAppSignalRecord
+} from './types/scanner';
 
-const SETTINGS_KEY = 'deriv_scanner_settings_v4';
-const DISPLAY_KEY = 'deriv_scanner_display_v4';
+const SETTINGS_KEY = 'wicksentinel_settings_v1';
 
 const DEFAULT_SETTINGS: ScannerSettings = {
   appId: 1089,
-  expiryMode: 'AUTO',
-  fixedDurationMinutes: 5,
-  minScoreThreshold: 90,
-  fvgMinDisplacement: 0.0003,
-  filterMarket: 'ALL',
+  minScoreThreshold: 75,
+  fvgMinDisplacement: 0.00025,
   autoRefreshIntervalSec: 10,
-  soundAlerts: true
+  soundAlerts: true,
+  whatsappAutoSend: false,
+  whatsappNotifyUpdates: true,
+  showSecondaryIndicators: true
 };
 
 export default function App() {
   const [settings, setSettings] = useState<ScannerSettings>(() => {
     try {
       const saved = localStorage.getItem(SETTINGS_KEY);
-      return saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
+      if (!saved) return DEFAULT_SETTINGS;
+      const parsed = JSON.parse(saved) as Partial<ScannerSettings>;
+      return {
+        ...DEFAULT_SETTINGS,
+        ...parsed,
+        minScoreThreshold: Math.max(75, parsed.minScoreThreshold ?? 75)
+      };
     } catch {
       return DEFAULT_SETTINGS;
     }
   });
 
-  const [display, setDisplay] = useState<DisplayPreferences>(() => {
-    try {
-      const saved = localStorage.getItem(DISPLAY_KEY);
-      return saved ? { ...DEFAULT_DISPLAY_PREFERENCES, ...JSON.parse(saved) } : DEFAULT_DISPLAY_PREFERENCES;
-    } catch {
-      return DEFAULT_DISPLAY_PREFERENCES;
-    }
-  });
-
   const [wsManager] = useState(() => new DerivWebSocketManager(settings.appId));
   const [storage] = useState(() => new IndexedDbStorage());
-  const [tracker] = useState(() => new PathSettlementTracker(wsManager, storage));
+  const [waService] = useState(() => new WhatsAppService());
 
-  const [connectionState, setConnectionState] = useState<'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING'>('RECONNECTING');
+  const [connectionState, setConnectionState] = useState<
+    'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING'
+  >('RECONNECTING');
   const [symbols, setSymbols] = useState<ActiveSymbol[]>(() => wsManager.getDiscoveredSymbols());
   const [selectedSymbol, setSelectedSymbol] = useState<string>('R_100');
-  const [selectedTimeframe, setSelectedTimeframe] = useState<Timeframe>(display.defaultTimeframe);
-  const [route, setRoute] = useState<Route>('SCANNER');
+  const [selectedTimeframe, setSelectedTimeframe] = useState<Timeframe>('5m');
+  const [route, setRoute] = useState<Route>('BEST_MARKET');
   const [showLanding, setShowLanding] = useState(false);
-  const [filterMode, setFilterMode] = useState<ScannerFilter>('ALL');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const [opportunities, setOpportunities] = useState<Map<string, OpportunitySignal>>(new Map());
-  const [activeMonitored, setActiveMonitored] = useState<ActiveObservedContract[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [lastScanTimestamp, setLastScanTimestamp] = useState<number>(0);
-  const [totalScans, setTotalScans] = useState<number>(0);
-  const [candleVersion, setCandleVersion] = useState(0);
+  const [candleRevision, setCandleRevision] = useState(0);
+  const [historyRevision, setHistoryRevision] = useState(0);
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [missedTicks, setMissedTicks] = useState<number>(0);
+
+  const [waStatus, setWaStatus] = useState<WhatsAppProviderStatus>({
+    configured: false,
+    provider: null,
+    recipientMasked: null,
+    missingFields: ['Checking server configuration...']
+  });
+  const [waLogs, setWaLogs] = useState<WhatsAppSignalRecord[]>([]);
+
+  const activeTrackedSignalsRef = useRef<Map<string, SignalHistoryEntry>>(new Map());
 
   const playChime = useCallback(() => {
     if (!settings.soundAlerts) return;
@@ -86,34 +100,59 @@ export default function App() {
       osc.type = 'sine';
       osc.frequency.setValueAtTime(587.33, ctx.currentTime);
       osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15);
-      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.setValueAtTime(0.12, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start();
       osc.stop(ctx.currentTime + 0.45);
     } catch {
-      // audio disabled or blocked by the browser
+      // audio blocked by the browser
     }
   }, [settings.soundAlerts]);
 
-  const handleUpdateSettings = (newSettings: ScannerSettings) => {
-    setSettings(newSettings);
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
-    if (newSettings.appId !== settings.appId) {
-      wsManager.updateAppId(newSettings.appId);
+  const refreshWaStatus = useCallback(async () => {
+    const status = await waService.getStatus();
+    setWaStatus(status);
+  }, [waService]);
+
+  const handleUpdateSettings = (next: ScannerSettings) => {
+    const normalized: ScannerSettings = {
+      ...next,
+      minScoreThreshold: Math.max(75, next.minScoreThreshold)
+    };
+    setSettings(normalized);
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(normalized));
+    if (normalized.appId !== settings.appId) {
+      wsManager.updateAppId(normalized.appId);
     }
   };
 
-  const handleUpdateDisplay = (prefs: DisplayPreferences) => {
-    setDisplay(prefs);
-    localStorage.setItem(DISPLAY_KEY, JSON.stringify(prefs));
-    setSelectedTimeframe(prefs.defaultTimeframe);
-  };
+  const dispatchWhatsAppAlert = useCallback(
+    async (opp: OpportunitySignal, eventType: 'NEW_SIGNAL' | 'MATERIAL_UPDATE' | 'INVALIDATED') => {
+      const record = await waService.sendSignal(opp, eventType);
+      setWaLogs((prev) => [record, ...prev].slice(0, 100));
+      await storage.saveWhatsAppLog(record).catch(() => {});
+    },
+    [waService, storage]
+  );
 
-  // 1. Initialize storage and subscribe to feed / tracker events
+  // Initialize storage, WhatsApp status and the WebSocket event streams.
   useEffect(() => {
-    storage.init();
+    storage.init().then(async () => {
+      const [logs, hist] = await Promise.all([
+        storage.getWhatsAppLogs().catch(() => []),
+        storage.getSignalHistory().catch(() => [])
+      ]);
+      setWaLogs(logs);
+      for (const item of hist) {
+        if (item.outcomeStatus === 'ACTIVE') {
+          activeTrackedSignalsRef.current.set(item.symbol, item);
+        }
+      }
+    });
+
+    refreshWaStatus();
 
     const connHandler = (state: 'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING') => {
       setConnectionState(state);
@@ -128,213 +167,157 @@ export default function App() {
             : s
         )
       );
+
+      // Resolve tracked signals on live price: target hit vs structural invalidation.
+      const activeSig = activeTrackedSignalsRef.current.get(symbol);
+      if (activeSig && activeSig.takeProfit && activeSig.invalidationLevel) {
+        let resolved: 'TP_HIT' | 'INVALIDATED' | null = null;
+        if (activeSig.direction === 'BULLISH') {
+          if (tick.quote >= activeSig.takeProfit) resolved = 'TP_HIT';
+          else if (tick.quote <= activeSig.invalidationLevel) resolved = 'INVALIDATED';
+        } else if (activeSig.direction === 'BEARISH') {
+          if (tick.quote <= activeSig.takeProfit) resolved = 'TP_HIT';
+          else if (tick.quote >= activeSig.invalidationLevel) resolved = 'INVALIDATED';
+        }
+        if (resolved) {
+          const updated: SignalHistoryEntry = {
+            ...activeSig,
+            outcomeStatus: resolved,
+            resolvedEpoch: tick.epoch,
+            resolvedPrice: tick.quote
+          };
+          activeTrackedSignalsRef.current.delete(symbol);
+          storage
+            .saveSignalHistory(updated)
+            .then(() => setHistoryRevision((r) => r + 1))
+            .catch(() => {});
+        }
+      }
     };
     wsManager.onTick(tickHandler);
 
-    tracker.onUpdate((list) => {
-      setActiveMonitored(list);
-    });
-
-    tracker.setOnSettledCallback((record: PerformanceRecord) => {
-      console.log('Contract settled:', record.symbol, record.contractSettledWon ? 'WIN' : 'LOSS');
-    });
-
-    const checkInterval = setInterval(() => {
+    const healthTimer = setInterval(() => {
       const discovered = wsManager.getDiscoveredSymbols();
       if (discovered.length > 0) {
         setSymbols(discovered);
-        if (!discovered.some((s) => s.symbol === selectedSymbol)) {
-          setSelectedSymbol(discovered[0].symbol);
-        }
+        setSelectedSymbol((cur) =>
+          discovered.some((s) => s.symbol === cur) ? cur : discovered[0].symbol
+        );
       }
+      const health = wsManager.getHealthMetrics();
+      setLatencyMs(health.latencyMs);
+      setMissedTicks(health.totalMissedTicks);
     }, 1500);
 
     return () => {
-      clearInterval(checkInterval);
+      clearInterval(healthTimer);
       wsManager.offTick(tickHandler);
       wsManager.offConnectionChange(connHandler);
       wsManager.destroy();
     };
-  }, [wsManager, storage, tracker]);
+  }, [wsManager, storage, refreshWaStatus]);
 
-  // 2. Analytical scanning pipeline for a single symbol (engine logic unchanged)
+  // Top-down H4 → H1 → M15 → M5 → M1 analysis for a single symbol.
   const scanMarket = useCallback(
     async (symbol: string) => {
       const symStore = wsManager.candles.get(symbol);
       if (!symStore) return;
 
-      const c2m = symStore.get('2m') || [];
+      const symInfo = wsManager.activeSymbols.get(symbol);
+      if (!symInfo) return;
+
+      const c4h = symStore.get('4h') || [];
+      const c1h = symStore.get('1h') || [];
+      const c15m = symStore.get('15m') || [];
       const c5m = symStore.get('5m') || [];
-      if (c2m.length < 15 || c5m.length < 10) return;
+      const c1m = symStore.get('1m') || [];
 
-      const currentPrice = c2m[c2m.length - 1].close;
-      const symInfo = symbols.find((s) => s.symbol === symbol) || wsManager.activeSymbols.get(symbol);
+      const opportunity = OpportunityScoringEngine.analyzeTopDown({
+        symbolInfo: symInfo,
+        c4h,
+        c1h,
+        c15m,
+        c5m,
+        c1m,
+        minScoreThreshold: settings.minScoreThreshold,
+        fvgMinDisplacement: settings.fvgMinDisplacement
+      });
 
-      const pivots5m = MarketStructureEngine.findPivots(c5m, 3, 3);
-      const pivots2m = MarketStructureEngine.findPivots(c2m, 3, 3);
-      const { sweeps: sweeps2m } = MarketStructureEngine.evaluateLiquiditySweeps(c2m, pivots2m);
-      const zones5m = SupportResistanceEngine.mapZones(c5m, pivots5m, '5m');
-
-      const tf5mBias = MarketStructureEngine.getDirectionalBias(pivots5m, currentPrice);
-
-      const latest2m = c2m[c2m.length - 1];
-      const prior2m_1 = c2m.length >= 2 ? c2m[c2m.length - 2] : undefined;
-      const prior2m_2 = c2m.length >= 3 ? c2m[c2m.length - 3] : undefined;
-      const reversalSignal = CandlestickEngine.evaluate(latest2m, prior2m_1, prior2m_2);
-
-      const shifts2m = MarketStructureEngine.detectStructuralShifts(c2m, pivots2m);
-      const activeShift = shifts2m.length > 0 ? shifts2m[shifts2m.length - 1] : null;
-
-      const fvgs2m = FvgEngine.scan(c2m, '2m', settings.fvgMinDisplacement);
-      const activeFvg = fvgs2m.length > 0 ? fvgs2m[fvgs2m.length - 1] : null;
-
-      let candidateDir = reversalSignal.direction !== 'NEUTRAL'
-        ? reversalSignal.direction
-        : activeShift
-        ? activeShift.direction
-        : tf5mBias;
-
-      if (candidateDir === 'NEUTRAL' && sweeps2m.length > 0) {
-        candidateDir = sweeps2m[sweeps2m.length - 1].type === 'SELLSIDE' ? 'BULLISH' : 'BEARISH';
-      }
-
-      const shiftValidation = MarketShiftEngine.validate(
-        candidateDir,
-        zones5m,
-        sweeps2m,
-        reversalSignal,
-        shifts2m,
-        fvgs2m,
-        currentPrice
-      );
-
-      const atr = AdaptiveBarrierEngine.calculateATR(c2m, 14);
-      const atrRatio = atr / currentPrice;
-      const volRegime: 'LOW' | 'MEDIUM' | 'HIGH' =
-        atrRatio > 0.0035 ? 'HIGH' : atrRatio > 0.0018 ? 'MEDIUM' : 'LOW';
-
-      let tradeableRange = null;
-      if (pivots2m.length >= 2 && activeFvg) {
-        const sweptPivot = pivots2m[pivots2m.length - 2];
-        const displacementPivot = pivots2m[pivots2m.length - 1];
-        tradeableRange = TradeableRangeEngine.calculate(
-          candidateDir,
-          sweptPivot,
-          displacementPivot,
-          activeFvg,
-          currentPrice,
-          volRegime,
-          tf5mBias === candidateDir
-        );
-      }
-
-      let barrierProposal = null;
-      if (tradeableRange && tradeableRange.isRetracementValid) {
-        if (settings.expiryMode === 'AUTO') {
-          const autoEval = await DualExpiryEngine.determineAutoExpiry(
-            symbol,
-            currentPrice,
-            candidateDir,
-            tradeableRange,
-            c2m,
-            wsManager
-          );
-          barrierProposal = autoEval.recommended?.barrierProposal || null;
-        } else {
-          barrierProposal = await AdaptiveBarrierEngine.evaluateBestBarrier(
-            symbol,
-            currentPrice,
-            candidateDir,
-            tradeableRange,
-            c2m,
-            wsManager,
-            settings.fixedDurationMinutes
-          );
-        }
-      }
-
-      const relevantSweep = sweeps2m.find(
-        (s) =>
-          (candidateDir === 'BULLISH' && s.type === 'SELLSIDE') ||
-          (candidateDir === 'BEARISH' && s.type === 'BUYSIDE')
-      );
-
-      const { breakdown, status, rejectionReasons, explanation } =
-        OpportunityScoringEngine.evaluateScore(
-          tf5mBias,
-          candidateDir,
-          !!relevantSweep,
-          tradeableRange !== null && tradeableRange.isRetracementValid,
-          reversalSignal,
-          activeShift,
-          activeFvg,
-          tradeableRange,
-          barrierProposal,
-          settings.minScoreThreshold
-        );
-
-      const opportunity: OpportunitySignal = {
-        id: `${symbol}_${Date.now()}`,
-        symbol,
-        displayName: symInfo ? symInfo.displayName : symbol,
-        is1s: symInfo ? symInfo.is1s : false,
-        currentPrice,
-        status,
-        detectedEpoch: Math.floor(Date.now() / 1000),
-        direction: candidateDir,
-        score: breakdown,
-        barrierProposal: barrierProposal || undefined,
-        tradeableRange: tradeableRange || undefined,
-        activeFvg: activeFvg || undefined,
-        reversalPattern: reversalSignal,
-        marketShift: activeShift || undefined,
-        sweptPool: relevantSweep,
-        stepAudit: shiftValidation.auditItems,
-        rejectionReasons,
-        explanation,
-        volatilityRegime: volRegime,
-        atr
-      };
+      if (!opportunity) return;
 
       setOpportunities((prev) => {
         const next = new Map(prev);
         const old = next.get(symbol);
-        if (opportunity.status === 'QUALIFIED' && (!old || old.status !== 'QUALIFIED')) {
+        if (
+          opportunity.setupTier === 'HIGH_QUALITY' &&
+          (!old || old.setupTier !== 'HIGH_QUALITY')
+        ) {
           playChime();
-          tracker.registerContract(opportunity);
+          const histEntry: SignalHistoryEntry = {
+            id: opportunity.id,
+            symbol: opportunity.symbol,
+            displayName: opportunity.displayName,
+            is1s: opportunity.is1s,
+            detectedEpoch: opportunity.detectedEpoch,
+            direction: opportunity.direction,
+            riseFallLabel: opportunity.riseFallLabel,
+            selectedStrategy: opportunity.selectedStrategy.label,
+            confluenceScore: opportunity.score.total,
+            setupTier: opportunity.setupTier,
+            marketCondition: opportunity.marketCondition,
+            entryPrice: opportunity.entryAndTp.entryPrice,
+            takeProfit: opportunity.entryAndTp.takeProfit,
+            invalidationLevel: opportunity.entryAndTp.invalidationLevel,
+            outcomeStatus: 'ACTIVE',
+            explanation: opportunity.explanation
+          };
+          activeTrackedSignalsRef.current.set(symbol, histEntry);
+          storage
+            .saveSignalHistory(histEntry)
+            .then(() => setHistoryRevision((r) => r + 1))
+            .catch(() => {});
         }
         next.set(symbol, opportunity);
         return next;
       });
 
-      if (opportunity.status === 'QUALIFIED') {
-        storage.saveOpportunity(opportunity);
+      if (settings.whatsappAutoSend && waStatus.configured) {
+        const event = waService.evaluateDispatchEvent(
+          opportunity,
+          settings.minScoreThreshold,
+          settings.whatsappNotifyUpdates
+        );
+        if (event) {
+          await dispatchWhatsAppAlert(opportunity, event);
+        }
       }
     },
-    [wsManager, symbols, settings, storage, tracker, playChime]
+    [
+      wsManager,
+      settings.minScoreThreshold,
+      settings.fvgMinDisplacement,
+      settings.whatsappAutoSend,
+      settings.whatsappNotifyUpdates,
+      waStatus.configured,
+      waService,
+      storage,
+      playChime,
+      dispatchWhatsAppAlert
+    ]
   );
 
-  // 3. Scan all active symbols concurrently
   const scanAllMarkets = useCallback(async () => {
     if (isScanning || symbols.length === 0) return;
     setIsScanning(true);
     setLastScanTimestamp(Date.now());
-    setTotalScans((n) => n + 1);
-
     try {
       const openSymbols = symbols.filter((s) => s.isOpen);
-      const selectedMarkets = openSymbols.filter(
-        (s) =>
-          settings.filterMarket === 'ALL' ||
-          (settings.filterMarket === '1S' ? s.is1s : !s.is1s)
-      );
-      await Promise.allSettled(selectedMarkets.map((s) => scanMarket(s.symbol)));
+      await Promise.allSettled(openSymbols.map((s) => scanMarket(s.symbol)));
     } finally {
       setIsScanning(false);
     }
-  }, [symbols, isScanning, scanMarket, settings.filterMarket]);
+  }, [symbols, isScanning, scanMarket]);
 
-  // Automatic interval-based re-scan
   useEffect(() => {
     const interval = setInterval(() => {
       scanAllMarkets();
@@ -342,43 +325,48 @@ export default function App() {
     return () => clearInterval(interval);
   }, [settings.autoRefreshIntervalSec, scanAllMarkets]);
 
-  // Trigger instant scan when a 2m candle closes on a market
   useEffect(() => {
     const candleHandler = (symbol: string, tf: Timeframe, _c: any, isClosed: boolean) => {
-      if (tf === '2m' && isClosed) {
+      if (symbol === selectedSymbol && tf === selectedTimeframe) {
+        setCandleRevision((r) => r + 1);
+      }
+      if ((tf === '1m' || tf === '5m') && isClosed) {
         scanMarket(symbol);
       }
     };
     wsManager.onCandle(candleHandler);
     return () => wsManager.offCandle(candleHandler);
-  }, [wsManager, scanMarket]);
-
-  // Chart buffers are mutated in place by the feed, so a low-frequency version
-  // counter drives re-derivation and hands the chart a fresh array reference.
-  useEffect(() => {
-    const interval = setInterval(() => setCandleVersion((v) => v + 1), 1000);
-    return () => clearInterval(interval);
-  }, []);
+  }, [wsManager, scanMarket, selectedSymbol, selectedTimeframe]);
 
   const activeCandles = useMemo(() => {
     const symMap = wsManager.candles.get(selectedSymbol);
     if (!symMap) return [];
-    const list = symMap.get(selectedTimeframe) || [];
-    return list.slice();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wsManager, selectedSymbol, selectedTimeframe, candleVersion]);
+    return [...(symMap.get(selectedTimeframe) || [])];
+  }, [wsManager, selectedSymbol, selectedTimeframe, candleRevision]);
 
+  const activeSymbolInfo = symbols.find((s) => s.symbol === selectedSymbol);
   const activeOpp = opportunities.get(selectedSymbol);
 
-  const handleOpenAnalysis = useCallback((symbol: string) => {
-    setSelectedSymbol(symbol);
-    setRoute('ANALYSIS');
-  }, []);
+  const plainSymbols = useMemo(() => symbols.filter((s) => !s.is1s), [symbols]);
+  const oneSecSymbols = useMemo(() => symbols.filter((s) => s.is1s), [symbols]);
+  const oppList = useMemo(() => Array.from(opportunities.values()), [opportunities]);
+  const confirmedCount = useMemo(
+    () => oppList.filter((o) => o.setupTier === 'HIGH_QUALITY' && o.entryAndTp.confirmed).length,
+    [oppList]
+  );
+
+  const handleSelectSymbol = useCallback(
+    (sym: string, targetTab?: 'LIVE_CHART' | 'ANALYSIS') => {
+      setSelectedSymbol(sym);
+      if (targetTab) setRoute(targetTab);
+    },
+    []
+  );
 
   if (showLanding) {
     return (
-      <OverviewPage
-        onEnterScanner={() => setShowLanding(false)}
+      <LandingIntro
+        onEnter={() => setShowLanding(false)}
         connectionState={connectionState}
         symbolCount={symbols.length}
       />
@@ -395,62 +383,391 @@ export default function App() {
       isScanning={isScanning}
       onScanAll={scanAllMarkets}
       scanDisabled={symbols.length === 0}
+      latencyMs={latencyMs}
+      missedTicks={missedTicks}
+      signalBadge={confirmedCount}
       mobileNavOpen={mobileNavOpen}
       onOpenMobileNav={() => setMobileNavOpen(true)}
       onCloseMobileNav={() => setMobileNavOpen(false)}
     >
-      {route === 'SCANNER' && (
-        <ScannerPage
+      <MarketMetrics
+        plainSymbols={plainSymbols}
+        oneSecSymbols={oneSecSymbols}
+        confirmedCount={confirmedCount}
+        developingCount={oppList.filter((o) => o.setupTier === 'DEVELOPING').length}
+        activeSymbol={activeSymbolInfo}
+        activeOpp={activeOpp}
+      />
+
+      {route === 'BEST_MARKET' && (
+        <BestMarketView
           symbols={symbols}
           opportunities={opportunities}
-          activeMonitored={display.showPathMonitor ? activeMonitored : []}
           selectedSymbol={selectedSymbol}
-          onSelectSymbol={setSelectedSymbol}
-          filterMode={filterMode}
-          onFilterChange={setFilterMode}
-          selectedTimeframe={selectedTimeframe}
-          onTimeframeChange={setSelectedTimeframe}
-          activeCandles={activeCandles}
+          onSelectSymbol={(sym, goTo) => handleSelectSymbol(sym, goTo)}
+        />
+      )}
+
+      {route === 'STRATEGY_SCANNER' && (
+        <StrategyScannerView
+          symbols={symbols}
+          opportunities={opportunities}
+          selectedSymbol={selectedSymbol}
           isScanning={isScanning}
-          lastScanTimestamp={lastScanTimestamp}
+          storage={storage}
+          historyRevision={historyRevision}
+          onScanAll={scanAllMarkets}
+          onSelectSymbol={(sym, goTo) => handleSelectSymbol(sym, goTo)}
+          onSendWhatsApp={(opp) => dispatchWhatsAppAlert(opp, 'NEW_SIGNAL')}
+        />
+      )}
+
+      {route === 'MTF_ENTRY' && (
+        <MtfPrecisionEntryView
+          symbols={symbols}
+          opportunities={opportunities}
+          selectedSymbol={selectedSymbol}
+          onSelectSymbol={(sym, goTo) => handleSelectSymbol(sym, goTo)}
+          wsManager={wsManager}
+        />
+      )}
+
+      {route === 'PLAIN_INDICES' && (
+        <LiveMarketScannerTable
+          title="Plain Volatility Indices"
+          subtitle="Standard Deriv volatility indices only (Jump, Step, Boom & Crash excluded)."
+          symbols={plainSymbols}
+          opportunities={opportunities}
+          selectedSymbol={selectedSymbol}
+          onSelectSymbol={(sym, openChart) =>
+            handleSelectSymbol(sym, openChart ? 'LIVE_CHART' : undefined)
+          }
+        />
+      )}
+
+      {route === 'VOLATILITY_1S' && (
+        <LiveMarketScannerTable
+          title="Volatility 1-Second Indices"
+          subtitle="High-frequency one-second Deriv volatility indices analysed separately from standard markets."
+          symbols={oneSecSymbols}
+          opportunities={opportunities}
+          selectedSymbol={selectedSymbol}
+          onSelectSymbol={(sym, openChart) =>
+            handleSelectSymbol(sym, openChart ? 'LIVE_CHART' : undefined)
+          }
+        />
+      )}
+
+      {route === 'LIVE_CHART' && (
+        <LiveChartTab
+          symbols={symbols}
+          opportunities={opportunities}
+          selectedSymbol={selectedSymbol}
+          setSelectedSymbol={setSelectedSymbol}
+          selectedTimeframe={selectedTimeframe}
+          setSelectedTimeframe={setSelectedTimeframe}
+          activeCandles={activeCandles}
+          activeSymbolInfo={activeSymbolInfo}
+          activeOpp={activeOpp}
           connectionState={connectionState}
-          onOpenAnalysis={handleOpenAnalysis}
-          density={display.density}
+          latencyMs={latencyMs}
+          onOpenAnalysis={() => setRoute('ANALYSIS')}
         />
       )}
 
       {route === 'ANALYSIS' && (
-        <AnalysisPage
-          symbols={symbols}
-          opportunities={opportunities}
-          selectedSymbol={selectedSymbol}
-          onSelectSymbol={setSelectedSymbol}
-          selectedTimeframe={selectedTimeframe}
-          onTimeframeChange={setSelectedTimeframe}
-          activeCandles={activeCandles}
+        <div className="space-y-4">
+          <SectionTitle
+            eyebrow="Instrument analysis"
+            title={activeSymbolInfo?.displayName || selectedSymbol}
+            description="Top-down H4 → H1 → M15 → M5 → M1 strategy breakdown"
+            actions={
+              <div className="flex items-center gap-2">
+                <select
+                  value={selectedSymbol}
+                  onChange={(e) => setSelectedSymbol(e.target.value)}
+                  className="h-9 rounded-[10px] border border-line bg-surface-deepest px-3 text-[13px] text-fg-1 focus:border-accent focus:outline-none"
+                >
+                  {symbols.map((s) => (
+                    <option key={s.symbol} value={s.symbol}>
+                      {s.displayName} ({s.is1s ? '1s' : 'Plain'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            }
+          />
+          {activeOpp ? (
+            <OpportunityCard
+              opp={activeOpp}
+              onOpenChart={(sym) => handleSelectSymbol(sym, 'LIVE_CHART')}
+              onSendWhatsApp={(opp) => dispatchWhatsAppAlert(opp, 'NEW_SIGNAL')}
+            />
+          ) : (
+            <Card>
+              <EmptyState
+                icon={<LineChart className="h-5 w-5" />}
+                title="Gathering multi-timeframe history"
+                description={`Building H4 → M1 candle buffers for ${selectedSymbol}. Analysis appears once enough history has streamed in.`}
+              />
+            </Card>
+          )}
+        </div>
+      )}
+
+      {route === 'SIGNALS' && (
+        <SignalsView
+          opportunities={oppList}
+          waStatus={waStatus}
+          waLogs={waLogs}
+          waService={waService}
+          onRefreshStatus={refreshWaStatus}
+          onManualDispatch={(opp) => dispatchWhatsAppAlert(opp, 'NEW_SIGNAL')}
+          onOpenChart={(sym) => handleSelectSymbol(sym, 'LIVE_CHART')}
         />
       )}
 
-      {route === 'PERFORMANCE' && (
-        <PerformancePage
-          storage={storage}
-          opportunities={opportunities}
-          totalScans={totalScans}
-          lastScanTimestamp={lastScanTimestamp}
-        />
-      )}
+      {route === 'HISTORY' && <PerformanceDashboard storage={storage} />}
 
       {route === 'SETTINGS' && (
-        <SettingsPage
+        <SettingsView
           settings={settings}
           onUpdateSettings={handleUpdateSettings}
-          display={display}
-          onUpdateDisplay={handleUpdateDisplay}
           onReconnectWs={() => wsManager.reconnect()}
-          connectionState={connectionState}
-          symbolCount={symbols.length}
+          waStatus={waStatus}
+          onRefreshWaStatus={refreshWaStatus}
         />
       )}
     </AppShell>
   );
 }
+
+/* --------------------------------------------------------------------------
+   Market metrics strip — five KPI tiles above every workspace tab
+   -------------------------------------------------------------------------- */
+
+interface MarketMetricsProps {
+  plainSymbols: ActiveSymbol[];
+  oneSecSymbols: ActiveSymbol[];
+  confirmedCount: number;
+  developingCount: number;
+  activeSymbol?: ActiveSymbol;
+  activeOpp?: OpportunitySignal;
+}
+
+const MarketMetrics: React.FC<MarketMetricsProps> = ({
+  plainSymbols,
+  oneSecSymbols,
+  confirmedCount,
+  developingCount,
+  activeSymbol,
+  activeOpp
+}) => {
+  const tiles: { label: string; value: React.ReactNode; tone: string }[] = [
+    {
+      label: 'Plain volatility',
+      value: `${plainSymbols.filter((s) => s.isOpen).length} / ${plainSymbols.length}`,
+      tone: 'text-fg-1'
+    },
+    {
+      label: 'Volatility 1-second',
+      value: `${oneSecSymbols.filter((s) => s.isOpen).length} / ${oneSecSymbols.length}`,
+      tone: 'text-accent-cyan'
+    },
+    { label: 'Confirmed setups', value: confirmedCount, tone: 'text-success' },
+    { label: 'Developing watchlist', value: developingCount, tone: 'text-warning' },
+    {
+      label: 'Selected market',
+      value: activeSymbol?.displayName || '—',
+      tone: 'text-fg-1'
+    }
+  ];
+
+  return (
+    <section className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      {tiles.map((t) => (
+        <Card key={t.label} className="p-3.5">
+          <span className="block text-[10px] font-semibold uppercase tracking-[0.1em] text-fg-5">
+            {t.label}
+          </span>
+          <span className={`tabular mt-1.5 block truncate text-[16px] font-bold ${t.tone}`}>
+            {t.value}
+          </span>
+          {t.label === 'Selected market' && activeOpp && (
+            <span className="mt-0.5 block text-[10.5px] text-fg-5">
+              {activeOpp.marketRegimeLabel || activeOpp.marketCondition} ·{' '}
+              {activeOpp.score.total}%
+            </span>
+          )}
+        </Card>
+      ))}
+    </section>
+  );
+};
+
+/* --------------------------------------------------------------------------
+   Live chart tab — watchlist selector + advanced chart + quick context
+   -------------------------------------------------------------------------- */
+
+interface LiveChartTabProps {
+  symbols: ActiveSymbol[];
+  opportunities: Map<string, OpportunitySignal>;
+  selectedSymbol: string;
+  setSelectedSymbol: (s: string) => void;
+  selectedTimeframe: Timeframe;
+  setSelectedTimeframe: (tf: Timeframe) => void;
+  activeCandles: any[];
+  activeSymbolInfo?: ActiveSymbol;
+  activeOpp?: OpportunitySignal;
+  connectionState: 'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING';
+  latencyMs: number | null;
+  onOpenAnalysis: () => void;
+}
+
+const LiveChartTab: React.FC<LiveChartTabProps> = ({
+  symbols,
+  opportunities,
+  selectedSymbol,
+  setSelectedSymbol,
+  selectedTimeframe,
+  setSelectedTimeframe,
+  activeCandles,
+  activeSymbolInfo,
+  activeOpp,
+  connectionState,
+  latencyMs,
+  onOpenAnalysis
+}) => (
+  <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-12">
+    <aside className="overflow-hidden lg:col-span-3">
+      <Card className="overflow-hidden p-0">
+        <CardHeader
+          title="Volatility markets"
+          subtitle={`${symbols.length} instruments`}
+          icon={<LineChart className="h-4 w-4" />}
+        />
+        <div className="max-h-[240px] divide-y divide-line-soft overflow-y-auto lg:max-h-[540px]">
+          {symbols.map((sym) => {
+            const opp = opportunities.get(sym.symbol);
+            const active = sym.symbol === selectedSymbol;
+            const dec = sym.pipSize < 0.01 ? 3 : 2;
+            return (
+              <button
+                key={sym.symbol}
+                onClick={() => setSelectedSymbol(sym.symbol)}
+                className={`flex w-full items-center justify-between px-3.5 py-2.5 text-left transition-colors ${
+                  active ? 'bg-surface-raised text-fg-1' : 'text-fg-3 hover:bg-surface-raised'
+                }`}
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-[12px] font-semibold">{sym.displayName}</div>
+                  <div className="text-[10px] text-fg-5">
+                    {sym.is1s ? '1s' : 'Plain'} · {opp ? opp.marketCondition : 'Scanning'}
+                  </div>
+                </div>
+                <div className="tabular text-right">
+                  <div className="text-[12px] font-semibold text-fg-2">
+                    {sym.lastQuote ? formatPrice(sym.lastQuote, dec) : '—'}
+                  </div>
+                  <div
+                    className={`text-[10px] font-bold ${
+                      (opp?.score.total || 0) >= 75
+                        ? 'text-success'
+                        : (opp?.score.total || 0) >= 60
+                          ? 'text-warning'
+                          : 'text-fg-5'
+                    }`}
+                  >
+                    {opp ? `${opp.score.total}%` : '—'}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+    </aside>
+
+    <div className="space-y-4 lg:col-span-9">
+      <DerivAdvancedChart
+        candles={activeCandles}
+        symbol={selectedSymbol}
+        displayName={activeSymbolInfo?.displayName || selectedSymbol}
+        pipSize={activeSymbolInfo?.pipSize || 0.01}
+        timeframe={selectedTimeframe}
+        onTimeframeChange={setSelectedTimeframe}
+        opportunity={activeOpp}
+        connectionState={connectionState}
+        isStale={activeSymbolInfo?.isStale}
+        missedTicks={activeSymbolInfo?.missedTicks || 0}
+        latencyMs={latencyMs}
+      />
+
+      {activeOpp && (
+        <Card className="p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0 space-y-1">
+              <div className="text-[12px] text-fg-4">
+                Signal:{' '}
+                <strong
+                  className={
+                    activeOpp.entryAndTp.confirmed ? 'text-success' : 'text-warning'
+                  }
+                >
+                  {activeOpp.entryAndTp.confirmed
+                    ? `${activeOpp.riseFallLabel} · ${activeOpp.selectedStrategy.label} (${activeOpp.score.total}%)`
+                    : `WAITING FOR SETUP (${activeOpp.marketRegimeLabel || activeOpp.marketCondition} · ${activeOpp.score.total}%)`}
+                </strong>
+              </div>
+              <div className="text-[12.5px] leading-relaxed text-fg-3">
+                {activeOpp.explanation}
+              </div>
+            </div>
+            <button
+              onClick={onOpenAnalysis}
+              className="rounded-[10px] border border-accent/40 bg-accent/15 px-3 py-2 text-[12px] font-semibold text-accent-soft transition-colors hover:bg-accent/25"
+            >
+              Full analysis breakdown
+            </button>
+          </div>
+        </Card>
+      )}
+    </div>
+  </div>
+);
+
+/* --------------------------------------------------------------------------
+   Landing intro — in-app overview surface (distinct from the public site)
+   -------------------------------------------------------------------------- */
+
+const LandingIntro: React.FC<{
+  onEnter: () => void;
+  connectionState: 'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING';
+  symbolCount: number;
+}> = ({ onEnter, connectionState, symbolCount }) => (
+  <div className="flex min-h-screen items-center justify-center bg-app px-4">
+    <Card className="w-full max-w-lg p-8 text-center">
+      <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-[14px] bg-gradient-to-br from-accent to-accent-cyan">
+        <LineChart className="h-6 w-6 text-on-accent" />
+      </div>
+      <h1 className="text-[20px] font-bold tracking-tight text-fg-1">WickSentinel</h1>
+      <p className="mt-2 text-[13px] leading-relaxed text-fg-4">
+        Multi-timeframe price-action signal engine for Deriv synthetic indices. H4 → M1 top-down
+        analysis across six adaptive strategies.
+      </p>
+      <div className="mt-5 flex items-center justify-center gap-4 text-[11.5px] text-fg-5">
+        <span className="inline-flex items-center gap-1.5">
+          <Clock className="h-3.5 w-3.5" />
+          {connectionState}
+        </span>
+        <span>{symbolCount} markets</span>
+      </div>
+      <button
+        onClick={onEnter}
+        className="mt-6 inline-flex items-center gap-2 rounded-[10px] border border-accent bg-accent px-4 py-2.5 text-[13px] font-semibold text-on-accent transition-colors hover:bg-accent-strong"
+      >
+        Enter workspace
+      </button>
+    </Card>
+  </div>
+);

@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import { loadConfig, type ServerConfig } from './config.js';
 import { Store } from './store/store.js';
 import { createAuthRouter } from './routes/auth.js';
+import { createWhatsAppRouter } from './routes/whatsapp.js';
 import { attachSession, requireSession, type SessionContext, type AuthedRequest } from './lib/session.js';
 
 /**
@@ -46,6 +47,9 @@ export function createApp(cfg: ServerConfig, store: Store): AppBundle {
   });
 
   app.use(createAuthRouter(ctx));
+
+  // WhatsApp alert dispatch. Status is public (masked); sending requires a session.
+  app.use(createWhatsAppRouter());
 
   // Protected example scanner API surface. The scanner itself is client-side,
   // so this guard demonstrates and enforces "no session -> no data".

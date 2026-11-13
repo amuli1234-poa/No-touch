@@ -14,6 +14,9 @@ interface TopbarProps {
   onScanAll: () => void;
   onOpenMobileNav: () => void;
   scanDisabled?: boolean;
+  latencyMs?: number | null;
+  missedTicks?: number;
+  signalBadge?: number;
 }
 
 const CONNECTION_TONE: Record<TopbarProps['connectionState'], Tone> = {
@@ -36,7 +39,10 @@ export const Topbar: React.FC<TopbarProps> = ({
   isScanning,
   onScanAll,
   onOpenMobileNav,
-  scanDisabled
+  scanDisabled,
+  latencyMs,
+  missedTicks,
+  signalBadge
 }) => (
   <header className="sticky top-0 z-30 border-b border-line-soft bg-app/85 backdrop-blur-xl">
     <div className="flex h-[60px] items-center gap-3 px-3 sm:px-5">
@@ -62,6 +68,17 @@ export const Topbar: React.FC<TopbarProps> = ({
           pulse={connectionState === 'CONNECTED'}
           label={CONNECTION_LABEL[connectionState]}
         />
+        {typeof latencyMs === 'number' && (
+          <>
+            <span className="h-4 w-px bg-surface-elevated" />
+            <span className="tabular text-[11px] font-medium text-fg-4">{latencyMs}ms</span>
+          </>
+        )}
+        {!!missedTicks && missedTicks > 0 && (
+          <span className="tabular text-[11px] font-medium text-warning">
+            {missedTicks} missed
+          </span>
+        )}
         <span className="h-4 w-px bg-surface-elevated" />
         <div className="flex flex-col leading-tight">
           <span className="text-[9.5px] font-semibold uppercase tracking-[0.1em] text-fg-6">
@@ -96,8 +113,13 @@ export const Topbar: React.FC<TopbarProps> = ({
 
       <ThemeToggle />
 
-      <IconButton label="Alerts" className="hidden lg:inline-flex">
+      <IconButton label="Alerts" className="relative hidden lg:inline-flex">
         <Bell className="h-4 w-4" />
+        {!!signalBadge && signalBadge > 0 && (
+          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-success px-1 text-[9.5px] font-bold text-on-accent">
+            {signalBadge}
+          </span>
+        )}
       </IconButton>
 
       <UserMenu lastScanTimestamp={lastScanTimestamp} />
