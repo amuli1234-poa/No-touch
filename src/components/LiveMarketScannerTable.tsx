@@ -108,13 +108,13 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
   const isOffline = connectionState === 'DISCONNECTED' && symbols.length === 0;
 
   const sortIndicator = (field: SortField) => (
-    <ArrowUpDown className={`h-3 w-3 ${sortBy === field ? 'text-[#8B85FF]' : 'text-slate-600'}`} />
+    <ArrowUpDown className={`h-3 w-3 ${sortBy === field ? 'text-[#2E8AD8]' : 'text-slate-600'}`} />
   );
 
   return (
-    <div className="flex min-w-0 flex-col overflow-hidden rounded-[14px] border border-[#273449] bg-[#101829] shadow-[0_1px_2px_rgba(0,0,0,0.35)]">
+    <div className="flex min-w-0 flex-col overflow-hidden rounded-[14px] border border-[#1e2b40] bg-[#0d1420] shadow-[0_1px_2px_rgba(0,0,0,0.35)]">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#273449] bg-[#0F1728] px-3.5 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#1e2b40] bg-[#0d1420] px-3.5 py-3">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5">
           <div className="min-w-0">
             <div className="text-[13px] font-semibold text-white">Market scanner</div>
@@ -131,7 +131,7 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
               }}
               placeholder="Search markets"
               aria-label="Search markets"
-              className="h-8 w-40 rounded-[9px] border border-[#273449] bg-[#0C1424] pl-8 pr-3 text-[12px] text-slate-200 placeholder:text-slate-600 transition-colors hover:border-[#3A4C6B] focus:border-[#635BFF] focus:outline-none sm:w-52"
+              className="h-8 w-40 rounded-[9px] border border-[#1e2b40] bg-[#0b1220] pl-8 pr-3 text-[12px] text-slate-200 placeholder:text-slate-600 transition-colors hover:border-[#2f4258] focus:border-[#0068B5] focus:outline-none sm:w-52"
             />
           </div>
           <span className="tabular text-[11px] text-slate-500">
@@ -152,8 +152,8 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
                 aria-pressed={active}
                 className={`rounded-[8px] border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
                   active
-                    ? 'border-[#635BFF]/40 bg-[#635BFF]/15 text-[#A5A0FF]'
-                    : 'border-transparent text-slate-400 hover:bg-[#172238] hover:text-slate-200'
+                    ? 'border-[#0068B5]/40 bg-[#0068B5]/15 text-[#60A5FA]'
+                    : 'border-transparent text-slate-400 hover:bg-[#121b2b] hover:text-slate-200'
                 }`}
               >
                 {f.label}
@@ -167,8 +167,8 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
       <div className="hidden min-w-0 md:block">
         <div className="max-h-[600px] overflow-auto">
           <table className="w-full min-w-[960px] border-collapse text-left text-[12px]">
-            <thead className="sticky top-0 z-10 bg-[#0C1424] text-[10px] uppercase tracking-[0.08em] text-slate-500">
-              <tr className="border-b border-[#273449]">
+            <thead className="sticky top-0 z-10 bg-[#0b1220] text-[10px] uppercase tracking-[0.08em] text-slate-500">
+              <tr className="border-b border-[#1e2b40]">
                 <th className="px-3 py-2.5 font-semibold">
                   <button
                     onClick={() => handleSort('symbol')}
@@ -201,7 +201,7 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
                 <th className="px-3 py-2.5 text-right font-semibold">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#1E293B]">
+            <tbody className="divide-y divide-[#162133]">
               {isScanning && pageRows.length === 0 && (
                 <tr>
                   <td colSpan={9}>
@@ -228,7 +228,7 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
                     }}
                     aria-selected={selected}
                     className={`cursor-pointer transition-colors ${
-                      selected ? 'bg-[#635BFF]/10' : 'hover:bg-[#141D2F]'
+                      selected ? 'bg-[#0068B5]/10' : 'hover:bg-[#121b2b]'
                     }`}
                   >
                     <td className={`px-3 ${rowPad}`}>
@@ -244,7 +244,7 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
                         />
                         <span className="font-medium text-slate-100">{sym.displayName}</span>
                         {sym.is1s && (
-                          <span className="rounded border border-[#635BFF]/30 bg-[#635BFF]/10 px-1 py-px text-[9px] font-bold text-[#A5A0FF]">
+                          <span className="rounded border border-[#0068B5]/30 bg-[#0068B5]/10 px-1 py-px text-[9px] font-bold text-[#60A5FA]">
                             1s
                           </span>
                         )}
@@ -293,7 +293,7 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
                       {opp?.activeFvg ? (
                         <span
                           className={`text-[11px] font-medium ${
-                            opp.activeFvg.fresh ? 'text-[#A5A0FF]' : 'text-slate-400'
+                            opp.activeFvg.fresh ? 'text-[#60A5FA]' : 'text-slate-400'
                           }`}
                         >
                           {opp.activeFvg.fresh
@@ -311,14 +311,14 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
                     </td>
                     <td className={`px-3 ${rowPad}`}>
                       <div className="flex items-center gap-2">
-                        <div className="h-1.5 w-16 overflow-hidden rounded-full bg-[#0C1424]">
+                        <div className="h-1.5 w-16 overflow-hidden rounded-full bg-[#0b1220]">
                           <div
                             className="h-full rounded-full"
                             style={{
                               width: `${opp?.score.total ?? 0}%`,
                               backgroundColor:
                                 (opp?.score.total ?? 0) >= 90
-                                  ? '#10B981'
+                                  ? '#16A34A'
                                   : (opp?.score.total ?? 0) >= 80
                                     ? '#F59E0B'
                                     : '#475569'
@@ -330,7 +330,7 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
                           style={{
                             color:
                               (opp?.score.total ?? 0) >= 90
-                                ? '#34D399'
+                                ? '#4ADE80'
                                 : (opp?.score.total ?? 0) >= 80
                                   ? '#FBBF24'
                                   : '#94A3B8'
@@ -386,7 +386,7 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
       {/* Mobile cards */}
       <div className="md:hidden">
         {isScanning && pageRows.length === 0 && <SkeletonRows rows={5} />}
-        <div className="divide-y divide-[#1E293B]">
+        <div className="divide-y divide-[#162133]">
           {pageRows.map((sym) => {
             const opp = opportunities.get(sym.symbol);
             const selected = selectedSymbol === sym.symbol;
@@ -397,7 +397,7 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
                 key={sym.symbol}
                 onClick={() => onSelectSymbol(sym.symbol)}
                 className={`w-full px-3.5 py-3 text-left transition-colors ${
-                  selected ? 'bg-[#635BFF]/10' : 'active:bg-[#141D2F]'
+                  selected ? 'bg-[#0068B5]/10' : 'active:bg-[#121b2b]'
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
@@ -411,7 +411,7 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
                       {sym.displayName}
                     </span>
                     {sym.is1s && (
-                      <span className="rounded border border-[#635BFF]/30 bg-[#635BFF]/10 px-1 py-px text-[9px] font-bold text-[#A5A0FF]">
+                      <span className="rounded border border-[#0068B5]/30 bg-[#0068B5]/10 px-1 py-px text-[9px] font-bold text-[#60A5FA]">
                         1s
                       </span>
                     )}
@@ -456,7 +456,7 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
 
       {/* Pagination */}
       {filtered.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#273449] bg-[#0F1728] px-4 py-2.5 text-[11px] text-slate-400">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#1e2b40] bg-[#0d1420] px-4 py-2.5 text-[11px] text-slate-400">
           <span className="tabular">
             Showing{' '}
             <span className="text-slate-200">
@@ -489,7 +489,7 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
       )}
 
       {/* Legend */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-[#273449] bg-[#0B1120] px-4 py-2 text-[10.5px] text-slate-500">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-[#1e2b40] bg-[#0a1018] px-4 py-2 text-[10.5px] text-slate-500">
         <span className="inline-flex items-center gap-1.5">
           <ShieldCheck className="h-3 w-3 text-emerald-400" /> Qualified
         </span>

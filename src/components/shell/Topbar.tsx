@@ -36,7 +36,7 @@ export const Topbar: React.FC<TopbarProps> = ({
   onOpenMobileNav,
   scanDisabled
 }) => (
-  <header className="sticky top-0 z-30 border-b border-[#1E293B] bg-[#080D18]/85 backdrop-blur-xl">
+  <header className="sticky top-0 z-30 border-b border-[#162133] bg-[#060b16]/85 backdrop-blur-xl">
     <div className="flex h-[60px] items-center gap-3 px-3 sm:px-5">
       <IconButton
         label="Open navigation"
@@ -54,13 +54,13 @@ export const Topbar: React.FC<TopbarProps> = ({
       </div>
 
       {/* Live status cluster */}
-      <div className="hidden items-center gap-3 rounded-[10px] border border-[#1E293B] bg-[#0F1728] px-3 py-1.5 md:flex">
+      <div className="hidden items-center gap-3 rounded-[10px] border border-[#162133] bg-[#0d1420] px-3 py-1.5 md:flex">
         <StatusDot
           tone={CONNECTION_TONE[connectionState]}
           pulse={connectionState === 'CONNECTED'}
           label={CONNECTION_LABEL[connectionState]}
         />
-        <span className="h-4 w-px bg-[#1E293B]" />
+        <span className="h-4 w-px bg-[#162133]" />
         <div className="flex flex-col leading-tight">
           <span className="text-[9.5px] font-semibold uppercase tracking-[0.1em] text-slate-600">
             Last scan
@@ -90,17 +90,17 @@ export const Topbar: React.FC<TopbarProps> = ({
         <RefreshCw className={`h-4 w-4 ${isScanning ? 'animate-spin' : ''}`} />
       </IconButton>
 
-      <span className="hidden h-6 w-px bg-[#1E293B] lg:block" />
+      <span className="hidden h-6 w-px bg-[#162133] lg:block" />
 
       <IconButton label="Alerts" className="hidden lg:inline-flex">
         <Bell className="h-4 w-4" />
       </IconButton>
 
       <button
-        className="hidden items-center gap-2 rounded-[10px] border border-[#1E293B] bg-[#0F1728] px-2 py-1.5 transition-colors hover:border-[#3A4C6B] lg:flex"
+        className="hidden items-center gap-2 rounded-[10px] border border-[#162133] bg-[#0d1420] px-2 py-1.5 transition-colors hover:border-[#2f4258] lg:flex"
         title="Local operator profile"
       >
-        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#635BFF]/20 text-[#A5A0FF]">
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0068B5]/20 text-[#60A5FA]">
           <User className="h-3.5 w-3.5" />
         </span>
         <span className="text-left leading-tight">

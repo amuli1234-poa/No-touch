@@ -1,9 +1,10 @@
 import React from 'react';
 
 const CARD_VARIANT = {
-  default: 'bg-[#101829] border-[#273449]',
-  raised: 'bg-[#172238] border-[#273449]',
-  elevated: 'bg-[#1B2740] border-[#2E3D57]'
+  default: 'bg-[#0d1420] border-[#1e2b40]',
+  raised: 'bg-[#121b2b] border-[#1e2b40]',
+  elevated: 'bg-[#162133] border-[#24344c]',
+  glass: 'bg-[#0d1420]/72 border-[#ffffff14] backdrop-blur-xl backdrop-saturate-150'
 } as const;
 
 interface CardProps {
@@ -20,9 +21,9 @@ export const Card: React.FC<CardProps> = ({
   interactive = false
 }) => (
   <div
-    className={`rounded-[14px] border shadow-[0_1px_2px_rgba(0,0,0,0.35)] ${
+    className={`rounded-[16px] border shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_4px_16px_rgba(0,0,0,0.2),0_20px_60px_-24px_rgba(0,0,0,0.55)] ${
       CARD_VARIANT[variant]
-    } ${interactive ? 'transition-colors hover:border-[#3A4C6B]' : ''} ${className}`}
+    } ${interactive ? 'transition-colors hover:border-[#2f4258]' : ''} ${className}`}
   >
     {children}
   </div>
@@ -44,11 +45,11 @@ export const CardHeader: React.FC<CardHeaderProps> = ({
   className = ''
 }) => (
   <div
-    className={`flex flex-wrap items-center justify-between gap-3 border-b border-[#273449] px-4 py-3 ${className}`}
+    className={`flex flex-wrap items-center justify-between gap-3 border-b border-[#1e2b40] px-4 py-3 ${className}`}
   >
     <div className="flex min-w-0 items-center gap-2.5">
       {icon && (
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border border-[#273449] bg-[#172238] text-[#8B85FF]">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border border-[#1e2b40] bg-[#121b2b] text-[#2E8AD8]">
           {icon}
         </span>
       )}

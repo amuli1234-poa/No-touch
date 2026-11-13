@@ -37,9 +37,9 @@ interface ChartProps {
   heightClass?: string;
 }
 
-const CHART_BG = '#080D18';
-const GRID = '#131B2E';
-const BORDER = '#1E293B';
+const CHART_BG = '#060b16';
+const GRID = '#101828';
+const BORDER = '#162133';
 
 export const InteractiveLightweightChart: React.FC<ChartProps> = ({
   candles,
@@ -85,13 +85,13 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
           color: '#38BDF8',
           width: 1,
           style: LineStyle.LargeDashed,
-          labelBackgroundColor: '#0369A1'
+          labelBackgroundColor: '#075985'
         },
         horzLine: {
           color: '#38BDF8',
           width: 1,
           style: LineStyle.LargeDashed,
-          labelBackgroundColor: '#0369A1'
+          labelBackgroundColor: '#075985'
         }
       },
       timeScale: {
@@ -107,11 +107,11 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
     });
 
     const series = chart.addSeries(CandlestickSeries, {
-      upColor: '#10B981',
-      downColor: '#F43F5E',
+      upColor: '#16A34A',
+      downColor: '#DC2626',
       borderVisible: false,
-      wickUpColor: '#10B981',
-      wickDownColor: '#F43F5E'
+      wickUpColor: '#16A34A',
+      wickDownColor: '#DC2626'
     });
 
     chartRef.current = chart;
@@ -208,7 +208,7 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
       markers.push({
         time: structuralShift.breakEpoch as Time,
         position: structuralShift.direction === 'BULLISH' ? 'aboveBar' : 'belowBar',
-        color: '#A855F7',
+        color: '#0068B5',
         shape: 'circle',
         text: `${structuralShift.type} ${structuralShift.direction.slice(0, 4)}`
       });
@@ -225,7 +225,7 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
       priceLinesRef.current.push(
         seriesRef.current.createPriceLine({
           price: barrier.barrierLevel,
-          color: '#F43F5E',
+          color: '#DC2626',
           lineWidth: 2,
           lineStyle: LineStyle.Solid,
           axisLabelVisible: true,
@@ -239,7 +239,7 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
       priceLinesRef.current.push(
         seriesRef.current.createPriceLine({
           price: tradeableRange.newlyProtectedSwing,
-          color: '#EAB308',
+          color: '#FBBF24',
           lineWidth: 2,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: true,
@@ -249,7 +249,7 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
       priceLinesRef.current.push(
         seriesRef.current.createPriceLine({
           price: tradeableRange.adaptiveFillTarget,
-          color: '#06B6D4',
+          color: '#0EA5E9',
           lineWidth: 1,
           lineStyle: LineStyle.Dotted,
           axisLabelVisible: true,
@@ -263,7 +263,7 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
       priceLinesRef.current.push(
         seriesRef.current.createPriceLine({
           price: fvg.upperBoundary,
-          color: '#818CF8',
+          color: '#60A5FA',
           lineWidth: 1,
           lineStyle: LineStyle.LargeDashed,
           axisLabelVisible: false,
@@ -271,7 +271,7 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
         }),
         seriesRef.current.createPriceLine({
           price: fvg.lowerBoundary,
-          color: '#818CF8',
+          color: '#60A5FA',
           lineWidth: 1,
           lineStyle: LineStyle.LargeDashed,
           axisLabelVisible: false,
@@ -279,7 +279,7 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
         }),
         seriesRef.current.createPriceLine({
           price: fvg.midpoint,
-          color: '#A5B4FC',
+          color: '#93C5FD',
           lineWidth: 1,
           lineStyle: LineStyle.Dotted,
           axisLabelVisible: false,
@@ -293,7 +293,7 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
       priceLinesRef.current.push(
         seriesRef.current!.createPriceLine({
           price: (z.upperPrice + z.lowerPrice) / 2,
-          color: z.type === 'SUPPORT' ? '#059669' : '#DC2626',
+          color: z.type === 'SUPPORT' ? '#15803D' : '#DC2626',
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: false,
@@ -329,15 +329,15 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
   return (
     <div
       ref={wrapperRef}
-      className="relative flex w-full min-w-0 flex-col overflow-hidden rounded-[14px] border border-[#273449] bg-[#080D18] shadow-[0_1px_2px_rgba(0,0,0,0.35)]"
+      className="relative flex w-full min-w-0 flex-col overflow-hidden rounded-[14px] border border-[#1e2b40] bg-[#060b16] shadow-[0_1px_2px_rgba(0,0,0,0.35)]"
     >
       {/* Chart toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#273449] bg-[#0F1728] px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#1e2b40] bg-[#0d1420] px-3 py-2.5">
         <div className="flex min-w-0 flex-wrap items-center gap-2.5">
           <span className="truncate text-[13px] font-bold tracking-tight text-white">
             {displayName || symbol}
           </span>
-          <span className="rounded border border-[#635BFF]/30 bg-[#635BFF]/10 px-1.5 py-px text-[10px] font-bold text-[#A5A0FF]">
+          <span className="rounded border border-[#0068B5]/30 bg-[#0068B5]/10 px-1.5 py-px text-[10px] font-bold text-[#60A5FA]">
             {timeframe}
           </span>
           {candles.length > 0 && (
@@ -363,7 +363,7 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
 
       {/* OHLC strip */}
       {ohlc && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[#1E293B] bg-[#0B1120] px-3 py-1.5 text-[11px]">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[#162133] bg-[#0a1018] px-3 py-1.5 text-[11px]">
           {(
             [
               ['O', ohlc.open, 'text-slate-200'],
@@ -389,8 +389,8 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
       <div className="relative">
         <div ref={chartContainerRef} className={`w-full ${heightClass}`} />
         {candles.length === 0 && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#080D18] text-center">
-            <span className="flex h-11 w-11 items-center justify-center rounded-full border border-[#273449] bg-[#172238] text-slate-400">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#060b16] text-center">
+            <span className="flex h-11 w-11 items-center justify-center rounded-full border border-[#1e2b40] bg-[#121b2b] text-slate-400">
               <Activity className="h-5 w-5" />
             </span>
             <div className="text-[13px] font-semibold text-slate-200">Waiting for market candles</div>
@@ -402,14 +402,14 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
       </div>
 
       {/* Overlay legend */}
-      <div className="flex flex-wrap items-center justify-between gap-y-1.5 border-t border-[#273449] bg-[#0B1120] px-3 py-2 text-[10.5px] text-slate-500">
+      <div className="flex flex-wrap items-center justify-between gap-y-1.5 border-t border-[#1e2b40] bg-[#0a1018] px-3 py-2 text-[10.5px] text-slate-500">
         <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1">
           {(
             [
-              ['#F43F5E', 'No Touch Barrier'],
-              ['#EAB308', 'Protected Swing'],
-              ['#06B6D4', 'Adaptive Retracement'],
-              ['#818CF8', 'Fair Value Gap'],
+              ['#DC2626', 'No Touch Barrier'],
+              ['#FBBF24', 'Protected Swing'],
+              ['#0EA5E9', 'Adaptive Retracement'],
+              ['#60A5FA', 'Fair Value Gap'],
               ['#38BDF8', 'Spot']
             ] as const
           ).map(([color, label]) => (

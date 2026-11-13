@@ -82,7 +82,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
         title="Scanner overview"
         description="Continuous qualification across Deriv synthetic indices using the 2m displacement / 5m alignment model."
         actions={
-          <div className="hidden items-center gap-2 rounded-[10px] border border-[#1E293B] bg-[#0F1728] px-3 py-1.5 md:flex">
+          <div className="hidden items-center gap-2 rounded-[10px] border border-[#162133] bg-[#0d1420] px-3 py-1.5 md:flex">
             <StatusDot
               tone={connectionState === 'CONNECTED' ? 'success' : connectionState === 'RECONNECTING' ? 'warning' : 'danger'}
               pulse={connectionState === 'CONNECTED'}
@@ -157,7 +157,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                   className={`rounded-[10px] border px-3 py-2.5 ${
                     lost
                       ? 'border-rose-500/30 bg-rose-500/[0.06]'
-                      : 'border-[#273449] bg-[#0B1120]'
+                      : 'border-[#1e2b40] bg-[#0a1018]'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
@@ -212,13 +212,13 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
         <div className="min-w-0 space-y-4 xl:col-span-8">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <LineChartIcon className="h-4 w-4 text-[#8B85FF]" />
+              <LineChartIcon className="h-4 w-4 text-[#2E8AD8]" />
               <h2 className="text-[13px] font-semibold text-white">Chart workspace</h2>
               <span className="text-[11px] text-slate-500">
                 {selectedMeta?.displayName ?? selectedSymbol} · 2m primary / 5m confirmation
               </span>
             </div>
-            <div className="inline-flex items-center gap-0.5 rounded-[10px] border border-[#273449] bg-[#0C1424] p-0.5">
+            <div className="inline-flex items-center gap-0.5 rounded-[10px] border border-[#1e2b40] bg-[#0b1220] p-0.5">
               {TIMEFRAMES.map((tf) => (
                 <button
                   key={tf}
@@ -226,8 +226,8 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                   aria-pressed={selectedTimeframe === tf}
                   className={`rounded-[8px] px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${
                     selectedTimeframe === tf
-                      ? 'bg-[#635BFF] text-white'
-                      : 'text-slate-400 hover:bg-[#172238] hover:text-slate-100'
+                      ? 'bg-[#0068B5] text-white'
+                      : 'text-slate-400 hover:bg-[#121b2b] hover:text-slate-100'
                   }`}
                 >
                   {tf}
@@ -256,7 +256,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                 </h3>
                 <button
                   onClick={() => setInspecting((v) => !v)}
-                  className="text-[11.5px] font-medium text-[#A5A0FF] hover:text-[#8B85FF]"
+                  className="text-[11.5px] font-medium text-[#60A5FA] hover:text-[#2E8AD8]"
                 >
                   {inspecting ? 'Hide detail' : 'Show detail'}
                 </button>
@@ -322,12 +322,12 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
               />
             </div>
             {activeOpp ? (
-              <div className="border-t border-[#273449] p-4">
+              <div className="border-t border-[#1e2b40] p-4">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
                     Current setup
                   </span>
-                  <span className="tabular text-[13px] font-semibold text-[#A5A0FF]">
+                  <span className="tabular text-[13px] font-semibold text-[#60A5FA]">
                     {activeOpp.score.total}/100
                   </span>
                 </div>
@@ -337,7 +337,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
               </div>
             ) : (
               <EmptyState
-                className="border-t border-[#273449]"
+                className="border-t border-[#1e2b40]"
                 icon={<Activity className="h-5 w-5" />}
                 title="No active analysis"
                 description="Select a market from the scanner to inspect its structural context."
@@ -351,7 +351,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
 };
 
 const ContextCell: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="rounded-[10px] border border-[#1E293B] bg-[#0B1120] px-3 py-2.5">
+  <div className="rounded-[10px] border border-[#162133] bg-[#0a1018] px-3 py-2.5">
     <div className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-slate-500">
       {label}
     </div>

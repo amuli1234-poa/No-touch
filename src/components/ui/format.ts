@@ -102,7 +102,7 @@ export function volatilityTone(regime: 'LOW' | 'MEDIUM' | 'HIGH'): Tone {
 
 export const TONE_TEXT: Record<Tone, string> = {
   neutral: 'text-slate-400',
-  accent: 'text-[#8B85FF]',
+  accent: 'text-[#2E8AD8]',
   info: 'text-sky-400',
   success: 'text-emerald-400',
   warning: 'text-amber-400',
@@ -111,7 +111,7 @@ export const TONE_TEXT: Record<Tone, string> = {
 
 export const TONE_BG: Record<Tone, string> = {
   neutral: 'bg-slate-500/10 text-slate-300 border-slate-600/40',
-  accent: 'bg-[#635BFF]/12 text-[#A5A0FF] border-[#635BFF]/30',
+  accent: 'bg-[#0068B5]/12 text-[#60A5FA] border-[#0068B5]/30',
   info: 'bg-sky-500/12 text-sky-300 border-sky-500/30',
   success: 'bg-emerald-500/12 text-emerald-300 border-emerald-500/30',
   warning: 'bg-amber-500/12 text-amber-300 border-amber-500/30',
@@ -120,9 +120,9 @@ export const TONE_BG: Record<Tone, string> = {
 
 export const TONE_HEX: Record<Tone, string> = {
   neutral: '#64748B',
-  accent: '#635BFF',
+  accent: '#0068B5',
   info: '#38BDF8',
-  success: '#10B981',
+  success: '#16A34A',
   warning: '#F59E0B',
-  danger: '#F43F5E'
+  danger: '#DC2626'
 };

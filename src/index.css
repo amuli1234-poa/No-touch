@@ -8,46 +8,70 @@
 :root {
   color-scheme: dark;
 
+  /* ------------------------------------------------------------------
+     Core palette — inspired by reatech360.com.
+     The reference product is built on a near-black navy (#060b16) with a
+     single confident blue (#0068B5) and a light blue (#60A5FA) for accent
+     text. The same scale is used here so both products feel like one
+     family, while the scanner keeps its own semantic roles.
+     ------------------------------------------------------------------ */
+
   /* Surfaces */
-  --app-bg: #080D18;
-  --surface: #101829;
-  --surface-raised: #172238;
-  --surface-elevated: #1B2740;
+  --app-bg: #060b16;
+  --surface: #0d1420;
+  --surface-raised: #121b2b;
+  --surface-elevated: #16213394;
+  --surface-glass: rgba(13, 20, 32, 0.72);
 
   /* Accents */
-  --accent: #635BFF;
-  --accent-strong: #7C75FF;
+  --accent: #0068B5;
+  --accent-strong: #2E8AD8;
+  --accent-soft: #60A5FA;
   --accent-cyan: #38BDF8;
 
   /* Semantic */
-  --success: #10B981;
+  --success: #16A34A;
   --warning: #F59E0B;
-  --danger: #F43F5E;
+  --danger: #DC2626;
 
   /* Text */
-  --text-primary: #F8FAFC;
+  --text-primary: #F1F5F9;
   --text-secondary: #94A3B8;
   --text-muted: #64748B;
 
   /* Structure */
-  --border: #273449;
-  --border-soft: #1E293B;
-  --ring: rgba(99, 91, 255, 0.45);
+  --border: #1e2b40;
+  --border-soft: #162133;
+  --ring: rgba(0, 104, 181, 0.45);
 
-  /* Radii */
-  --radius-sm: 6px;
+  /* Radii — matches the reference's 10 / 12 / 16 / 20 scale */
+  --radius-sm: 8px;
   --radius-md: 10px;
   --radius-lg: 14px;
   --radius-xl: 18px;
 
   /* Elevation */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 8px 24px -12px rgba(0, 0, 0, 0.65);
-  --shadow-lg: 0 24px 60px -24px rgba(0, 0, 0, 0.75);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 24px -12px rgba(0, 0, 0, 0.7);
+  --shadow-lg: 0 24px 60px -24px rgba(0, 0, 0, 0.8);
 
   /* Layout */
   --nav-width: 244px;
   --topbar-height: 60px;
+
+  /* ------------------------------------------------------------------
+     WickSentinel public brand palette (marketing site only).
+     Aligned to the same blue-led system as the workspace.
+     ------------------------------------------------------------------ */
+  --ws-navy: #060b16;
+  --ws-charcoal: #0d1420;
+  --ws-charcoal-raised: #121b2b;
+  --ws-violet: #0068B5;
+  --ws-violet-soft: #60A5FA;
+  --ws-cyan: #38BDF8;
+  --ws-white: #FFFFFF;
+  --ws-muted: #8A97AE;
+  --ws-hairline: rgba(138, 151, 174, 0.16);
 }
 
 @layer base {
@@ -188,6 +212,120 @@ a:focus-visible {
 }
 .pulse-live {
   animation: pulse-ring 2.2s infinite;
+}
+
+/* ==========================================================================
+   WickSentinel landing hero — photographic background
+   The photograph (Pexels 38892300) is a very dark night scene, so the scrim
+   stays light and keeps the subject visible while guaranteeing text contrast.
+   ========================================================================== */
+
+.ws-hero-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background-color: var(--ws-navy);
+}
+
+.ws-hero-bg__image,
+.ws-hero-bg__navy,
+.ws-hero-bg__scrim,
+.ws-hero-bg__tint,
+.ws-hero-bg__top,
+.ws-hero-bg__fade {
+  position: absolute;
+  inset: 0;
+}
+
+/* The photograph itself. `cover` never stretches; position keeps the lit
+   structures centred and biased slightly below the top of the frame.
+   The source file is severely underexposed (median luminance ≈ 8/255), so a
+   brightness/contrast lift reveals the subject; the overlays below then bring
+   it back toward the brand palette and guarantee text contrast. */
+.ws-hero-bg__image {
+  background-image: url('https://images.pexels.com/photos/38892300/pexels-photo-38892300.jpeg?auto=compress&cs=tinysrgb&w=1920');
+  background-size: cover;
+  background-position: center 45%;
+  background-repeat: no-repeat;
+  filter: brightness(3) contrast(1.45) saturate(1.25);
+}
+
+/* Navy wash — pulls the lifted photograph toward #080D1A. */
+.ws-hero-bg__navy {
+  background: linear-gradient(
+    180deg,
+    rgba(6, 11, 22, 0.45) 0%,
+    rgba(6, 11, 22, 0.27) 46%,
+    rgba(6, 11, 22, 0.6) 100%
+  );
+}
+
+/* Directional scrim — deepens the left column (headline) and eases off to the
+   right so the photograph stays visible around the scanner preview. */
+.ws-hero-bg__scrim {
+  background: linear-gradient(
+    100deg,
+    rgba(6, 11, 22, 0.86) 0%,
+    rgba(6, 11, 22, 0.66) 32%,
+    rgba(6, 11, 22, 0.12) 58%,
+    rgba(6, 11, 22, 0.3) 100%
+  );
+}
+
+/* Brand tint — violet top-left, cyan right, amber warmth where the photo is warm. */
+.ws-hero-bg__tint {
+  background:
+    radial-gradient(60% 70% at 12% 18%, rgba(0, 104, 181, 0.26) 0%, rgba(0, 104, 181, 0) 60%),
+    radial-gradient(50% 60% at 88% 30%, rgba(56, 189, 248, 0.18) 0%, rgba(56, 189, 248, 0) 62%),
+    radial-gradient(70% 60% at 50% 100%, rgba(6, 11, 22, 0.7) 0%, rgba(6, 11, 22, 0) 70%);
+}
+
+/* Top scrim — the nav is transparent until scrolled, so darken the top band to
+   keep the link text legible over the brighter parts of the photograph. */
+.ws-hero-bg__top {
+  background: linear-gradient(
+    180deg,
+    rgba(6, 11, 22, 0.86) 0%,
+    rgba(6, 11, 22, 0.5) 55%,
+    rgba(6, 11, 22, 0) 100%
+  );
+  height: 160px;
+  bottom: auto;
+}
+
+/* Blends the bottom edge into the page background so the hero is not a slab. */
+.ws-hero-bg__fade {
+  background: linear-gradient(180deg, rgba(6, 11, 22, 0) 55%, #060b16 100%);
+}
+
+/* Below lg the copy sits over the photograph rather than beside it, so the
+   whole backdrop is darkened further for contrast. */
+@media (max-width: 1023px) {
+  .ws-hero-bg__navy {
+    background: linear-gradient(
+      180deg,
+      rgba(6, 11, 22, 0.82) 0%,
+      rgba(6, 11, 22, 0.58) 50%,
+      rgba(6, 11, 22, 0.78) 100%
+    );
+  }
+  .ws-hero-bg__scrim {
+    background: linear-gradient(
+      180deg,
+      rgba(6, 11, 22, 0.62) 0%,
+      rgba(6, 11, 22, 0.34) 45%,
+      rgba(6, 11, 22, 0.7) 100%
+    );
+  }
+}
+
+/* Small screens crop the wide frame hard; bias the crop toward the lit centre. */
+@media (max-width: 640px) {
+  .ws-hero-bg__image {
+    background-position: 52% 42%;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

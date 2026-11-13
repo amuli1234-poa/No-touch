@@ -301,7 +301,7 @@ export const PerformancePage: React.FC<PerformancePageProps> = ({
                       <span className="ml-1.5 text-slate-500">({bin.count})</span>
                     </span>
                   </div>
-                  <div className="relative h-2 overflow-hidden rounded-full bg-[#0C1424]">
+                  <div className="relative h-2 overflow-hidden rounded-full bg-[#0b1220]">
                     <div
                       className="absolute inset-y-0 left-0 rounded-full bg-sky-500/25"
                       style={{ width: `${bin.predictedProb}%` }}
@@ -342,7 +342,7 @@ export const PerformancePage: React.FC<PerformancePageProps> = ({
                         <span className="text-slate-300">{r.reason}</span>
                         <span className="tabular shrink-0 font-semibold text-slate-400">{r.count}</span>
                       </div>
-                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#0C1424]">
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#0b1220]">
                         <div
                           className="h-full rounded-full"
                           style={{
@@ -382,7 +382,7 @@ export const PerformancePage: React.FC<PerformancePageProps> = ({
                 <div className="space-y-3">
                   <LegendRow color={TONE_HEX.success} label="Survived" value={formatPercent(analytics.barrierSurvivalRate)} />
                   <LegendRow color={TONE_HEX.danger} label="Touched" value={formatPercent(analytics.actualTouchFrequency)} />
-                  <div className="border-t border-[#1E293B] pt-3">
+                  <div className="border-t border-[#162133] pt-3">
                     <LegendRow
                       color={TONE_HEX.info}
                       label="Standard win rate"
@@ -455,7 +455,7 @@ export const PerformancePage: React.FC<PerformancePageProps> = ({
             <CardHeader title="Performance by expiry duration" subtitle="Win rate per contract horizon" />
             <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-3">
               {analytics.resultsByExpiry.map((exp) => (
-                <div key={exp.durationMinutes} className="rounded-[10px] border border-[#1E293B] bg-[#0B1120] px-3 py-2.5">
+                <div key={exp.durationMinutes} className="rounded-[10px] border border-[#162133] bg-[#0a1018] px-3 py-2.5">
                   <div className="text-[10px] uppercase tracking-wide text-slate-500">
                     {exp.durationMinutes}m horizon
                   </div>
@@ -499,8 +499,8 @@ export const PerformancePage: React.FC<PerformancePageProps> = ({
         />
         <div className="max-h-[420px] overflow-auto">
           <table className="w-full min-w-[820px] border-collapse text-left text-[12px]">
-            <thead className="sticky top-0 z-10 bg-[#0C1424] text-[10px] uppercase tracking-[0.08em] text-slate-500">
-              <tr className="border-b border-[#273449]">
+            <thead className="sticky top-0 z-10 bg-[#0b1220] text-[10px] uppercase tracking-[0.08em] text-slate-500">
+              <tr className="border-b border-[#1e2b40]">
                 <th className="px-3 py-2.5 font-semibold">Time</th>
                 <th className="px-3 py-2.5 font-semibold">Market</th>
                 <th className="px-3 py-2.5 font-semibold">Direction</th>
@@ -511,10 +511,10 @@ export const PerformancePage: React.FC<PerformancePageProps> = ({
                 <th className="px-3 py-2.5 text-right font-semibold">P / L</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#1E293B]">
+            <tbody className="divide-y divide-[#162133]">
               {records.length > 0 ? (
                 records.map((r) => (
-                  <tr key={r.id} className="transition-colors hover:bg-[#141D2F]">
+                  <tr key={r.id} className="transition-colors hover:bg-[#121b2b]">
                     <td className="tabular px-3 py-2.5 text-slate-400">
                       {new Date(r.detectedEpoch * 1000).toLocaleTimeString()}
                     </td>
@@ -522,7 +522,7 @@ export const PerformancePage: React.FC<PerformancePageProps> = ({
                       <span className="flex items-center gap-2">
                         <span className="font-medium text-slate-100">{r.displayName}</span>
                         {r.is1s && (
-                          <span className="rounded border border-[#635BFF]/30 bg-[#635BFF]/10 px-1 py-px text-[9px] font-bold text-[#A5A0FF]">
+                          <span className="rounded border border-[#0068B5]/30 bg-[#0068B5]/10 px-1 py-px text-[9px] font-bold text-[#60A5FA]">
                             1s
                           </span>
                         )}

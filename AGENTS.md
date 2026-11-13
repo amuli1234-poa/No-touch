@@ -62,6 +62,37 @@ returning, and log to a file (e.g. `/tmp/vite-live.log`).
 - `src/types/scanner.ts` — domain types; `src/types/preferences.ts` — display
   preferences.
 
+## Public site (WickSentinel)
+
+The product's public-facing brand is **WickSentinel**; the scanner keeps its
+internal "Deriv No Touch" naming. `src/Root.tsx` is the entry component mounted
+by `main.tsx` and decides which surface to render from the pathname:
+
+| Path | Surface |
+| --- | --- |
+| `/` | `components/landing/LandingPage.tsx` — public homepage |
+| `/app` (and `/app/*`) | `App.tsx` — the existing scanner workspace, unchanged |
+| `/login`, `/get-started` | `components/landing/AccessPage.tsx` — access placeholders |
+| `/privacy`, `/terms`, `/risk-disclaimer` | `components/landing/LegalPage.tsx` |
+| anything else | `components/landing/NotFoundPage.tsx` |
+
+- `src/lib/router.ts` — dependency-free pathname router (`useRoute`, `navigate`,
+  `navigateToSection`). It is **base-aware**: it reads `import.meta.env.BASE_URL`
+  so the same build works at `/` in dev and under a project-Pages subpath.
+- `src/components/landing/*` — landing sections, `primitives.tsx` (Section,
+  Reveal, WsButton, SectionHeading) and `ScannerPreview.tsx`.
+- `src/components/brand/WickSentinelBrand.tsx` — `BrandLogo`, `WickSentinelMark`
+  and the `BRAND` constants.
+- Public-site palette lives in `src/index.css` as `--ws-*` tokens; the scanner
+  keeps the original `--surface` / `--accent` tokens. Do not mix the two.
+
+**There is no authentication system and no backend.** The app is fully
+client-side (IndexedDB). The `/login` and `/get-started` routes are deliberate
+placeholders that hand the visitor to the working scanner; do not build a fake
+auth flow. Landing-page copy must only advertise features that exist in
+`src/engines` / `src/services`, and preview graphics must stay labelled as
+illustrative — never present mock numbers as live market data.
+
 ## Conventions
 
 - Design tokens live in `src/index.css` (`--app-bg`, `--surface`, `--accent`,

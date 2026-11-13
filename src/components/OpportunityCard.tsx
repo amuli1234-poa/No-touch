@@ -38,7 +38,7 @@ interface MetricProps {
 }
 
 const Metric: React.FC<MetricProps> = ({ label, value, tone }) => (
-  <div className="rounded-[10px] border border-[#1E293B] bg-[#0B1120] px-3 py-2">
+  <div className="rounded-[10px] border border-[#162133] bg-[#0a1018] px-3 py-2">
     <div className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-slate-500">
       {label}
     </div>
@@ -103,16 +103,16 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({
     <Card
       variant={isSelected ? 'elevated' : 'default'}
       className={`overflow-hidden transition-colors ${
-        isSelected ? 'border-[#635BFF]/40' : ''
+        isSelected ? 'border-[#0068B5]/40' : ''
       }`}
     >
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#273449] px-4 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#1e2b40] px-4 py-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => onSelectMarket(opp.symbol)}
-              className="text-[15px] font-bold tracking-tight text-white transition-colors hover:text-[#A5A0FF]"
+              className="text-[15px] font-bold tracking-tight text-white transition-colors hover:text-[#60A5FA]"
             >
               {opp.displayName}
             </button>
@@ -182,7 +182,7 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({
 
         {/* Contract proposal */}
         {opp.barrierProposal ? (
-          <div className="grid grid-cols-2 gap-2 rounded-[10px] border border-[#273449] bg-[#0B1120] p-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 rounded-[10px] border border-[#1e2b40] bg-[#0a1018] p-3 sm:grid-cols-4">
             <Metric label="Contract" value={`No Touch (${opp.barrierProposal.direction})`} tone="accent" />
             <Metric
               label="Barrier"
@@ -232,7 +232,7 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({
         <div className="space-y-2">
           <div className="flex items-center justify-between text-[12px]">
             <span className="font-medium text-slate-400">Technical scoring engine</span>
-            <span className="tabular font-semibold text-[#A5A0FF]">{opp.score.total} / 100</span>
+            <span className="tabular font-semibold text-[#60A5FA]">{opp.score.total} / 100</span>
           </div>
           <SegmentedBar segments={segments} height={8} />
           <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 pt-1 sm:grid-cols-4">
@@ -254,12 +254,12 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({
         </div>
 
         {/* Explanation */}
-        <div className="rounded-[10px] border border-[#273449] bg-[#0B1120] px-3 py-2.5 text-[12px] leading-relaxed text-slate-300">
+        <div className="rounded-[10px] border border-[#1e2b40] bg-[#0a1018] px-3 py-2.5 text-[12px] leading-relaxed text-slate-300">
           {opp.explanation}
         </div>
 
         {/* Expandable disclosure sections */}
-        <div className="divide-y divide-[#1E293B] overflow-hidden rounded-[10px] border border-[#273449]">
+        <div className="divide-y divide-[#162133] overflow-hidden rounded-[10px] border border-[#1e2b40]">
           {mandatoryFailures.length > 0 && (
             <Disclosure
               id="mandatory"
@@ -309,7 +309,7 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({
               {opp.stepAudit.map((item) => (
                 <div
                   key={item.step}
-                  className="flex items-start justify-between gap-3 rounded-[8px] border border-[#1E293B] bg-[#0B1120] px-2.5 py-2"
+                  className="flex items-start justify-between gap-3 rounded-[8px] border border-[#162133] bg-[#0a1018] px-2.5 py-2"
                 >
                   <div className="flex min-w-0 items-start gap-2">
                     <span
@@ -375,7 +375,7 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({
           </div>
           <button
             onClick={() => (onInspectChart ?? onSelectMarket)(opp.symbol)}
-            className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#635BFF]/40 bg-[#635BFF]/15 px-3 py-1.5 text-[12px] font-semibold text-[#A5A0FF] transition-colors hover:bg-[#635BFF]/25"
+            className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#0068B5]/40 bg-[#0068B5]/15 px-3 py-1.5 text-[12px] font-semibold text-[#60A5FA] transition-colors hover:bg-[#0068B5]/25"
           >
             {onInspectChart ? <Crosshair className="h-3.5 w-3.5" /> : <Target className="h-3.5 w-3.5" />}
             Inspect on chart
@@ -396,11 +396,11 @@ interface DisclosureProps {
 }
 
 const Disclosure: React.FC<DisclosureProps> = ({ id, label, tone, open, onToggle, children }) => (
-  <div className="bg-[#101829]">
+  <div className="bg-[#0d1420]">
     <button
       onClick={() => onToggle(id)}
       aria-expanded={open}
-      className="flex w-full items-center justify-between gap-2 px-3.5 py-2.5 text-left transition-colors hover:bg-[#141D2F]"
+      className="flex w-full items-center justify-between gap-2 px-3.5 py-2.5 text-left transition-colors hover:bg-[#121b2b]"
     >
       <span className="flex items-center gap-2 text-[12px] font-medium text-slate-300">
         <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: TONE_HEX[tone] }} />

@@ -9,10 +9,10 @@ type ButtonSize = 'sm' | 'md';
 
 const BUTTON_VARIANT: Record<ButtonVariant, string> = {
   primary:
-    'bg-[#635BFF] text-white border-[#635BFF] hover:bg-[#7C75FF] shadow-[0_1px_2px_rgba(0,0,0,0.35)]',
+    'bg-[#0068B5] text-white border-[#0068B5] hover:bg-[#2E8AD8] hover:border-[#2E8AD8] shadow-[0_1px_2px_rgba(0,104,181,0.35)]',
   secondary:
-    'bg-[#172238] text-slate-200 border-[#273449] hover:bg-[#1B2740] hover:border-[#3A4C6B]',
-  ghost: 'bg-transparent text-slate-400 border-transparent hover:bg-[#172238] hover:text-slate-100',
+    'bg-[#121b2b] text-slate-200 border-[#1e2b40] hover:bg-[#162133] hover:border-[#2f4258]',
+  ghost: 'bg-transparent text-slate-400 border-transparent hover:bg-[#121b2b] hover:text-slate-100',
   danger:
     'bg-rose-500/10 text-rose-300 border-rose-500/30 hover:bg-rose-500/20'
 };
@@ -71,8 +71,8 @@ export const IconButton: React.FC<IconButtonProps> = ({
     title={label}
     className={`inline-flex h-8 w-8 items-center justify-center rounded-[9px] border transition-colors disabled:opacity-40 ${
       active
-        ? 'border-[#635BFF]/40 bg-[#635BFF]/15 text-[#A5A0FF]'
-        : 'border-[#273449] bg-[#172238] text-slate-400 hover:border-[#3A4C6B] hover:text-slate-100'
+        ? 'border-[#0068B5]/40 bg-[#0068B5]/15 text-[#60A5FA]'
+        : 'border-[#1e2b40] bg-[#121b2b] text-slate-400 hover:border-[#2f4258] hover:text-slate-100'
     } ${className}`}
   >
     {children}
@@ -102,7 +102,7 @@ export function SegmentedControl<T extends string>({
 }: SegmentedControlProps<T>) {
   return (
     <div
-      className={`inline-flex items-center gap-0.5 rounded-[10px] border border-[#273449] bg-[#0C1424] p-0.5 ${className}`}
+      className={`inline-flex items-center gap-0.5 rounded-[10px] border border-[#1e2b40] bg-[#0b1220] p-0.5 ${className}`}
     >
       {options.map((opt) => {
         const active = opt === value;
@@ -115,8 +115,8 @@ export function SegmentedControl<T extends string>({
               size === 'sm' ? 'px-2.5 py-1 text-[11.5px]' : 'px-3 py-1.5 text-[12.5px]'
             } ${
               active
-                ? 'bg-[#635BFF] text-white shadow-[0_1px_2px_rgba(0,0,0,0.35)]'
-                : 'text-slate-400 hover:bg-[#172238] hover:text-slate-100'
+                ? 'bg-[#0068B5] text-white shadow-[0_1px_2px_rgba(0,0,0,0.35)]'
+                : 'text-slate-400 hover:bg-[#121b2b] hover:text-slate-100'
             }`}
           >
             {labels?.[opt] ?? opt}
@@ -147,7 +147,7 @@ export const Toggle: React.FC<ToggleProps> = ({ checked, onChange, label, disabl
     disabled={disabled}
     onClick={() => onChange(!checked)}
     className={`relative h-6 w-11 shrink-0 rounded-full border transition-colors disabled:opacity-40 ${
-      checked ? 'border-[#635BFF] bg-[#635BFF]' : 'border-[#273449] bg-[#172238]'
+      checked ? 'border-[#0068B5] bg-[#0068B5]' : 'border-[#1e2b40] bg-[#121b2b]'
     }`}
   >
     <span
@@ -170,7 +170,7 @@ interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
 export const Select: React.FC<SelectProps> = ({ options, className = '', ...rest }) => (
   <select
     {...rest}
-    className={`h-9 w-full appearance-none rounded-[10px] border border-[#273449] bg-[#0C1424] px-3 text-[13px] text-slate-100 transition-colors hover:border-[#3A4C6B] focus:border-[#635BFF] focus:outline-none ${className}`}
+    className={`h-9 w-full appearance-none rounded-[10px] border border-[#1e2b40] bg-[#0b1220] px-3 text-[13px] text-slate-100 transition-colors hover:border-[#2f4258] focus:border-[#0068B5] focus:outline-none ${className}`}
   >
     {options.map((o) => (
       <option key={o.value} value={o.value}>

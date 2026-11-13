@@ -81,10 +81,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 type="number"
                 value={settings.appId}
                 onChange={(e) => set('appId', parseInt(e.target.value, 10) || 1089)}
-                className="h-9 w-full rounded-[10px] border border-[#273449] bg-[#0C1424] px-3 font-mono text-[13px] text-slate-100 transition-colors hover:border-[#3A4C6B] focus:border-[#635BFF] focus:outline-none"
+                className="h-9 w-full rounded-[10px] border border-[#1e2b40] bg-[#0b1220] px-3 font-mono text-[13px] text-slate-100 transition-colors hover:border-[#2f4258] focus:border-[#0068B5] focus:outline-none"
               />
             </Field>
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-[#1E293B] bg-[#0B1120] px-3 py-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-[#162133] bg-[#0a1018] px-3 py-2.5">
               <div className="text-[11.5px] text-slate-400">
                 <span className="block font-medium text-slate-300">Connection status</span>
                 <span className="tabular">
@@ -202,7 +202,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 step={1}
                 value={settings.minScoreThreshold}
                 onChange={(e) => set('minScoreThreshold', parseInt(e.target.value, 10))}
-                className="w-full cursor-pointer accent-[#635BFF]"
+                className="w-full cursor-pointer accent-[#0068B5]"
               />
               <div className="mt-1 flex justify-between text-[10px] text-slate-500">
                 <span>80% · watchlist</span>
@@ -324,8 +324,8 @@ const ExpiryOption: React.FC<{
     aria-pressed={active}
     className={`rounded-[10px] border p-3 text-left transition-colors ${
       active
-        ? 'border-[#635BFF]/50 bg-[#635BFF]/10'
-        : 'border-[#273449] bg-[#0B1120] hover:border-[#3A4C6B]'
+        ? 'border-[#0068B5]/50 bg-[#0068B5]/10'
+        : 'border-[#1e2b40] bg-[#0a1018] hover:border-[#2f4258]'
     }`}
   >
     <div className={`flex items-center gap-2 text-[12.5px] font-semibold ${active ? 'text-white' : 'text-slate-300'}`}>
@@ -356,7 +356,7 @@ const SettingToggle: React.FC<{
 );
 
 const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="flex items-center justify-between gap-3 border-b border-[#1E293B] pb-2">
+  <div className="flex items-center justify-between gap-3 border-b border-[#162133] pb-2">
     <span className="text-[11.5px] text-slate-500">{label}</span>
     <span className="text-[11.5px] font-medium text-slate-200">{value}</span>
   </div>

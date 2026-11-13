@@ -121,7 +121,7 @@ export const Donut: React.FC<DonutProps> = ({ segments, size = 132, centerLabel,
   return (
     <div className="relative" style={{ width: size, height: size }}>
       <svg viewBox="0 0 132 132" className="h-full w-full -rotate-90" aria-hidden="true">
-        <circle cx="66" cy="66" r={radius} fill="none" stroke="#0C1424" strokeWidth="12" />
+        <circle cx="66" cy="66" r={radius} fill="none" stroke="#0b1220" strokeWidth="12" />
         {total > 0 &&
           segments.map((s, i) => {
             const length = (s.value / total) * circumference;
@@ -206,7 +206,7 @@ export const AreaSeries: React.FC<AreaSeriesProps> = ({
             x2={w - pad}
             y1={h - pad - g * (h - pad * 2)}
             y2={h - pad - g * (h - pad * 2)}
-            stroke="#1E293B"
+            stroke="#162133"
             strokeWidth="1"
             strokeDasharray="3 4"
           />

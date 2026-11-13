@@ -46,14 +46,14 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
   connectionState,
   symbolCount
 }) => (
-  <div className="relative min-h-screen overflow-hidden bg-[#080D18]">
+  <div className="relative min-h-screen overflow-hidden bg-[#060b16]">
     <div className="surface-grid pointer-events-none absolute inset-0 opacity-[0.35]" />
-    <div className="pointer-events-none absolute -top-40 left-1/2 h-[520px] w-[820px] -translate-x-1/2 rounded-full bg-[#635BFF]/10 blur-[120px]" />
+    <div className="pointer-events-none absolute -top-40 left-1/2 h-[520px] w-[820px] -translate-x-1/2 rounded-full bg-[#0068B5]/10 blur-[120px]" />
 
     <div className="relative z-10 mx-auto max-w-6xl px-5 pb-20 pt-14 sm:px-8 lg:pt-24">
       {/* Hero */}
       <div className="flex flex-col items-center text-center">
-        <div className="inline-flex items-center gap-2 rounded-full border border-[#273449] bg-[#0F1728] px-3.5 py-1.5 text-[11px] font-semibold text-slate-300">
+        <div className="inline-flex items-center gap-2 rounded-full border border-[#1e2b40] bg-[#0d1420] px-3.5 py-1.5 text-[11px] font-semibold text-slate-300">
           <span
             className="h-1.5 w-1.5 rounded-full"
             style={{ backgroundColor: connectionState === 'CONNECTED' ? TONE_HEX.success : TONE_HEX.warning }}
@@ -65,7 +65,7 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
 
         <h1 className="mt-6 max-w-3xl text-4xl font-extrabold leading-[1.05] tracking-[-0.03em] text-white sm:text-5xl lg:text-6xl">
           Read the market with
-          <span className="block bg-gradient-to-r from-[#8B85FF] via-[#7C75FF] to-[#38BDF8] bg-clip-text text-transparent">
+          <span className="block bg-gradient-to-r from-[#2E8AD8] via-[#2E8AD8] to-[#38BDF8] bg-clip-text text-transparent">
             institutional clarity.
           </span>
         </h1>
@@ -91,15 +91,15 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
       {/* Preview panel */}
       <div className="mx-auto mt-14 w-full max-w-3xl">
         <Card variant="elevated" className="overflow-hidden p-1.5">
-          <div className="rounded-[10px] border border-[#273449] bg-[#0B1120] p-4">
-            <div className="flex items-center justify-between border-b border-[#1E293B] pb-3">
+          <div className="rounded-[10px] border border-[#1e2b40] bg-[#0a1018] p-4">
+            <div className="flex items-center justify-between border-b border-[#162133] pb-3">
               <div className="flex items-center gap-2">
-                <span className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-gradient-to-br from-[#635BFF] to-[#38BDF8]">
+                <span className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-gradient-to-br from-[#0068B5] to-[#38BDF8]">
                   <Activity className="h-4 w-4 text-white" />
                 </span>
                 <span className="text-[12px] font-bold text-white">MARKET OVERVIEW</span>
               </div>
-              <span className="rounded-md border border-[#273449] bg-[#172238] px-2 py-0.5 text-[10px] font-semibold text-slate-400">
+              <span className="rounded-md border border-[#1e2b40] bg-[#121b2b] px-2 py-0.5 text-[10px] font-semibold text-slate-400">
                 SAMPLE VIEW
               </span>
             </div>
@@ -110,7 +110,7 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
                 ['QUALIFIED', '04', TONE_HEX.success],
                 ['WATCHLIST', '07', TONE_HEX.warning]
               ].map(([label, value, color]) => (
-                <div key={label as string} className="rounded-[10px] border border-[#1E293B] bg-[#0F1728] p-3">
+                <div key={label as string} className="rounded-[10px] border border-[#162133] bg-[#0d1420] p-3">
                   <div className="text-[9.5px] font-semibold tracking-wider text-slate-500">
                     {label}
                   </div>
@@ -121,7 +121,7 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
               ))}
             </div>
 
-            <div className="mt-2.5 rounded-[10px] border border-[#1E293B] bg-[#0F1728] p-3.5">
+            <div className="mt-2.5 rounded-[10px] border border-[#162133] bg-[#0d1420] p-3.5">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-[12px] font-bold text-slate-200">
@@ -134,10 +134,10 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
                   <div className="text-[10px] text-emerald-400">+0.42%</div>
                 </div>
               </div>
-              <div className="relative mt-4 h-32 overflow-hidden rounded-[8px] bg-[#080D18] px-2 pt-4">
-                <div className="absolute inset-x-2 top-1/2 border-t border-dashed border-[#273449]" />
-                <div className="absolute inset-x-2 top-[28%] border-t border-dashed border-[#F43F5E]/40" />
-                <div className="absolute right-2 top-[21%] rounded bg-[#F43F5E]/10 px-1.5 py-0.5 text-[8px] font-semibold text-rose-300">
+              <div className="relative mt-4 h-32 overflow-hidden rounded-[8px] bg-[#060b16] px-2 pt-4">
+                <div className="absolute inset-x-2 top-1/2 border-t border-dashed border-[#1e2b40]" />
+                <div className="absolute inset-x-2 top-[28%] border-t border-dashed border-[#DC2626]/40" />
+                <div className="absolute right-2 top-[21%] rounded bg-[#DC2626]/10 px-1.5 py-0.5 text-[8px] font-semibold text-rose-300">
                   BARRIER
                 </div>
                 <div className="flex h-full items-end gap-1.5 px-1">
@@ -174,7 +174,7 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
       <div className="mt-16 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {FEATURES.map((f) => (
           <Card key={f.title} className="p-4" interactive>
-            <span className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-[#273449] bg-[#172238] text-[#8B85FF]">
+            <span className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-[#1e2b40] bg-[#121b2b] text-[#2E8AD8]">
               {f.icon}
             </span>
             <h3 className="mt-3 text-[13px] font-bold text-white">{f.title}</h3>
@@ -184,9 +184,9 @@ export const OverviewPage: React.FC<OverviewPageProps> = ({
       </div>
 
       {/* Footer */}
-      <div className="mt-14 flex flex-col gap-2 border-t border-[#1E293B] pt-6 text-[11px] text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mt-14 flex flex-col gap-2 border-t border-[#162133] pt-6 text-[11px] text-slate-500 sm:flex-row sm:items-center sm:justify-between">
         <span className="inline-flex items-center gap-2">
-          <LineChart className="h-3.5 w-3.5 text-[#8B85FF]" />
+          <LineChart className="h-3.5 w-3.5 text-[#2E8AD8]" />
           Market analysis workspace · Deriv synthetic indices
         </span>
         <span className="inline-flex items-center gap-2">

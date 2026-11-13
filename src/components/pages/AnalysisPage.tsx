@@ -117,7 +117,7 @@ export const AnalysisPage: React.FC<AnalysisPageProps> = ({
           <h2 className="text-[13px] font-semibold text-white">
             {selectedMeta?.displayName ?? selectedSymbol} · price action
           </h2>
-          <div className="inline-flex items-center gap-0.5 rounded-[10px] border border-[#273449] bg-[#0C1424] p-0.5">
+          <div className="inline-flex items-center gap-0.5 rounded-[10px] border border-[#1e2b40] bg-[#0b1220] p-0.5">
             {TIMEFRAMES.map((tf) => (
               <button
                 key={tf}
@@ -125,8 +125,8 @@ export const AnalysisPage: React.FC<AnalysisPageProps> = ({
                 aria-pressed={selectedTimeframe === tf}
                 className={`rounded-[8px] px-3 py-1 text-[11.5px] font-semibold transition-colors ${
                   selectedTimeframe === tf
-                    ? 'bg-[#635BFF] text-white'
-                    : 'text-slate-400 hover:bg-[#172238] hover:text-slate-100'
+                    ? 'bg-[#0068B5] text-white'
+                    : 'text-slate-400 hover:bg-[#121b2b] hover:text-slate-100'
                 }`}
               >
                 {tf}
@@ -361,7 +361,7 @@ const ScoreRow: React.FC<{
 }> = ({ label, value, max, tone }) => (
   <div className="flex items-center gap-2 text-[11.5px]">
     <span className="w-20 shrink-0 text-slate-500">{label}</span>
-    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#0C1424]">
+    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#0b1220]">
       <div
         className="h-full rounded-full transition-[width] duration-500"
         style={{ width: `${(value / max) * 100}%`, backgroundColor: TONE_HEX[tone] }}

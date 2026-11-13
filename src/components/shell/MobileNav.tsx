@@ -38,14 +38,14 @@ export const MobileNav: React.FC<MobileNavProps> = ({
         onClick={onClose}
       />
       <div
-        className={`absolute inset-y-0 left-0 w-[264px] border-r border-[#1E293B] shadow-2xl transition-transform duration-200 ${
+        className={`absolute inset-y-0 left-0 w-[264px] border-r border-[#162133] shadow-2xl transition-transform duration-200 ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
         <button
           onClick={onClose}
           aria-label="Close navigation"
-          className="absolute -right-11 top-3 flex h-8 w-8 items-center justify-center rounded-[9px] border border-[#273449] bg-[#172238] text-slate-300"
+          className="absolute -right-11 top-3 flex h-8 w-8 items-center justify-center rounded-[9px] border border-[#1e2b40] bg-[#121b2b] text-slate-300"
         >
           <X className="h-4 w-4" />
         </button>

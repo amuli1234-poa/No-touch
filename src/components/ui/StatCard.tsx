@@ -41,7 +41,7 @@ export const StatCard: React.FC<StatCardProps> = ({
     <div className="mt-2 flex items-end gap-2">
       <span
         className="tabular text-[26px] font-bold leading-none tracking-tight"
-        style={{ color: tone === 'neutral' ? '#F8FAFC' : TONE_HEX[tone] }}
+        style={{ color: tone === 'neutral' ? '#F1F5F9' : TONE_HEX[tone] }}
       >
         {value}
       </span>
@@ -79,7 +79,7 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   <div className={`flex flex-col items-center justify-center gap-2 px-6 py-12 text-center ${className}`}>
     {icon && (
       <span
-        className="flex h-11 w-11 items-center justify-center rounded-full border border-[#273449] bg-[#172238]"
+        className="flex h-11 w-11 items-center justify-center rounded-full border border-[#1e2b40] bg-[#121b2b]"
         style={{ color: TONE_HEX[tone] }}
       >
         {icon}
@@ -126,7 +126,7 @@ export const SectionTitle: React.FC<SectionTitleProps> = ({
   <div className="flex flex-wrap items-end justify-between gap-3">
     <div className="min-w-0">
       {eyebrow && (
-        <div className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-[#8B85FF]">
+        <div className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-[#2E8AD8]">
           {eyebrow}
         </div>
       )}
