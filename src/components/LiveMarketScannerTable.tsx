@@ -14,7 +14,7 @@ import {
   TrendingDown
 } from 'lucide-react';
 import { Badge, Button, EmptyState, SkeletonRows, StatusDot } from './ui';
-import { STATUS_LABEL, biasTone, formatPrice, scoreTone, statusTone } from './ui/format';
+import { STATUS_LABEL, biasTone, formatPrice, scoreHex, scoreTone, statusTone } from './ui/format';
 
 export type ScannerFilter = 'ALL' | 'STANDARD' | '1S' | 'QUALIFIED' | 'WATCHLIST';
 type SortField = 'score' | 'symbol' | 'price';
@@ -108,20 +108,20 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
   const isOffline = connectionState === 'DISCONNECTED' && symbols.length === 0;
 
   const sortIndicator = (field: SortField) => (
-    <ArrowUpDown className={`h-3 w-3 ${sortBy === field ? 'text-[#2E8AD8]' : 'text-slate-600'}`} />
+    <ArrowUpDown className={`h-3 w-3 ${sortBy === field ? 'text-accent-strong' : 'text-fg-6'}`} />
   );
 
   return (
-    <div className="flex min-w-0 flex-col overflow-hidden rounded-[14px] border border-[#1e2b40] bg-[#0d1420] shadow-[0_1px_2px_rgba(0,0,0,0.35)]">
+    <div className="flex min-w-0 flex-col overflow-hidden rounded-[14px] border border-line bg-surface shadow-[var(--shadow-control)]">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#1e2b40] bg-[#0d1420] px-3.5 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface px-3.5 py-3">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5">
           <div className="min-w-0">
-            <div className="text-[13px] font-semibold text-white">Market scanner</div>
-            <div className="text-[10.5px] text-slate-500">Live quotes · 2m structure · 5m context</div>
+            <div className="text-[13px] font-semibold text-fg-1">Market scanner</div>
+            <div className="text-[10.5px] text-fg-5">Live quotes · 2m structure · 5m context</div>
           </div>
           <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-fg-5" />
             <input
               type="text"
               value={searchQuery}
@@ -131,10 +131,10 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
               }}
               placeholder="Search markets"
               aria-label="Search markets"
-              className="h-8 w-40 rounded-[9px] border border-[#1e2b40] bg-[#0b1220] pl-8 pr-3 text-[12px] text-slate-200 placeholder:text-slate-600 transition-colors hover:border-[#2f4258] focus:border-[#0068B5] focus:outline-none sm:w-52"
+              className="h-8 w-40 rounded-[9px] border border-line bg-surface-deepest pl-8 pr-3 text-[12px] text-fg-2 placeholder:text-fg-6 transition-colors hover:border-line-strong focus:border-accent focus:outline-none sm:w-52"
             />
           </div>
-          <span className="tabular text-[11px] text-slate-500">
+          <span className="tabular text-[11px] text-fg-5">
             {filtered.length} / {symbols.length}
           </span>
         </div>
@@ -152,8 +152,8 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
                 aria-pressed={active}
                 className={`rounded-[8px] border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
                   active
-                    ? 'border-[#0068B5]/40 bg-[#0068B5]/15 text-[#60A5FA]'
-                    : 'border-transparent text-slate-400 hover:bg-[#121b2b] hover:text-slate-200'
+                    ? 'border-accent/40 bg-accent/15 text-accent-soft'
+                    : 'border-transparent text-fg-4 hover:bg-surface-raised hover:text-fg-2'
                 }`}
               >
                 {f.label}
@@ -167,12 +167,12 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
       <div className="hidden min-w-0 md:block">
         <div className="max-h-[600px] overflow-auto">
           <table className="w-full min-w-[960px] border-collapse text-left text-[12px]">
-            <thead className="sticky top-0 z-10 bg-[#0b1220] text-[10px] uppercase tracking-[0.08em] text-slate-500">
-              <tr className="border-b border-[#1e2b40]">
+            <thead className="sticky top-0 z-10 bg-surface-deepest text-[10px] uppercase tracking-[0.08em] text-fg-5">
+              <tr className="border-b border-line">
                 <th className="px-3 py-2.5 font-semibold">
                   <button
                     onClick={() => handleSort('symbol')}
-                    className="inline-flex items-center gap-1.5 hover:text-slate-200"
+                    className="inline-flex items-center gap-1.5 hover:text-fg-2"
                   >
                     Market {sortIndicator('symbol')}
                   </button>
@@ -180,7 +180,7 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
                 <th className="px-3 py-2.5 text-right font-semibold">
                   <button
                     onClick={() => handleSort('price')}
-                    className="inline-flex items-center gap-1.5 hover:text-slate-200"
+                    className="inline-flex items-center gap-1.5 hover:text-fg-2"
                   >
                     Spot price {sortIndicator('price')}
                   </button>
@@ -193,7 +193,7 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
                 <th className="px-3 py-2.5 font-semibold">
                   <button
                     onClick={() => handleSort('score')}
-                    className="inline-flex items-center gap-1.5 hover:text-slate-200"
+                    className="inline-flex items-center gap-1.5 hover:text-fg-2"
                   >
                     Technical score {sortIndicator('score')}
                   </button>
@@ -201,7 +201,7 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
                 <th className="px-3 py-2.5 text-right font-semibold">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#162133]">
+            <tbody className="divide-y divide-line-soft">
               {isScanning && pageRows.length === 0 && (
                 <tr>
                   <td colSpan={9}>
@@ -228,7 +228,7 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
                     }}
                     aria-selected={selected}
                     className={`cursor-pointer transition-colors ${
-                      selected ? 'bg-[#0068B5]/10' : 'hover:bg-[#121b2b]'
+                      selected ? 'bg-accent/10' : 'hover:bg-surface-raised'
                     }`}
                   >
                     <td className={`px-3 ${rowPad}`}>
@@ -242,15 +242,15 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
                                 : 'danger'
                           }
                         />
-                        <span className="font-medium text-slate-100">{sym.displayName}</span>
+                        <span className="font-medium text-fg-1">{sym.displayName}</span>
                         {sym.is1s && (
-                          <span className="rounded border border-[#0068B5]/30 bg-[#0068B5]/10 px-1 py-px text-[9px] font-bold text-[#60A5FA]">
+                          <span className="rounded border border-accent/30 bg-accent/10 px-1 py-px text-[9px] font-bold text-accent-soft">
                             1s
                           </span>
                         )}
                       </div>
                     </td>
-                    <td className={`tabular px-3 ${rowPad} text-right font-medium text-slate-200`}>
+                    <td className={`tabular px-3 ${rowPad} text-right font-medium text-fg-2`}>
                       {formatPrice(price)}
                     </td>
                     <td className={`px-3 ${rowPad}`}>
@@ -259,14 +259,14 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
                           {alignmentAligned ? 'Aligned' : 'Neutral'}
                         </Badge>
                       ) : (
-                        <span className="text-slate-600">—</span>
+                        <span className="text-fg-6">—</span>
                       )}
                     </td>
                     <td className={`px-3 ${rowPad}`}>
                       {shift ? (
                         <span
                           className={`inline-flex items-center gap-1 text-[11px] font-semibold ${
-                            shift.direction === 'BULLISH' ? 'text-emerald-400' : 'text-rose-400'
+                            shift.direction === 'BULLISH' ? 'text-success' : 'text-danger'
                           }`}
                         >
                           {shift.direction === 'BULLISH' ? (
@@ -277,23 +277,23 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
                           {shift.type}
                         </span>
                       ) : (
-                        <span className="text-[11px] text-slate-500">Normal</span>
+                        <span className="text-[11px] text-fg-5">Normal</span>
                       )}
                     </td>
                     <td className={`px-3 ${rowPad}`}>
                       {opp?.sweptPool ? (
-                        <span className="text-[11px] font-medium text-amber-400">
+                        <span className="text-[11px] font-medium text-warning">
                           {opp.sweptPool.type === 'SELLSIDE' ? 'SSL swept' : 'BSL swept'}
                         </span>
                       ) : (
-                        <span className="text-[11px] text-slate-500">None</span>
+                        <span className="text-[11px] text-fg-5">None</span>
                       )}
                     </td>
                     <td className={`px-3 ${rowPad}`}>
                       {opp?.activeFvg ? (
                         <span
                           className={`text-[11px] font-medium ${
-                            opp.activeFvg.fresh ? 'text-[#60A5FA]' : 'text-slate-400'
+                            opp.activeFvg.fresh ? 'text-accent-soft' : 'text-fg-4'
                           }`}
                         >
                           {opp.activeFvg.fresh
@@ -301,39 +301,29 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
                             : `${opp.activeFvg.fillPercentage}% mitigated`}
                         </span>
                       ) : (
-                        <span className="text-[11px] text-slate-500">None</span>
+                        <span className="text-[11px] text-fg-5">None</span>
                       )}
                     </td>
-                    <td className={`tabular px-3 ${rowPad} text-right text-slate-300`}>
+                    <td className={`tabular px-3 ${rowPad} text-right text-fg-3`}>
                       {opp?.tradeableRange
                         ? formatPrice(opp.tradeableRange.newlyProtectedSwing, 2)
                         : '—'}
                     </td>
                     <td className={`px-3 ${rowPad}`}>
                       <div className="flex items-center gap-2">
-                        <div className="h-1.5 w-16 overflow-hidden rounded-full bg-[#0b1220]">
+                        <div className="h-1.5 w-16 overflow-hidden rounded-full bg-surface-deepest">
                           <div
                             className="h-full rounded-full"
                             style={{
                               width: `${opp?.score.total ?? 0}%`,
-                              backgroundColor:
-                                (opp?.score.total ?? 0) >= 90
-                                  ? '#16A34A'
-                                  : (opp?.score.total ?? 0) >= 80
-                                    ? '#F59E0B'
-                                    : '#475569'
+                              backgroundColor: scoreHex(opp?.score.total ?? 0)
                             }}
                           />
                         </div>
                         <span
                           className="tabular w-8 text-[11.5px] font-semibold"
                           style={{
-                            color:
-                              (opp?.score.total ?? 0) >= 90
-                                ? '#4ADE80'
-                                : (opp?.score.total ?? 0) >= 80
-                                  ? '#FBBF24'
-                                  : '#94A3B8'
+                            color: scoreHex(opp?.score.total ?? 0)
                           }}
                         >
                           {opp ? opp.score.total : '—'}
@@ -386,7 +376,7 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
       {/* Mobile cards */}
       <div className="md:hidden">
         {isScanning && pageRows.length === 0 && <SkeletonRows rows={5} />}
-        <div className="divide-y divide-[#162133]">
+        <div className="divide-y divide-line-soft">
           {pageRows.map((sym) => {
             const opp = opportunities.get(sym.symbol);
             const selected = selectedSymbol === sym.symbol;
@@ -397,7 +387,7 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
                 key={sym.symbol}
                 onClick={() => onSelectSymbol(sym.symbol)}
                 className={`w-full px-3.5 py-3 text-left transition-colors ${
-                  selected ? 'bg-[#0068B5]/10' : 'active:bg-[#121b2b]'
+                  selected ? 'bg-accent/10' : 'active:bg-surface-raised'
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
@@ -407,16 +397,16 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
                         sym.isOpen && !sym.isStale ? 'success' : sym.isStale ? 'warning' : 'danger'
                       }
                     />
-                    <span className="truncate text-[13px] font-semibold text-slate-100">
+                    <span className="truncate text-[13px] font-semibold text-fg-1">
                       {sym.displayName}
                     </span>
                     {sym.is1s && (
-                      <span className="rounded border border-[#0068B5]/30 bg-[#0068B5]/10 px-1 py-px text-[9px] font-bold text-[#60A5FA]">
+                      <span className="rounded border border-accent/30 bg-accent/10 px-1 py-px text-[9px] font-bold text-accent-soft">
                         1s
                       </span>
                     )}
                   </div>
-                  <span className="tabular shrink-0 text-[13px] font-semibold text-slate-100">
+                  <span className="tabular shrink-0 text-[13px] font-semibold text-fg-1">
                     {formatPrice(price)}
                   </span>
                 </div>
@@ -456,13 +446,13 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
 
       {/* Pagination */}
       {filtered.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#1e2b40] bg-[#0d1420] px-4 py-2.5 text-[11px] text-slate-400">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-surface px-4 py-2.5 text-[11px] text-fg-4">
           <span className="tabular">
             Showing{' '}
-            <span className="text-slate-200">
+            <span className="text-fg-2">
               {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, filtered.length)}
             </span>{' '}
-            of <span className="text-slate-200">{filtered.length}</span> markets
+            of <span className="text-fg-2">{filtered.length}</span> markets
           </span>
           <div className="flex items-center gap-1.5">
             <Button
@@ -473,7 +463,7 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
             >
               Prev
             </Button>
-            <span className="tabular px-1 text-slate-400">
+            <span className="tabular px-1 text-fg-4">
               {safePage + 1} / {pageCount}
             </span>
             <Button
@@ -489,15 +479,15 @@ export const LiveMarketScannerTable: React.FC<LiveMarketScannerTableProps> = ({
       )}
 
       {/* Legend */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-[#1e2b40] bg-[#0a1018] px-4 py-2 text-[10.5px] text-slate-500">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-line bg-surface-deep px-4 py-2 text-[10.5px] text-fg-5">
         <span className="inline-flex items-center gap-1.5">
-          <ShieldCheck className="h-3 w-3 text-emerald-400" /> Qualified
+          <ShieldCheck className="h-3 w-3 text-success" /> Qualified
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <Zap className="h-3 w-3 text-amber-400" /> Watchlist
+          <Zap className="h-3 w-3 text-warning" /> Watchlist
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <ShieldAlert className="h-3 w-3 text-rose-400" /> Rejected
+          <ShieldAlert className="h-3 w-3 text-danger" /> Rejected
         </span>
         <span className="ml-auto hidden sm:inline">Click any row to load it in the chart workspace</span>
       </div>

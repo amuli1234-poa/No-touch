@@ -75,7 +75,7 @@ export const BarChart: React.FC<BarChartProps> = ({
           const pct = (d.value / max) * 100;
           return (
             <div key={d.label} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1.5">
-              <span className="tabular text-[10.5px] font-semibold text-slate-300">
+              <span className="tabular text-[10.5px] font-semibold text-fg-3">
                 {d.value}
                 {valueSuffix}
               </span>
@@ -94,7 +94,7 @@ export const BarChart: React.FC<BarChartProps> = ({
         {data.map((d) => (
           <div
             key={d.label}
-            className="min-w-0 flex-1 truncate text-center text-[10px] text-slate-500"
+            className="min-w-0 flex-1 truncate text-center text-[10px] text-fg-5"
             title={d.label}
           >
             {d.label}
@@ -121,7 +121,7 @@ export const Donut: React.FC<DonutProps> = ({ segments, size = 132, centerLabel,
   return (
     <div className="relative" style={{ width: size, height: size }}>
       <svg viewBox="0 0 132 132" className="h-full w-full -rotate-90" aria-hidden="true">
-        <circle cx="66" cy="66" r={radius} fill="none" stroke="#0b1220" strokeWidth="12" />
+        <circle cx="66" cy="66" r={radius} fill="none" stroke="var(--surface-deepest)" strokeWidth="12" />
         {total > 0 &&
           segments.map((s, i) => {
             const length = (s.value / total) * circumference;
@@ -145,10 +145,10 @@ export const Donut: React.FC<DonutProps> = ({ segments, size = 132, centerLabel,
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         {centerValue && (
-          <span className="tabular text-[20px] font-bold leading-none text-white">{centerValue}</span>
+          <span className="tabular text-[20px] font-bold leading-none text-fg-1">{centerValue}</span>
         )}
         {centerLabel && (
-          <span className="mt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+          <span className="mt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-5">
             {centerLabel}
           </span>
         )}
@@ -206,7 +206,7 @@ export const AreaSeries: React.FC<AreaSeriesProps> = ({
             x2={w - pad}
             y1={h - pad - g * (h - pad * 2)}
             y2={h - pad - g * (h - pad * 2)}
-            stroke="#162133"
+            stroke="var(--chart-grid)"
             strokeWidth="1"
             strokeDasharray="3 4"
           />
@@ -217,11 +217,11 @@ export const AreaSeries: React.FC<AreaSeriesProps> = ({
           <circle key={i} cx={x} cy={y} r="2.5" fill={color} vectorEffect="non-scaling-stroke" />
         ))}
       </svg>
-      <div className="mt-1.5 flex justify-between text-[10px] text-slate-500">
+      <div className="mt-1.5 flex justify-between text-[10px] text-fg-5">
         {points.map((p) => (
           <span key={p.label} className="truncate">
             {p.label}
-            {suffix && <span className="ml-1 text-slate-600">{suffix}</span>}
+            {suffix && <span className="ml-1 text-fg-6">{suffix}</span>}
           </span>
         ))}
       </div>

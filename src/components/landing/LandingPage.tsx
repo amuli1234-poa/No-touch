@@ -31,25 +31,25 @@ import { navigate, navigateToSection } from '../../lib/router';
    -------------------------------------------------------------------------- */
 
 const Hero: React.FC = () => (
-  <section className="relative isolate overflow-hidden pt-28 sm:pt-32 lg:pt-36">
+  <section className="ws-hero-band relative isolate overflow-hidden pt-28 sm:pt-32 lg:pt-36">
     <HeroBackground />
 
     <div className="relative z-10 mx-auto w-full max-w-6xl px-5 pb-8 sm:px-8">
       <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:gap-10">
         <Reveal className="text-center lg:text-left">
-          <span className="inline-flex items-center gap-2 rounded-full border border-[var(--ws-hairline)] bg-[#0d1420]/80 px-3.5 py-1.5 text-[11px] font-semibold text-slate-300">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#38BDF8]" />
+          <span className="inline-flex items-center gap-2 rounded-full border border-[var(--ws-hairline)] bg-surface/80 px-3.5 py-1.5 text-[11px] font-semibold text-fg-3">
+            <span className="h-1.5 w-1.5 rounded-full bg-accent-cyan" />
             {BRAND.category}
           </span>
 
-          <h1 className="mt-6 text-[34px] font-extrabold leading-[1.04] tracking-[-0.035em] text-white sm:text-[46px] lg:text-[54px]">
+          <h1 className="mt-6 text-[34px] font-extrabold leading-[1.04] tracking-[-0.035em] text-fg-1 sm:text-[46px] lg:text-[54px]">
             See Beyond the Candles.
-            <span className="mt-1 block bg-gradient-to-r from-[#60A5FA] via-[#0068B5] to-[#38BDF8] bg-clip-text text-transparent">
+            <span className="mt-1 block bg-gradient-to-r from-accent-soft via-accent to-accent-cyan bg-clip-text text-transparent">
               Understand the Market.
             </span>
           </h1>
 
-          <p className="mx-auto mt-5 max-w-xl text-[14.5px] leading-relaxed text-[#8A97AE] sm:text-[16px] lg:mx-0">
+          <p className="mx-auto mt-5 max-w-xl text-[14.5px] leading-relaxed text-fg-4 sm:text-[16px] lg:mx-0">
             Advanced market scanning and analytical intelligence designed to help traders identify
             potential opportunities, understand market conditions and make more informed trading
             decisions.
@@ -73,13 +73,13 @@ const Hero: React.FC = () => (
             </WsButton>
           </div>
 
-          <div className="mt-7 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px] text-slate-500 lg:justify-start">
+          <div className="mt-7 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px] text-fg-5 lg:justify-start">
             <span className="inline-flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-[#2FD4A8]" />
+              <ShieldCheck className="h-4 w-4 text-tint-teal" />
               Structured, rules-based scanning
             </span>
             <span className="inline-flex items-center gap-2">
-              <Eye className="h-4 w-4 text-[#7DD3FC]" />
+              <Eye className="h-4 w-4 text-tint-sky" />
               Transparent analytical output
             </span>
           </div>
@@ -111,9 +111,9 @@ const TrustStrip: React.FC = () => (
       {TRUST.map((t) => (
         <span
           key={t.label}
-          className="inline-flex items-center gap-2 rounded-full border border-[var(--ws-hairline)] bg-[#0d1420]/70 px-3.5 py-2 text-[12px] font-medium text-slate-300"
+          className="inline-flex items-center gap-2 rounded-full border border-[var(--ws-hairline)] bg-surface/70 px-3.5 py-2 text-[12px] font-medium text-fg-3"
         >
-          <span className="text-[#60A5FA]">{t.icon}</span>
+          <span className="text-accent-soft">{t.icon}</span>
           {t.label}
         </span>
       ))}
@@ -169,12 +169,12 @@ const Features: React.FC = () => (
     <div className="mt-12 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {FEATURES.map((f, i) => (
         <Reveal key={f.title} delay={i * 60} as="article">
-          <div className="group h-full rounded-[16px] border border-[var(--ws-hairline)] bg-[#0d1420] p-5 transition-colors hover:border-[#0068B5]/45 hover:bg-[#121b2b]">
-            <span className="flex h-11 w-11 items-center justify-center rounded-[12px] border border-[#0068B5]/25 bg-[#0068B5]/10 text-[#60A5FA]">
+          <div className="group h-full rounded-[16px] border border-[var(--ws-hairline)] bg-surface p-5 transition-colors hover:border-accent/45 hover:bg-surface-raised">
+            <span className="flex h-11 w-11 items-center justify-center rounded-[12px] border border-accent/25 bg-accent/10 text-accent-soft">
               {f.icon}
             </span>
-            <h3 className="mt-4 text-[15px] font-bold tracking-tight text-white">{f.title}</h3>
-            <p className="mt-2 text-[13px] leading-relaxed text-[#8A97AE]">{f.body}</p>
+            <h3 className="mt-4 text-[15px] font-bold tracking-tight text-fg-1">{f.title}</h3>
+            <p className="mt-2 text-[13px] leading-relaxed text-fg-4">{f.body}</p>
           </div>
         </Reveal>
       ))}
@@ -203,9 +203,9 @@ const ScannerShowcase: React.FC = () => (
             'Per-market breakdown of alignment, sweeps, gaps and protected swings',
             'Session and calibration view for reviewing outcomes over time'
           ].map((item) => (
-            <li key={item} className="flex items-start gap-3 text-[13.5px] leading-relaxed text-slate-300">
-              <span className="mt-[3px] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[#38BDF8]/30 bg-[#38BDF8]/10">
-                <Sparkles className="h-3 w-3 text-[#7DD3FC]" />
+            <li key={item} className="flex items-start gap-3 text-[13.5px] leading-relaxed text-fg-3">
+              <span className="mt-[3px] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-accent-cyan/30 bg-accent-cyan/10">
+                <Sparkles className="h-3 w-3 text-tint-sky" />
               </span>
               {item}
             </li>
@@ -267,17 +267,17 @@ const HowItWorks: React.FC = () => (
     <div className="mt-12 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       {STEPS.map((s, i) => (
         <Reveal key={s.title} delay={i * 70} as="article" className="h-full">
-          <div className="relative h-full rounded-[16px] border border-[var(--ws-hairline)] bg-[#0d1420] p-5">
+          <div className="relative h-full rounded-[16px] border border-[var(--ws-hairline)] bg-surface p-5">
             <div className="flex items-center justify-between">
-              <span className="flex h-11 w-11 items-center justify-center rounded-[12px] border border-[#38BDF8]/25 bg-[#38BDF8]/10 text-[#7DD3FC]">
+              <span className="flex h-11 w-11 items-center justify-center rounded-[12px] border border-accent-cyan/25 bg-accent-cyan/10 text-tint-sky">
                 {s.icon}
               </span>
-              <span className="tabular text-[26px] font-extrabold leading-none text-[#1e2b40]">
+              <span className="tabular text-[26px] font-extrabold leading-none text-fg-7">
                 {String(i + 1).padStart(2, '0')}
               </span>
             </div>
-            <h3 className="mt-4 text-[15px] font-bold tracking-tight text-white">{s.title}</h3>
-            <p className="mt-2 text-[13px] leading-relaxed text-[#8A97AE]">{s.body}</p>
+            <h3 className="mt-4 text-[15px] font-bold tracking-tight text-fg-1">{s.title}</h3>
+            <p className="mt-2 text-[13px] leading-relaxed text-fg-4">{s.body}</p>
           </div>
         </Reveal>
       ))}
@@ -328,20 +328,20 @@ const WhyWickSentinel: React.FC = () => (
     <div className="mt-12 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {PILLARS.map((p, i) => (
         <Reveal key={p.title} delay={i * 60} as="article" className="h-full">
-          <div className="h-full rounded-[16px] border border-[var(--ws-hairline)] bg-gradient-to-b from-[#121b2b] to-[#0d1420] p-5">
-            <span className="flex h-10 w-10 items-center justify-center rounded-[11px] border border-[var(--ws-hairline)] bg-[#121b2b] text-[#60A5FA]">
+          <div className="h-full rounded-[16px] border border-[var(--ws-hairline)] bg-gradient-to-b from-surface-raised to-surface p-5">
+            <span className="flex h-10 w-10 items-center justify-center rounded-[11px] border border-[var(--ws-hairline)] bg-surface-raised text-accent-soft">
               {p.icon}
             </span>
-            <h3 className="mt-4 text-[14.5px] font-bold tracking-tight text-white">{p.title}</h3>
-            <p className="mt-2 text-[12.5px] leading-relaxed text-[#8A97AE]">{p.body}</p>
+            <h3 className="mt-4 text-[14.5px] font-bold tracking-tight text-fg-1">{p.title}</h3>
+            <p className="mt-2 text-[12.5px] leading-relaxed text-fg-4">{p.body}</p>
           </div>
         </Reveal>
       ))}
 
       <Reveal delay={300} as="article" className="h-full">
-        <div className="flex h-full flex-col justify-center rounded-[16px] border border-[#0068B5]/30 bg-[#0068B5]/[0.08] p-5">
-          <h3 className="text-[14.5px] font-bold tracking-tight text-white">Independent by design</h3>
-          <p className="mt-2 text-[12.5px] leading-relaxed text-slate-300">
+        <div className="flex h-full flex-col justify-center rounded-[16px] border border-accent/30 bg-accent/[0.08] p-5">
+          <h3 className="text-[14.5px] font-bold tracking-tight text-fg-1">Independent by design</h3>
+          <p className="mt-2 text-[12.5px] leading-relaxed text-fg-3">
             WickSentinel is a third-party analytical tool. It is not affiliated with, endorsed by, or
             operated by Deriv or any broker.
           </p>
@@ -404,7 +404,7 @@ const Faq: React.FC = () => {
         description="What the platform is, what it needs from you, and the risks that come with this kind of trading."
       />
 
-      <div className="mx-auto mt-11 max-w-3xl divide-y divide-[var(--ws-hairline)] overflow-hidden rounded-[16px] border border-[var(--ws-hairline)] bg-[#0d1420]">
+      <div className="mx-auto mt-11 max-w-3xl divide-y divide-[var(--ws-hairline)] overflow-hidden rounded-[16px] border border-[var(--ws-hairline)] bg-surface">
         {FAQS.map((item, i) => {
           const isOpen = open === i;
           return (
@@ -412,12 +412,12 @@ const Faq: React.FC = () => {
               <button
                 onClick={() => setOpen(isOpen ? null : i)}
                 aria-expanded={isOpen}
-                className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-[#121b2b]"
+                className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-surface-raised"
               >
-                <span className="text-[14px] font-semibold tracking-tight text-white">{item.q}</span>
+                <span className="text-[14px] font-semibold tracking-tight text-fg-1">{item.q}</span>
                 <ChevronDown
-                  className={`h-4 w-4 shrink-0 text-slate-500 transition-transform duration-300 ${
-                    isOpen ? 'rotate-180 text-[#60A5FA]' : ''
+                  className={`h-4 w-4 shrink-0 text-fg-5 transition-transform duration-300 ${
+                    isOpen ? 'rotate-180 text-accent-soft' : ''
                   }`}
                 />
               </button>
@@ -427,7 +427,7 @@ const Faq: React.FC = () => {
                 }`}
               >
                 <div className="overflow-hidden">
-                  <p className="px-5 pb-5 text-[13px] leading-relaxed text-[#8A97AE]">{item.a}</p>
+                  <p className="px-5 pb-5 text-[13px] leading-relaxed text-fg-4">{item.a}</p>
                 </div>
               </div>
             </div>
@@ -445,13 +445,13 @@ const Faq: React.FC = () => {
 const ClosingCta: React.FC = () => (
   <Section className="border-t border-[var(--ws-hairline)]">
     <Reveal>
-      <div className="relative overflow-hidden rounded-[20px] border border-[var(--ws-hairline)] bg-gradient-to-br from-[#121b2b] via-[#0d1420] to-[#0b1220] px-6 py-12 text-center sm:px-12 sm:py-14">
-        <div className="pointer-events-none absolute -top-24 left-1/2 h-64 w-[560px] -translate-x-1/2 rounded-full bg-[#0068B5]/15 blur-[110px]" />
+      <div className="relative overflow-hidden rounded-[20px] border border-[var(--ws-hairline)] bg-gradient-to-br from-surface-raised via-surface to-surface-deepest px-6 py-12 text-center sm:px-12 sm:py-14">
+        <div className="pointer-events-none absolute -top-24 left-1/2 h-64 w-[560px] -translate-x-1/2 rounded-full bg-accent/15 blur-[110px]" />
         <div className="relative">
-          <h2 className="mx-auto max-w-xl text-[26px] font-extrabold leading-tight tracking-[-0.03em] text-white sm:text-[32px]">
+          <h2 className="mx-auto max-w-xl text-[26px] font-extrabold leading-tight tracking-[-0.03em] text-fg-1 sm:text-[32px]">
             See beyond the candles
           </h2>
-          <p className="mx-auto mt-4 max-w-lg text-[14.5px] leading-relaxed text-[#8A97AE]">
+          <p className="mx-auto mt-4 max-w-lg text-[14.5px] leading-relaxed text-fg-4">
             Open the workspace and review live market conditions across the supported synthetic
             indices — no account needed in this build.
           </p>
@@ -506,26 +506,26 @@ const FOOTER_NAV: { heading: string; links: { label: string; onClick: () => void
 ];
 
 const LandingFooter: React.FC = () => (
-  <footer className="border-t border-[var(--ws-hairline)] bg-[#0a1018]">
+  <footer className="border-t border-[var(--ws-hairline)] bg-surface-deep">
     <div className="mx-auto w-full max-w-6xl px-5 py-14 sm:px-8">
       <div className="grid gap-10 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
         <div>
           <BrandLogo showTagline />
-          <p className="mt-4 max-w-xs text-[12.5px] leading-relaxed text-[#8A97AE]">
+          <p className="mt-4 max-w-xs text-[12.5px] leading-relaxed text-fg-4">
             {BRAND.tagline}
           </p>
           <a
             href="mailto:contact@wicksentinel.app"
-            className="mt-4 inline-flex items-center gap-2 text-[12.5px] font-medium text-slate-300 transition-colors hover:text-white"
+            className="mt-4 inline-flex items-center gap-2 text-[12.5px] font-medium text-fg-3 transition-colors hover:text-fg-1"
           >
-            <Mail className="h-3.5 w-3.5 text-[#60A5FA]" />
+            <Mail className="h-3.5 w-3.5 text-accent-soft" />
             contact@wicksentinel.app
           </a>
         </div>
 
         {FOOTER_NAV.map((col) => (
           <div key={col.heading}>
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-fg-5">
               {col.heading}
             </h3>
             <ul className="mt-4 space-y-2.5">
@@ -533,7 +533,7 @@ const LandingFooter: React.FC = () => (
                 <li key={link.label}>
                   <button
                     onClick={link.onClick}
-                    className="text-[13px] text-slate-300 transition-colors hover:text-white"
+                    className="text-[13px] text-fg-3 transition-colors hover:text-fg-1"
                   >
                     {link.label}
                   </button>
@@ -545,10 +545,10 @@ const LandingFooter: React.FC = () => (
       </div>
 
       <div className="mt-12 space-y-4 border-t border-[var(--ws-hairline)] pt-8">
-        <div className="flex items-start gap-3 rounded-[12px] border border-[#F5B451]/20 bg-[#F5B451]/[0.06] px-4 py-3.5">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#F5B451]" />
-          <p className="text-[12px] leading-relaxed text-slate-300">
-            <span className="font-semibold text-white">Risk warning.</span> Trading synthetic indices
+        <div className="flex items-start gap-3 rounded-[12px] border border-warning/20 bg-warning/[0.06] px-4 py-3.5">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-tint-amber" />
+          <p className="text-[12px] leading-relaxed text-fg-3">
+            <span className="font-semibold text-fg-1">Risk warning.</span> Trading synthetic indices
             and related options is high risk and can result in the loss of all capital committed.
             WickSentinel provides analytical tools only. It does not provide financial advice, does
             not execute trades, and does not guarantee any outcome. Past performance and analytical
@@ -556,10 +556,10 @@ const LandingFooter: React.FC = () => (
           </p>
         </div>
 
-        <div className="flex items-start gap-3 rounded-[12px] border border-[var(--ws-hairline)] bg-[#0d1420] px-4 py-3.5">
-          <Lock className="mt-0.5 h-4 w-4 shrink-0 text-[#7DD3FC]" />
-          <p className="text-[12px] leading-relaxed text-slate-400">
-            <span className="font-semibold text-slate-200">Independent platform.</span> WickSentinel
+        <div className="flex items-start gap-3 rounded-[12px] border border-[var(--ws-hairline)] bg-surface px-4 py-3.5">
+          <Lock className="mt-0.5 h-4 w-4 shrink-0 text-tint-sky" />
+          <p className="text-[12px] leading-relaxed text-fg-4">
+            <span className="font-semibold text-fg-2">Independent platform.</span> WickSentinel
             is an independent third-party market intelligence platform. It is not officially
             affiliated with, endorsed by, sponsored by or otherwise connected to Deriv. All product
             names, logos and brands are the property of their respective owners and are used for
@@ -567,7 +567,7 @@ const LandingFooter: React.FC = () => (
           </p>
         </div>
 
-        <div className="flex flex-col gap-2 pt-2 text-[11.5px] text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 pt-2 text-[11.5px] text-fg-5 sm:flex-row sm:items-center sm:justify-between">
           <span>© {new Date().getFullYear()} WickSentinel. All rights reserved.</span>
           <span>{BRAND.category}</span>
         </div>
@@ -581,7 +581,7 @@ const LandingFooter: React.FC = () => (
    -------------------------------------------------------------------------- */
 
 export const LandingPage: React.FC = () => (
-  <div className="min-h-screen bg-[#060b16]">
+  <div className="min-h-screen bg-app">
     {/* Warm the hero photograph as early as possible without blocking render. */}
     <link rel="preload" as="image" href={HERO_IMAGE_2X} fetchPriority="high" />
     <LandingNav />

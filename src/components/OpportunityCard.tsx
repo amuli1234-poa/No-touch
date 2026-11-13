@@ -38,13 +38,13 @@ interface MetricProps {
 }
 
 const Metric: React.FC<MetricProps> = ({ label, value, tone }) => (
-  <div className="rounded-[10px] border border-[#162133] bg-[#0a1018] px-3 py-2">
-    <div className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+  <div className="rounded-[10px] border border-line-soft bg-surface-deep px-3 py-2">
+    <div className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-fg-5">
       {label}
     </div>
     <div
       className="tabular mt-1 truncate text-[13px] font-semibold"
-      style={{ color: tone ? TONE_HEX[tone] : '#E2E8F0' }}
+      style={{ color: tone ? TONE_HEX[tone] : 'var(--fg-2)' }}
     >
       {value}
     </div>
@@ -103,16 +103,16 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({
     <Card
       variant={isSelected ? 'elevated' : 'default'}
       className={`overflow-hidden transition-colors ${
-        isSelected ? 'border-[#0068B5]/40' : ''
+        isSelected ? 'border-accent/40' : ''
       }`}
     >
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#1e2b40] px-4 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => onSelectMarket(opp.symbol)}
-              className="text-[15px] font-bold tracking-tight text-white transition-colors hover:text-[#60A5FA]"
+              className="text-[15px] font-bold tracking-tight text-fg-1 transition-colors hover:text-accent-soft"
             >
               {opp.displayName}
             </button>
@@ -123,20 +123,20 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({
               {opp.direction}
             </Badge>
           </div>
-          <div className="tabular mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-slate-400">
+          <div className="tabular mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-fg-4">
             <span>
-              Spot <span className="font-semibold text-slate-200">{formatPrice(opp.currentPrice)}</span>
+              Spot <span className="font-semibold text-fg-2">{formatPrice(opp.currentPrice)}</span>
             </span>
-            <span className="text-slate-600">•</span>
+            <span className="text-fg-6">•</span>
             <span>
               Volatility{' '}
               <span className="font-semibold" style={{ color: TONE_HEX[volatilityTone(opp.volatilityRegime)] }}>
                 {opp.volatilityRegime}
               </span>
             </span>
-            <span className="text-slate-600">•</span>
+            <span className="text-fg-6">•</span>
             <span>
-              ATR <span className="font-semibold text-slate-200">{opp.atr.toFixed(3)}</span>
+              ATR <span className="font-semibold text-fg-2">{opp.atr.toFixed(3)}</span>
             </span>
           </div>
         </div>
@@ -182,7 +182,7 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({
 
         {/* Contract proposal */}
         {opp.barrierProposal ? (
-          <div className="grid grid-cols-2 gap-2 rounded-[10px] border border-[#1e2b40] bg-[#0a1018] p-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 rounded-[10px] border border-line bg-surface-deep p-3 sm:grid-cols-4">
             <Metric label="Contract" value={`No Touch (${opp.barrierProposal.direction})`} tone="accent" />
             <Metric
               label="Barrier"
@@ -201,7 +201,7 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({
             />
           </div>
         ) : (
-          <div className="flex items-center gap-2 rounded-[10px] border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2.5 text-[11.5px] text-amber-300/90">
+          <div className="flex items-center gap-2 rounded-[10px] border border-warning/25 bg-warning/[0.06] px-3 py-2.5 text-[11.5px] text-warning/90">
             <Info className="h-4 w-4 shrink-0" />
             <span>
               No economically viable No Touch barrier currently meets the minimum expectation threshold.
@@ -231,8 +231,8 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({
         {/* Technical scoring engine */}
         <div className="space-y-2">
           <div className="flex items-center justify-between text-[12px]">
-            <span className="font-medium text-slate-400">Technical scoring engine</span>
-            <span className="tabular font-semibold text-[#60A5FA]">{opp.score.total} / 100</span>
+            <span className="font-medium text-fg-4">Technical scoring engine</span>
+            <span className="tabular font-semibold text-accent-soft">{opp.score.total} / 100</span>
           </div>
           <SegmentedBar segments={segments} height={8} />
           <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 pt-1 sm:grid-cols-4">
@@ -240,10 +240,10 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({
               const val = opp.score[row.key] as number;
               return (
                 <div key={row.label} className="flex items-center justify-between gap-2 text-[10.5px]">
-                  <span className="text-slate-500">{row.label}</span>
+                  <span className="text-fg-5">{row.label}</span>
                   <span
                     className="tabular font-semibold"
-                    style={{ color: val > 0 ? TONE_HEX[row.tone] : '#475569' }}
+                    style={{ color: val > 0 ? TONE_HEX[row.tone] : 'var(--fg-6)' }}
                   >
                     {val}/{row.max}
                   </span>
@@ -254,12 +254,12 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({
         </div>
 
         {/* Explanation */}
-        <div className="rounded-[10px] border border-[#1e2b40] bg-[#0a1018] px-3 py-2.5 text-[12px] leading-relaxed text-slate-300">
+        <div className="rounded-[10px] border border-line bg-surface-deep px-3 py-2.5 text-[12px] leading-relaxed text-fg-3">
           {opp.explanation}
         </div>
 
         {/* Expandable disclosure sections */}
-        <div className="divide-y divide-[#162133] overflow-hidden rounded-[10px] border border-[#1e2b40]">
+        <div className="divide-y divide-line-soft overflow-hidden rounded-[10px] border border-line">
           {mandatoryFailures.length > 0 && (
             <Disclosure
               id="mandatory"
@@ -270,8 +270,8 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({
             >
               <ul className="space-y-1.5">
                 {mandatoryFailures.map((reason, i) => (
-                  <li key={i} className="flex items-start gap-2 text-[11.5px] text-slate-300">
-                    <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-rose-500" />
+                  <li key={i} className="flex items-start gap-2 text-[11.5px] text-fg-3">
+                    <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-danger" />
                     <span>{reason}</span>
                   </li>
                 ))}
@@ -289,8 +289,8 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({
             >
               <ul className="space-y-1.5">
                 {opp.rejectionReasons.map((reason, i) => (
-                  <li key={i} className="flex items-start gap-2 text-[11.5px] text-slate-400">
-                    <span className="mt-0.5 text-rose-400">✕</span>
+                  <li key={i} className="flex items-start gap-2 text-[11.5px] text-fg-4">
+                    <span className="mt-0.5 text-danger">✕</span>
                     <span>{reason}</span>
                   </li>
                 ))}
@@ -309,23 +309,23 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({
               {opp.stepAudit.map((item) => (
                 <div
                   key={item.step}
-                  className="flex items-start justify-between gap-3 rounded-[8px] border border-[#162133] bg-[#0a1018] px-2.5 py-2"
+                  className="flex items-start justify-between gap-3 rounded-[8px] border border-line-soft bg-surface-deep px-2.5 py-2"
                 >
                   <div className="flex min-w-0 items-start gap-2">
                     <span
                       className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold ${
                         item.passed
-                          ? 'bg-emerald-500/15 text-emerald-400'
-                          : 'bg-rose-500/15 text-rose-400'
+                          ? 'bg-success/15 text-success'
+                          : 'bg-danger/15 text-danger'
                       }`}
                     >
                       {item.passed ? '✓' : '✗'}
                     </span>
                     <div className="min-w-0">
-                      <div className="text-[11.5px] font-medium text-slate-200">
+                      <div className="text-[11.5px] font-medium text-fg-2">
                         Step {item.step}: {item.name}
                       </div>
-                      <div className="mt-0.5 text-[10.5px] text-slate-500">{item.detail}</div>
+                      <div className="mt-0.5 text-[10.5px] text-fg-5">{item.detail}</div>
                     </div>
                   </div>
                 </div>
@@ -367,7 +367,7 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({
 
         {/* Action bar */}
         <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
-          <div className="inline-flex items-center gap-1.5 text-[10.5px] text-slate-500">
+          <div className="inline-flex items-center gap-1.5 text-[10.5px] text-fg-5">
             <Clock className="h-3 w-3" />
             <span className="tabular">
               Updated {new Date(opp.detectedEpoch * 1000).toLocaleTimeString()}
@@ -375,7 +375,7 @@ export const OpportunityCard: React.FC<OpportunityCardProps> = ({
           </div>
           <button
             onClick={() => (onInspectChart ?? onSelectMarket)(opp.symbol)}
-            className="inline-flex items-center gap-1.5 rounded-[10px] border border-[#0068B5]/40 bg-[#0068B5]/15 px-3 py-1.5 text-[12px] font-semibold text-[#60A5FA] transition-colors hover:bg-[#0068B5]/25"
+            className="inline-flex items-center gap-1.5 rounded-[10px] border border-accent/40 bg-accent/15 px-3 py-1.5 text-[12px] font-semibold text-accent-soft transition-colors hover:bg-accent/25"
           >
             {onInspectChart ? <Crosshair className="h-3.5 w-3.5" /> : <Target className="h-3.5 w-3.5" />}
             Inspect on chart
@@ -396,18 +396,18 @@ interface DisclosureProps {
 }
 
 const Disclosure: React.FC<DisclosureProps> = ({ id, label, tone, open, onToggle, children }) => (
-  <div className="bg-[#0d1420]">
+  <div className="bg-surface">
     <button
       onClick={() => onToggle(id)}
       aria-expanded={open}
-      className="flex w-full items-center justify-between gap-2 px-3.5 py-2.5 text-left transition-colors hover:bg-[#121b2b]"
+      className="flex w-full items-center justify-between gap-2 px-3.5 py-2.5 text-left transition-colors hover:bg-surface-raised"
     >
-      <span className="flex items-center gap-2 text-[12px] font-medium text-slate-300">
+      <span className="flex items-center gap-2 text-[12px] font-medium text-fg-3">
         <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: TONE_HEX[tone] }} />
         {label}
       </span>
       <ChevronDown
-        className={`h-4 w-4 shrink-0 text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`}
+        className={`h-4 w-4 shrink-0 text-fg-5 transition-transform ${open ? 'rotate-180' : ''}`}
       />
     </button>
     {open && <div className="animate-fade-in px-3.5 pb-3.5">{children}</div>}

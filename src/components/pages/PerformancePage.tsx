@@ -293,17 +293,17 @@ export const PerformancePage: React.FC<PerformancePageProps> = ({
               analytics.calibrationCurve.map((bin) => (
                 <div key={bin.bucket} className="space-y-1.5">
                   <div className="flex items-center justify-between text-[11.5px]">
-                    <span className="text-slate-300">
+                    <span className="text-fg-3">
                       Predicted survival {bin.bucket}
                     </span>
-                    <span className="tabular font-semibold text-emerald-400">
+                    <span className="tabular font-semibold text-success">
                       Observed {bin.actualSurvivalRate.toFixed(1)}%
-                      <span className="ml-1.5 text-slate-500">({bin.count})</span>
+                      <span className="ml-1.5 text-fg-5">({bin.count})</span>
                     </span>
                   </div>
-                  <div className="relative h-2 overflow-hidden rounded-full bg-[#0b1220]">
+                  <div className="relative h-2 overflow-hidden rounded-full bg-surface-deepest">
                     <div
-                      className="absolute inset-y-0 left-0 rounded-full bg-sky-500/25"
+                      className="absolute inset-y-0 left-0 rounded-full bg-accent-cyan/25"
                       style={{ width: `${bin.predictedProb}%` }}
                       title="Predicted"
                     />
@@ -339,10 +339,10 @@ export const PerformancePage: React.FC<PerformancePageProps> = ({
                   return (
                     <div key={r.reason} className="space-y-1">
                       <div className="flex items-start justify-between gap-3 text-[11.5px]">
-                        <span className="text-slate-300">{r.reason}</span>
-                        <span className="tabular shrink-0 font-semibold text-slate-400">{r.count}</span>
+                        <span className="text-fg-3">{r.reason}</span>
+                        <span className="tabular shrink-0 font-semibold text-fg-4">{r.count}</span>
                       </div>
-                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#0b1220]">
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-deepest">
                         <div
                           className="h-full rounded-full"
                           style={{
@@ -382,7 +382,7 @@ export const PerformancePage: React.FC<PerformancePageProps> = ({
                 <div className="space-y-3">
                   <LegendRow color={TONE_HEX.success} label="Survived" value={formatPercent(analytics.barrierSurvivalRate)} />
                   <LegendRow color={TONE_HEX.danger} label="Touched" value={formatPercent(analytics.actualTouchFrequency)} />
-                  <div className="border-t border-[#162133] pt-3">
+                  <div className="border-t border-line-soft pt-3">
                     <LegendRow
                       color={TONE_HEX.info}
                       label="Standard win rate"
@@ -433,9 +433,9 @@ export const PerformancePage: React.FC<PerformancePageProps> = ({
             {winRateSeries.length > 0 ? (
               <>
                 <Sparkline data={winRateSeries.map((w) => w.value)} tone="success" height={150} max={100} min={0} />
-                <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
+                <div className="mt-2 flex items-center justify-between text-[11px] text-fg-5">
                   <span>First settlement</span>
-                  <span className="tabular text-slate-300">
+                  <span className="tabular text-fg-3">
                     Current {winRateSeries[winRateSeries.length - 1].value}%
                   </span>
                   <span>Latest</span>
@@ -455,14 +455,14 @@ export const PerformancePage: React.FC<PerformancePageProps> = ({
             <CardHeader title="Performance by expiry duration" subtitle="Win rate per contract horizon" />
             <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-3">
               {analytics.resultsByExpiry.map((exp) => (
-                <div key={exp.durationMinutes} className="rounded-[10px] border border-[#162133] bg-[#0a1018] px-3 py-2.5">
-                  <div className="text-[10px] uppercase tracking-wide text-slate-500">
+                <div key={exp.durationMinutes} className="rounded-[10px] border border-line-soft bg-surface-deep px-3 py-2.5">
+                  <div className="text-[10px] uppercase tracking-wide text-fg-5">
                     {exp.durationMinutes}m horizon
                   </div>
-                  <div className="tabular mt-1 text-[16px] font-bold text-white">
+                  <div className="tabular mt-1 text-[16px] font-bold text-fg-1">
                     {formatPercent(exp.winRate)}
                   </div>
-                  <div className="text-[10px] text-slate-500">{exp.total} contracts</div>
+                  <div className="text-[10px] text-fg-5">{exp.total} contracts</div>
                 </div>
               ))}
             </div>
@@ -477,9 +477,9 @@ export const PerformancePage: React.FC<PerformancePageProps> = ({
                 .slice(0, 5)
                 .map((m) => (
                   <div key={m.symbol} className="flex items-center justify-between gap-3 text-[12px]">
-                    <span className="truncate font-medium text-slate-200">{m.symbol}</span>
+                    <span className="truncate font-medium text-fg-2">{m.symbol}</span>
                     <span className="flex shrink-0 items-center gap-3">
-                      <span className="tabular text-slate-400">{m.total} trades</span>
+                      <span className="tabular text-fg-4">{m.total} trades</span>
                       <Badge tone={m.winRate >= 60 ? 'success' : m.winRate >= 40 ? 'warning' : 'danger'}>
                         {formatPercent(m.winRate, 0)}
                       </Badge>
@@ -499,8 +499,8 @@ export const PerformancePage: React.FC<PerformancePageProps> = ({
         />
         <div className="max-h-[420px] overflow-auto">
           <table className="w-full min-w-[820px] border-collapse text-left text-[12px]">
-            <thead className="sticky top-0 z-10 bg-[#0b1220] text-[10px] uppercase tracking-[0.08em] text-slate-500">
-              <tr className="border-b border-[#1e2b40]">
+            <thead className="sticky top-0 z-10 bg-surface-deepest text-[10px] uppercase tracking-[0.08em] text-fg-5">
+              <tr className="border-b border-line">
                 <th className="px-3 py-2.5 font-semibold">Time</th>
                 <th className="px-3 py-2.5 font-semibold">Market</th>
                 <th className="px-3 py-2.5 font-semibold">Direction</th>
@@ -511,18 +511,18 @@ export const PerformancePage: React.FC<PerformancePageProps> = ({
                 <th className="px-3 py-2.5 text-right font-semibold">P / L</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#162133]">
+            <tbody className="divide-y divide-line-soft">
               {records.length > 0 ? (
                 records.map((r) => (
-                  <tr key={r.id} className="transition-colors hover:bg-[#121b2b]">
-                    <td className="tabular px-3 py-2.5 text-slate-400">
+                  <tr key={r.id} className="transition-colors hover:bg-surface-raised">
+                    <td className="tabular px-3 py-2.5 text-fg-4">
                       {new Date(r.detectedEpoch * 1000).toLocaleTimeString()}
                     </td>
                     <td className="px-3 py-2.5">
                       <span className="flex items-center gap-2">
-                        <span className="font-medium text-slate-100">{r.displayName}</span>
+                        <span className="font-medium text-fg-1">{r.displayName}</span>
                         {r.is1s && (
-                          <span className="rounded border border-[#0068B5]/30 bg-[#0068B5]/10 px-1 py-px text-[9px] font-bold text-[#60A5FA]">
+                          <span className="rounded border border-accent/30 bg-accent/10 px-1 py-px text-[9px] font-bold text-accent-soft">
                             1s
                           </span>
                         )}
@@ -533,13 +533,13 @@ export const PerformancePage: React.FC<PerformancePageProps> = ({
                         {r.direction}
                       </Badge>
                     </td>
-                    <td className="tabular px-3 py-2.5 text-right font-semibold text-slate-200">
+                    <td className="tabular px-3 py-2.5 text-right font-semibold text-fg-2">
                       {r.technicalScore}
                     </td>
-                    <td className="tabular px-3 py-2.5 text-right text-slate-300">
+                    <td className="tabular px-3 py-2.5 text-right text-fg-3">
                       {r.barrierLevel.toFixed(3)}
                     </td>
-                    <td className="tabular px-3 py-2.5 text-right text-slate-400">
+                    <td className="tabular px-3 py-2.5 text-right text-fg-4">
                       {(r.predictedTouchProb * 100).toFixed(1)}%
                     </td>
                     <td className="px-3 py-2.5">
@@ -549,7 +549,7 @@ export const PerformancePage: React.FC<PerformancePageProps> = ({
                     </td>
                     <td
                       className={`tabular px-3 py-2.5 text-right font-semibold ${
-                        r.profit >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                        r.profit >= 0 ? 'text-success' : 'text-danger'
                       }`}
                     >
                       {r.profit >= 0 ? '+' : '-'}${Math.abs(r.profit).toFixed(2)}
@@ -581,10 +581,10 @@ const LegendRow: React.FC<{ color: string; label: string; value: string }> = ({
   value
 }) => (
   <div className="flex items-center justify-between gap-6 text-[12px]">
-    <span className="flex items-center gap-2 text-slate-400">
+    <span className="flex items-center gap-2 text-fg-4">
       <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
       {label}
     </span>
-    <span className="tabular font-semibold text-slate-200">{value}</span>
+    <span className="tabular font-semibold text-fg-2">{value}</span>
   </div>
 );

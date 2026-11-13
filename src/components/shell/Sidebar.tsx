@@ -1,5 +1,6 @@
 import React from 'react';
 import { NAV_ITEMS, Route } from './navigation';
+import { ThemeToggle } from '../ui/ThemeToggle';
 
 interface SidebarProps {
   activeRoute: Route;
@@ -14,15 +15,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onNavigateOverview,
   className = ''
 }) => (
-  <div className={`flex h-full flex-col bg-[#0a1018] ${className}`}>
+  <div className={`flex h-full flex-col bg-surface-deep ${className}`}>
     {/* Brand */}
-    <div className="flex items-center gap-3 border-b border-[#162133] px-4 py-4">
+    <div className="flex items-center gap-3 border-b border-line-soft px-4 py-4">
       <button
         onClick={onNavigateOverview}
-        className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-gradient-to-br from-[#0068B5] to-[#38BDF8] shadow-[0_4px_14px_-4px_rgba(99,91,255,0.7)]"
+        className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-gradient-to-br from-accent to-accent-cyan shadow-[var(--shadow-accent)]"
         aria-label="Open overview"
       >
-        <svg viewBox="0 0 24 24" className="h-5 w-5 text-white" fill="none">
+        <svg viewBox="0 0 24 24" className="h-5 w-5 text-on-accent" fill="none">
           <path
             d="M3 15.5l4.5-5 3.5 3 4-6 6 7.5"
             stroke="currentColor"
@@ -35,15 +36,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </button>
       <div className="min-w-0">
         <div className="flex items-center gap-1.5">
-          <span className="truncate text-[13px] font-extrabold tracking-tight text-white">
+          <span className="truncate text-[13px] font-extrabold tracking-tight text-fg-1">
             DERIV NO TOUCH
           </span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="truncate text-[10.5px] font-semibold tracking-[0.14em] text-slate-500">
+          <span className="truncate text-[10.5px] font-semibold tracking-[0.14em] text-fg-5">
             SCANNER
           </span>
-          <span className="rounded border border-[#0068B5]/40 bg-[#0068B5]/15 px-1 py-px text-[9px] font-bold text-[#60A5FA]">
+          <span className="rounded border border-accent/40 bg-accent/15 px-1 py-px text-[9px] font-bold text-accent-soft">
             V4.0 PRO
           </span>
         </div>
@@ -52,7 +53,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     {/* Navigation */}
     <nav className="flex-1 space-y-1 overflow-y-auto p-2.5">
-      <div className="px-2 pb-1.5 pt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600">
+      <div className="px-2 pb-1.5 pt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-6">
         Workspace
       </div>
       {NAV_ITEMS.map((item) => {
@@ -65,15 +66,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
             aria-current={active ? 'page' : undefined}
             className={`group relative flex w-full items-center gap-3 rounded-[10px] px-3 py-2.5 text-left transition-colors ${
               active
-                ? 'bg-[#121b2b] text-white'
-                : 'text-slate-400 hover:bg-[#121b2b] hover:text-slate-100'
+                ? 'bg-surface-raised text-fg-1'
+                : 'text-fg-4 hover:bg-surface-raised hover:text-fg-1'
             }`}
           >
             {active && (
-              <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-[#0068B5]" />
+              <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-accent" />
             )}
             <Icon
-              className={`h-4 w-4 shrink-0 ${active ? 'text-[#2E8AD8]' : 'text-slate-500 group-hover:text-slate-300'}`}
+              className={`h-4 w-4 shrink-0 ${active ? 'text-accent-strong' : 'text-fg-5 group-hover:text-fg-3'}`}
             />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[12.5px] font-semibold tracking-tight">
@@ -86,12 +87,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </nav>
 
     {/* Footer */}
-    <div className="border-t border-[#162133] p-3">
-      <div className="rounded-[10px] border border-[#162133] bg-[#0d1420] px-3 py-2.5">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+    <div className="border-t border-line-soft p-3">
+      <div className="mb-2 flex items-center justify-between rounded-[10px] border border-line-soft bg-surface px-3 py-2">
+        <span className="text-[11px] font-semibold text-fg-3">Appearance</span>
+        <ThemeToggle variant="switch" />
+      </div>
+      <div className="rounded-[10px] border border-line-soft bg-surface px-3 py-2.5">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-fg-6">
           Engine
         </div>
-        <div className="mt-1 text-[11px] leading-relaxed text-slate-500">
+        <div className="mt-1 text-[11px] leading-relaxed text-fg-5">
           2m displacement · 5m alignment imbalance model
         </div>
       </div>

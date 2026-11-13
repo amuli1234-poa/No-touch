@@ -14,25 +14,34 @@
      single confident blue (#0068B5) and a light blue (#60A5FA) for accent
      text. The same scale is used here so both products feel like one
      family, while the scanner keeps its own semantic roles.
+
+     Dark is the default. The light theme is a parallel token set under
+     `[data-theme='light']` below; components reference the semantic
+     variables, never the raw palette, so switching the attribute on
+     <html> re-skins the whole product.
      ------------------------------------------------------------------ */
 
   /* Surfaces */
   --app-bg: #060b16;
   --surface: #0d1420;
   --surface-raised: #121b2b;
-  --surface-elevated: #16213394;
+  --surface-elevated: #162133;
   --surface-glass: rgba(13, 20, 32, 0.72);
+  --surface-deep: #0a1018;
+  --surface-deepest: #0b1220;
+  --surface-inset: #0a1018;
 
   /* Accents */
   --accent: #0068B5;
   --accent-strong: #2E8AD8;
   --accent-soft: #60A5FA;
   --accent-cyan: #38BDF8;
+  --on-accent: #ffffff;
 
-  /* Semantic */
-  --success: #16A34A;
-  --warning: #F59E0B;
-  --danger: #DC2626;
+  /* Semantic — tuned for legibility as text on dark surfaces. */
+  --success: #4ADE80;
+  --warning: #FBBF24;
+  --danger: #F87171;
 
   /* Text */
   --text-primary: #F1F5F9;
@@ -42,7 +51,23 @@
   /* Structure */
   --border: #1e2b40;
   --border-soft: #162133;
+  --border-strong: #2f4258;
   --ring: rgba(0, 104, 181, 0.45);
+
+  /* Text tiers used by Tailwind utilities (slate scale in dark). */
+  --fg-1: #f1f5f9;
+  --fg-2: #e2e8f0;
+  --fg-3: #cbd5e1;
+  --fg-4: #94a3b8;
+  --fg-5: #93a1b8;
+  --fg-6: #8391a8;
+  --fg-7: #64748b;
+
+  /* Data-viz tints that need to differ between themes. */
+  --tint-sky: #7dd3fc;
+  --tint-teal: #2fd4a8;
+  --tint-amber: #f5b451;
+
 
   /* Radii — matches the reference's 10 / 12 / 16 / 20 scale */
   --radius-sm: 8px;
@@ -54,6 +79,33 @@
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 8px 24px -12px rgba(0, 0, 0, 0.7);
   --shadow-lg: 0 24px 60px -24px rgba(0, 0, 0, 0.8);
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 4px 16px rgba(0, 0, 0, 0.2),
+    0 20px 60px -24px rgba(0, 0, 0, 0.55);
+  --shadow-modal: 0 40px 100px -40px rgba(0, 0, 0, 0.9);
+  --shadow-control: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-accent: 0 4px 14px -4px rgba(0, 104, 181, 0.7);
+  --shadow-accent-lg: 0 10px 30px -12px rgba(0, 104, 181, 0.9);
+
+  /* Chart surfaces + series colours (read at runtime by the chart engine,
+     which needs concrete colour strings rather than classes). */
+  --chart-bg: #060b16;
+  --chart-grid: #101828;
+  --chart-border: #162133;
+  --chart-text: #94a3b8;
+  --chart-crosshair: #38bdf8;
+  --chart-crosshair-label: #075985;
+  --chart-up: #16a34a;
+  --chart-down: #dc2626;
+  --chart-spot: #38bdf8;
+  --chart-sweep: #f59e0b;
+  --chart-structural: #0068b5;
+  --chart-barrier: #dc2626;
+  --chart-swing: #fbbf24;
+  --chart-adaptive: #0ea5e9;
+  --chart-fvg: #60a5fa;
+  --chart-fvg-mid: #93c5fd;
+  --chart-zone-support: #15803d;
+  --chart-zone-resistance: #dc2626;
 
   /* Layout */
   --nav-width: 244px;
@@ -72,6 +124,152 @@
   --ws-white: #FFFFFF;
   --ws-muted: #8A97AE;
   --ws-hairline: rgba(138, 151, 174, 0.16);
+}
+
+/* ==========================================================================
+   LIGHT THEME
+   Same semantic slots, daylight values. Every component reads the semantic
+   variables above, so only this block changes between themes.
+   ========================================================================== */
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  /* Surfaces */
+  --app-bg: #f6f8fc;
+  --surface: #ffffff;
+  --surface-raised: #f1f5f9;
+  --surface-elevated: #ffffff;
+  --surface-glass: rgba(255, 255, 255, 0.78);
+  --surface-deep: #f8fafc;
+  --surface-deepest: #eef2f7;
+  --surface-inset: #f8fafc;
+
+  /* Accents — the blue stays, but leans a touch darker for contrast on white */
+  --accent: #0068B5;
+  --accent-strong: #0057a0;
+  --accent-soft: #1D6FC0;
+  --accent-cyan: #0284C7;
+
+  /* Semantic */
+  --success: #15803D;
+  --warning: #B45309;
+  --danger: #DC2626;
+
+  /* Text */
+  --text-primary: #0a1628;
+  --text-secondary: #475569;
+  --text-muted: #64748B;
+
+  /* Structure */
+  --border: #dbe3ee;
+  --border-soft: #e6ecf4;
+  --border-strong: #c3cede;
+  --ring: rgba(0, 104, 181, 0.4);
+
+  /* Text tiers — slate scale read from the top in light mode. */
+  --fg-1: #0a1628;
+  --fg-2: #1e293b;
+  --fg-3: #334155;
+  --fg-4: #475569;
+  --fg-5: #55637a;
+  --fg-6: #5b6a80;
+  --fg-7: #6b7a91;
+
+  /* Data-viz tints darkened for legibility on light surfaces. */
+  --tint-sky: #0369a1;
+  --tint-teal: #0f766e;
+  --tint-amber: #b45309;
+
+
+  /* Elevation — softer, blue-tinted in daylight. */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 8px 24px -14px rgba(15, 23, 42, 0.22);
+  --shadow-lg: 0 24px 60px -28px rgba(15, 23, 42, 0.28);
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 4px 16px rgba(15, 23, 42, 0.06),
+    0 20px 60px -28px rgba(15, 23, 42, 0.22);
+  --shadow-modal: 0 40px 100px -40px rgba(15, 23, 42, 0.35);
+  --shadow-control: 0 1px 2px rgba(15, 23, 42, 0.12);
+  --shadow-accent: 0 4px 14px -4px rgba(0, 104, 181, 0.4);
+  --shadow-accent-lg: 0 10px 30px -12px rgba(0, 104, 181, 0.45);
+
+  /* Chart surfaces + series colours */
+  --chart-bg: #ffffff;
+  --chart-grid: #eef2f7;
+  --chart-border: #e6ecf4;
+  --chart-text: #475569;
+  --chart-crosshair: #0284c7;
+  --chart-crosshair-label: #0369a1;
+  --chart-up: #15803d;
+  --chart-down: #dc2626;
+  --chart-spot: #0284c7;
+  --chart-sweep: #b45309;
+  --chart-structural: #0068b5;
+  --chart-barrier: #dc2626;
+  --chart-swing: #b45309;
+  --chart-adaptive: #0369a1;
+  --chart-fvg: #2563eb;
+  --chart-fvg-mid: #3b82f6;
+  --chart-zone-support: #15803d;
+  --chart-zone-resistance: #dc2626;
+
+  /* Marketing palette in daylight. */
+  --ws-navy: #f6f8fc;
+  --ws-charcoal: #ffffff;
+  --ws-charcoal-raised: #f1f5f9;
+  --ws-violet: #0068B5;
+  --ws-violet-soft: #1D6FC0;
+  --ws-cyan: #0284C7;
+  --ws-white: #0a1628;
+  --ws-muted: #64748B;
+  --ws-hairline: rgba(15, 23, 42, 0.1);
+}
+
+/* ==========================================================================
+   Tailwind v4 theme bridge
+   Maps semantic variables onto utility class names so markup can say
+   `bg-surface`, `text-fg-4`, `border-line` … instead of hardcoding hex.
+   `inline` keeps the var() reference so the values track the active theme.
+   ========================================================================== */
+
+@theme inline {
+  --color-app: var(--app-bg);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-deep: var(--surface-deep);
+  --color-surface-deepest: var(--surface-deepest);
+  --color-surface-inset: var(--surface-inset);
+
+  --color-line: var(--border);
+  --color-line-soft: var(--border-soft);
+  --color-line-strong: var(--border-strong);
+
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-cyan: var(--accent-cyan);
+  --color-on-accent: var(--on-accent);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+
+  --color-fg-1: var(--fg-1);
+  --color-fg-2: var(--fg-2);
+  --color-fg-3: var(--fg-3);
+  --color-fg-4: var(--fg-4);
+  --color-fg-5: var(--fg-5);
+  --color-fg-6: var(--fg-6);
+  --color-fg-7: var(--fg-7);
+
+  --color-tint-sky: var(--tint-sky);
+  --color-tint-teal: var(--tint-teal);
+  --color-tint-amber: var(--tint-amber);
+
+  --font-sans: Inter, 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-display: 'Plus Jakarta Sans', Inter, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
 }
 
 @layer base {
@@ -127,8 +325,8 @@ a:focus-visible {
 }
 
 ::selection {
-  background: rgba(99, 91, 255, 0.35);
-  color: #fff;
+  background: rgba(0, 104, 181, 0.3);
+  color: var(--text-primary);
 }
 
 /* ---- Scrollbars ---------------------------------------------------------- */
@@ -140,21 +338,21 @@ a:focus-visible {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #22304a;
+  background: var(--border-strong);
   border-radius: 4px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #33456a;
+  background: var(--fg-5);
   background-clip: content-box;
 }
 
 /* ---- Utilities ----------------------------------------------------------- */
 .surface-grid {
   background-image:
-    linear-gradient(rgba(39, 52, 73, 0.35) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(39, 52, 73, 0.35) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--border) 35%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--border) 35%, transparent) 1px, transparent 1px);
   background-size: 48px 48px;
 }
 
@@ -215,9 +413,46 @@ a:focus-visible {
 }
 
 /* ==========================================================================
+   Hero band — a permanent dark region.
+   The landing hero sits on a dark photograph in both themes, so it pins the
+   dark token values for its whole subtree. Because every utility reads these
+   variables, text and surfaces inside the band stay light-on-dark even when
+   the rest of the page is in light mode.
+   ========================================================================== */
+
+.ws-hero-band {
+  --app-bg: #060b16;
+  --surface: #0d1420;
+  --surface-raised: #121b2b;
+  --surface-elevated: #162133;
+  --surface-deep: #0a1018;
+  --surface-deepest: #0b1220;
+  --border: #1e2b40;
+  --border-soft: #162133;
+  --border-strong: #2f4258;
+  --fg-1: #f1f5f9;
+  --fg-2: #e2e8f0;
+  --fg-3: #cbd5e1;
+  --fg-4: #94a3b8;
+  --fg-5: #a8b5c9;
+  --fg-6: #94a3b8;
+  --fg-7: #7b8aa3;
+  --accent-soft: #60A5FA;
+  --tint-sky: #7dd3fc;
+  --tint-teal: #2fd4a8;
+  --tint-amber: #f5b451;
+  --success: #4ADE80;
+  --warning: #FBBF24;
+  --danger: #F87171;
+  --ws-hairline: rgba(138, 151, 174, 0.16);
+}
+
+/* ==========================================================================
    WickSentinel landing hero — photographic background
    The photograph (Pexels 38892300) is a very dark night scene, so the scrim
    stays light and keeps the subject visible while guaranteeing text contrast.
+   The hero is intentionally theme-independent: it keeps its dark scrim and
+   white copy in both light and dark mode, so the photo always reads well.
    ========================================================================== */
 
 .ws-hero-bg {
@@ -226,7 +461,7 @@ a:focus-visible {
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
-  background-color: var(--ws-navy);
+  background-color: #060b16;
 }
 
 .ws-hero-bg__image,
@@ -298,6 +533,12 @@ a:focus-visible {
 /* Blends the bottom edge into the page background so the hero is not a slab. */
 .ws-hero-bg__fade {
   background: linear-gradient(180deg, rgba(6, 11, 22, 0) 55%, #060b16 100%);
+}
+
+/* In light mode the hero keeps its dark photo band, but the very bottom of
+   the fade hands off to the light page background so the seam is invisible. */
+[data-theme='light'] .ws-hero-bg__fade {
+  background: linear-gradient(180deg, rgba(6, 11, 22, 0) 62%, var(--app-bg) 100%);
 }
 
 /* Below lg the copy sits over the photograph rather than beside it, so the

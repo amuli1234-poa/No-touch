@@ -19,7 +19,7 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
   const pct = Math.max(0, Math.min(100, (value / max) * 100));
   return (
     <div
-      className={`w-full overflow-hidden rounded-full bg-[#0b1220] ${className}`}
+      className={`w-full overflow-hidden rounded-full bg-surface-deepest ${className}`}
       style={{ height }}
     >
       <div
@@ -42,7 +42,7 @@ export const SegmentedBar: React.FC<SegmentedBarProps> = ({
   className = ''
 }) => (
   <div
-    className={`flex w-full overflow-hidden rounded-full bg-[#0b1220] ${className}`}
+    className={`flex w-full overflow-hidden rounded-full bg-surface-deepest ${className}`}
     style={{ height }}
   >
     {segments.map((s, i) => (

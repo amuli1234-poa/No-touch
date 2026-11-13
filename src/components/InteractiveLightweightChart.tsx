@@ -22,6 +22,7 @@ import {
   SupportResistanceZone
 } from '../types/scanner';
 import { IconButton } from './ui';
+import { useTheme } from '../lib/theme';
 
 interface ChartProps {
   candles: Candle[];
@@ -37,9 +38,54 @@ interface ChartProps {
   heightClass?: string;
 }
 
-const CHART_BG = '#060b16';
-const GRID = '#101828';
-const BORDER = '#162133';
+/* The chart engine needs concrete colour strings, not CSS classes, so the
+   palette is read from the theme variables at mount and whenever the theme
+   changes. `readChartColors` re-reads them from the live computed style. */
+interface ChartColors {
+  bg: string;
+  grid: string;
+  border: string;
+  text: string;
+  crosshair: string;
+  crosshairLabel: string;
+  up: string;
+  down: string;
+  spot: string;
+  sweep: string;
+  structural: string;
+  barrier: string;
+  swing: string;
+  adaptive: string;
+  fvg: string;
+  fvgMid: string;
+  zoneSupport: string;
+  zoneResistance: string;
+}
+
+function readChartColors(): ChartColors {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback;
+  return {
+    bg: v('--chart-bg', '#060b16'),
+    grid: v('--chart-grid', '#101828'),
+    border: v('--chart-border', '#162133'),
+    text: v('--chart-text', '#94a3b8'),
+    crosshair: v('--chart-crosshair', '#38bdf8'),
+    crosshairLabel: v('--chart-crosshair-label', '#075985'),
+    up: v('--chart-up', '#16a34a'),
+    down: v('--chart-down', '#dc2626'),
+    spot: v('--chart-spot', '#38bdf8'),
+    sweep: v('--chart-sweep', '#f59e0b'),
+    structural: v('--chart-structural', '#0068b5'),
+    barrier: v('--chart-barrier', '#dc2626'),
+    swing: v('--chart-swing', '#fbbf24'),
+    adaptive: v('--chart-adaptive', '#0ea5e9'),
+    fvg: v('--chart-fvg', '#60a5fa'),
+    fvgMid: v('--chart-fvg-mid', '#93c5fd'),
+    zoneSupport: v('--chart-zone-support', '#15803d'),
+    zoneResistance: v('--chart-zone-resistance', '#dc2626')
+  };
+}
 
 export const InteractiveLightweightChart: React.FC<ChartProps> = ({
   candles,
@@ -62,56 +108,62 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   const [hoveredCandle, setHoveredCandle] = useState<Candle | null>(null);
+  const { theme } = useTheme();
+  const colorsRef = useRef<ChartColors>(readChartColors());
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
+    /* Re-read the palette so a theme switch rebuilds the chart with the
+       matching background, grid and series colours. */
+    colorsRef.current = readChartColors();
+    const c = colorsRef.current;
     const chart = createChart(chartContainerRef.current, {
       width: chartContainerRef.current.clientWidth,
       height: chartContainerRef.current.clientHeight || 380,
       layout: {
-        background: { color: CHART_BG },
-        textColor: '#94A3B8',
+        background: { color: c.bg },
+        textColor: c.text,
         fontFamily: "'JetBrains Mono', monospace",
         attributionLogo: false
       },
       grid: {
-        vertLines: { color: GRID },
-        horzLines: { color: GRID }
+        vertLines: { color: c.grid },
+        horzLines: { color: c.grid }
       },
       crosshair: {
         mode: 1,
         vertLine: {
-          color: '#38BDF8',
+          color: c.crosshair,
           width: 1,
           style: LineStyle.LargeDashed,
-          labelBackgroundColor: '#075985'
+          labelBackgroundColor: c.crosshairLabel
         },
         horzLine: {
-          color: '#38BDF8',
+          color: c.crosshair,
           width: 1,
           style: LineStyle.LargeDashed,
-          labelBackgroundColor: '#075985'
+          labelBackgroundColor: c.crosshairLabel
         }
       },
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
-        borderColor: BORDER
+        borderColor: c.border
       },
       rightPriceScale: {
-        borderColor: BORDER,
+        borderColor: c.border,
         autoScale: true,
         scaleMargins: { top: 0.12, bottom: 0.12 }
       }
     });
 
     const series = chart.addSeries(CandlestickSeries, {
-      upColor: '#16A34A',
-      downColor: '#DC2626',
+      upColor: c.up,
+      downColor: c.down,
       borderVisible: false,
-      wickUpColor: '#16A34A',
-      wickDownColor: '#DC2626'
+      wickUpColor: c.up,
+      wickDownColor: c.down
     });
 
     chartRef.current = chart;
@@ -151,10 +203,11 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
       seriesRef.current = null;
       markersPluginRef.current = null;
     };
-  }, []);
+  }, [theme]);
 
   useEffect(() => {
     if (!seriesRef.current) return;
+    const c = colorsRef.current;
 
     priceLinesRef.current.forEach((line) => {
       try {
@@ -183,7 +236,7 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
       priceLinesRef.current.push(
         seriesRef.current.createPriceLine({
           price: sortedCandles[sortedCandles.length - 1].close,
-          color: '#38BDF8',
+          color: c.spot,
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: true,
@@ -198,7 +251,7 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
       markers.push({
         time: sweptPool.sweptEpoch as Time,
         position: sweptPool.type === 'SELLSIDE' ? 'belowBar' : 'aboveBar',
-        color: '#F59E0B',
+        color: c.sweep,
         shape: sweptPool.type === 'SELLSIDE' ? 'arrowUp' : 'arrowDown',
         text: 'LIQ SWEEP'
       });
@@ -208,7 +261,7 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
       markers.push({
         time: structuralShift.breakEpoch as Time,
         position: structuralShift.direction === 'BULLISH' ? 'aboveBar' : 'belowBar',
-        color: '#0068B5',
+        color: c.structural,
         shape: 'circle',
         text: `${structuralShift.type} ${structuralShift.direction.slice(0, 4)}`
       });
@@ -225,7 +278,7 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
       priceLinesRef.current.push(
         seriesRef.current.createPriceLine({
           price: barrier.barrierLevel,
-          color: '#DC2626',
+          color: c.barrier,
           lineWidth: 2,
           lineStyle: LineStyle.Solid,
           axisLabelVisible: true,
@@ -239,7 +292,7 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
       priceLinesRef.current.push(
         seriesRef.current.createPriceLine({
           price: tradeableRange.newlyProtectedSwing,
-          color: '#FBBF24',
+          color: c.swing,
           lineWidth: 2,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: true,
@@ -249,7 +302,7 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
       priceLinesRef.current.push(
         seriesRef.current.createPriceLine({
           price: tradeableRange.adaptiveFillTarget,
-          color: '#0EA5E9',
+          color: c.adaptive,
           lineWidth: 1,
           lineStyle: LineStyle.Dotted,
           axisLabelVisible: true,
@@ -263,7 +316,7 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
       priceLinesRef.current.push(
         seriesRef.current.createPriceLine({
           price: fvg.upperBoundary,
-          color: '#60A5FA',
+          color: c.fvg,
           lineWidth: 1,
           lineStyle: LineStyle.LargeDashed,
           axisLabelVisible: false,
@@ -271,7 +324,7 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
         }),
         seriesRef.current.createPriceLine({
           price: fvg.lowerBoundary,
-          color: '#60A5FA',
+          color: c.fvg,
           lineWidth: 1,
           lineStyle: LineStyle.LargeDashed,
           axisLabelVisible: false,
@@ -279,7 +332,7 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
         }),
         seriesRef.current.createPriceLine({
           price: fvg.midpoint,
-          color: '#93C5FD',
+          color: c.fvgMid,
           lineWidth: 1,
           lineStyle: LineStyle.Dotted,
           axisLabelVisible: false,
@@ -293,7 +346,7 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
       priceLinesRef.current.push(
         seriesRef.current!.createPriceLine({
           price: (z.upperPrice + z.lowerPrice) / 2,
-          color: z.type === 'SUPPORT' ? '#15803D' : '#DC2626',
+          color: z.type === 'SUPPORT' ? c.zoneSupport : c.zoneResistance,
           lineWidth: 1,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: false,
@@ -301,7 +354,7 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
         })
       );
     });
-  }, [candles, fvg, tradeableRange, barrier, structuralShift, sweptPool, zones]);
+  }, [candles, fvg, tradeableRange, barrier, structuralShift, sweptPool, zones, theme]);
 
   const latestCandle = hoveredCandle || candles[candles.length - 1];
 
@@ -329,19 +382,19 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
   return (
     <div
       ref={wrapperRef}
-      className="relative flex w-full min-w-0 flex-col overflow-hidden rounded-[14px] border border-[#1e2b40] bg-[#060b16] shadow-[0_1px_2px_rgba(0,0,0,0.35)]"
+      className="relative flex w-full min-w-0 flex-col overflow-hidden rounded-[14px] border border-line bg-app shadow-[var(--shadow-control)]"
     >
       {/* Chart toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#1e2b40] bg-[#0d1420] px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-surface px-3 py-2.5">
         <div className="flex min-w-0 flex-wrap items-center gap-2.5">
-          <span className="truncate text-[13px] font-bold tracking-tight text-white">
+          <span className="truncate text-[13px] font-bold tracking-tight text-fg-1">
             {displayName || symbol}
           </span>
-          <span className="rounded border border-[#0068B5]/30 bg-[#0068B5]/10 px-1.5 py-px text-[10px] font-bold text-[#60A5FA]">
+          <span className="rounded border border-accent/30 bg-accent/10 px-1.5 py-px text-[10px] font-bold text-accent-soft">
             {timeframe}
           </span>
           {candles.length > 0 && (
-            <span className="tabular text-[10.5px] text-slate-500">{candles.length} bars</span>
+            <span className="tabular text-[10.5px] text-fg-5">{candles.length} bars</span>
           )}
         </div>
 
@@ -363,22 +416,22 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
 
       {/* OHLC strip */}
       {ohlc && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-[#162133] bg-[#0a1018] px-3 py-1.5 text-[11px]">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line-soft bg-surface-deep px-3 py-1.5 text-[11px]">
           {(
             [
-              ['O', ohlc.open, 'text-slate-200'],
-              ['H', ohlc.high, 'text-emerald-400'],
-              ['L', ohlc.low, 'text-rose-400'],
-              ['C', ohlc.close, ohlc.close >= ohlc.open ? 'text-emerald-400' : 'text-rose-400']
+              ['O', ohlc.open, 'text-fg-2'],
+              ['H', ohlc.high, 'text-success'],
+              ['L', ohlc.low, 'text-danger'],
+              ['C', ohlc.close, ohlc.close >= ohlc.open ? 'text-success' : 'text-danger']
             ] as const
           ).map(([label, value, cls]) => (
             <span key={label} className="tabular inline-flex items-center gap-1">
-              <span className="text-slate-500">{label}</span>
+              <span className="text-fg-5">{label}</span>
               <span className={cls}>{value.toFixed(2)}</span>
             </span>
           ))}
           {hoveredCandle && (
-            <span className="ml-auto text-[10px] text-slate-500">
+            <span className="ml-auto text-[10px] text-fg-5">
               {new Date(hoveredCandle.epoch * 1000).toLocaleString()}
             </span>
           )}
@@ -389,12 +442,12 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
       <div className="relative">
         <div ref={chartContainerRef} className={`w-full ${heightClass}`} />
         {candles.length === 0 && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#060b16] text-center">
-            <span className="flex h-11 w-11 items-center justify-center rounded-full border border-[#1e2b40] bg-[#121b2b] text-slate-400">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-app text-center">
+            <span className="flex h-11 w-11 items-center justify-center rounded-full border border-line bg-surface-raised text-fg-4">
               <Activity className="h-5 w-5" />
             </span>
-            <div className="text-[13px] font-semibold text-slate-200">Waiting for market candles</div>
-            <div className="text-[11.5px] text-slate-500">
+            <div className="text-[13px] font-semibold text-fg-2">Waiting for market candles</div>
+            <div className="text-[11.5px] text-fg-5">
               Chart data appears once the {symbol} feed streams.
             </div>
           </div>
@@ -402,15 +455,15 @@ export const InteractiveLightweightChart: React.FC<ChartProps> = ({
       </div>
 
       {/* Overlay legend */}
-      <div className="flex flex-wrap items-center justify-between gap-y-1.5 border-t border-[#1e2b40] bg-[#0a1018] px-3 py-2 text-[10.5px] text-slate-500">
+      <div className="flex flex-wrap items-center justify-between gap-y-1.5 border-t border-line bg-surface-deep px-3 py-2 text-[10.5px] text-fg-5">
         <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1">
           {(
             [
-              ['#DC2626', 'No Touch Barrier'],
-              ['#FBBF24', 'Protected Swing'],
-              ['#0EA5E9', 'Adaptive Retracement'],
-              ['#60A5FA', 'Fair Value Gap'],
-              ['#38BDF8', 'Spot']
+              ['var(--chart-barrier)', 'No Touch Barrier'],
+              ['var(--chart-swing)', 'Protected Swing'],
+              ['var(--chart-adaptive)', 'Adaptive Retracement'],
+              ['var(--chart-fvg)', 'Fair Value Gap'],
+              ['var(--chart-spot)', 'Spot']
             ] as const
           ).map(([color, label]) => (
             <span key={label} className="inline-flex items-center gap-1.5">

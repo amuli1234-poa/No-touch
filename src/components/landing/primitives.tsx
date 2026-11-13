@@ -72,7 +72,7 @@ export const Eyebrow: React.FC<{ children: React.ReactNode; className?: string }
   className = ''
 }) => (
   <span
-    className={`inline-flex items-center gap-2 rounded-full border border-[var(--ws-hairline)] bg-[#0d1420]/70 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#60A5FA] ${className}`}
+    className={`inline-flex items-center gap-2 rounded-full border border-[var(--ws-hairline)] bg-surface/70 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-accent-soft ${className}`}
   >
     {children}
   </span>
@@ -89,11 +89,11 @@ export const SectionHeading: React.FC<{
     className={`${align === 'center' ? 'mx-auto max-w-2xl text-center' : 'max-w-2xl'} ${className}`}
   >
     {eyebrow && <Eyebrow>{eyebrow}</Eyebrow>}
-    <h2 className="mt-5 text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em] text-white sm:text-[32px] lg:text-[36px]">
+    <h2 className="mt-5 text-[26px] font-extrabold leading-[1.15] tracking-[-0.03em] text-fg-1 sm:text-[32px] lg:text-[36px]">
       {title}
     </h2>
     {description && (
-      <p className="mt-4 text-[14.5px] leading-relaxed text-[#8A97AE] sm:text-[15.5px]">
+      <p className="mt-4 text-[14.5px] leading-relaxed text-fg-4 sm:text-[15.5px]">
         {description}
       </p>
     )}
@@ -108,10 +108,10 @@ type WsButtonVariant = 'primary' | 'secondary' | 'ghost';
 
 const WS_BUTTON: Record<WsButtonVariant, string> = {
   primary:
-    'bg-[#0068B5] text-white border-[#0068B5] hover:bg-[#2E8AD8] shadow-[0_10px_30px_-12px_rgba(128,87,229,0.9)]',
+    'bg-accent text-on-accent border-accent hover:bg-accent-strong shadow-[var(--shadow-accent-lg)]',
   secondary:
-    'bg-[#121b2b] text-slate-100 border-[var(--ws-hairline)] hover:border-[#0068B5]/50 hover:bg-[#162133]',
-  ghost: 'bg-transparent text-slate-300 border-transparent hover:bg-[#121b2b] hover:text-white'
+    'bg-surface-raised text-fg-1 border-[var(--ws-hairline)] hover:border-accent/50 hover:bg-surface-elevated',
+  ghost: 'bg-transparent text-fg-3 border-transparent hover:bg-surface-raised hover:text-fg-1'
 };
 
 export const WsButton: React.FC<{

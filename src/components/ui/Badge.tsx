@@ -47,6 +47,6 @@ export const StatusDot: React.FC<StatusDotProps> = ({
       }`}
       style={{ backgroundColor: TONE_HEX[tone] }}
     />
-    {label && <span className="text-[11px] font-medium text-slate-300">{label}</span>}
+    {label && <span className="text-[11px] font-medium text-fg-3">{label}</span>}
   </span>
 );

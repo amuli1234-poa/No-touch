@@ -6,9 +6,9 @@ import { navigate } from '../../lib/router';
 type LegalKind = 'privacy' | 'terms' | 'risk-disclaimer';
 
 const INDEPENDENCE_NOTICE = (
-  <div className="flex items-start gap-3 rounded-[12px] border border-[var(--ws-hairline)] bg-[#0d1420] px-4 py-3.5">
-    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#7DD3FC]" />
-    <p className="text-[12.5px] leading-relaxed text-slate-400">
+  <div className="flex items-start gap-3 rounded-[12px] border border-[var(--ws-hairline)] bg-surface px-4 py-3.5">
+    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-tint-sky" />
+    <p className="text-[12.5px] leading-relaxed text-fg-4">
       WickSentinel is an independent third-party market intelligence platform. It is not officially
       affiliated with, endorsed by, sponsored by or otherwise connected to Deriv. All product names
       and brands are the property of their respective owners.
@@ -114,13 +114,13 @@ export const LegalPage: React.FC<{ kind: LegalKind }> = ({ kind }) => {
   const doc = DOCS[kind];
 
   return (
-    <div className="min-h-screen bg-[#060b16]">
-      <header className="sticky top-0 z-20 border-b border-[var(--ws-hairline)] bg-[#060b16]/85 backdrop-blur-xl">
+    <div className="min-h-screen bg-app">
+      <header className="sticky top-0 z-20 border-b border-[var(--ws-hairline)] bg-app/85 backdrop-blur-xl">
         <div className="mx-auto flex h-16 w-full max-w-4xl items-center justify-between px-5 sm:px-8">
           <BrandLogo onClick={() => navigate('/')} />
           <button
             onClick={() => navigate('/')}
-            className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[13px] font-semibold text-slate-300 transition-colors hover:bg-[#121b2b] hover:text-white"
+            className="inline-flex items-center gap-1.5 rounded-[9px] px-3 py-2 text-[13px] font-semibold text-fg-3 transition-colors hover:bg-surface-raised hover:text-fg-1"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             Home
@@ -129,22 +129,22 @@ export const LegalPage: React.FC<{ kind: LegalKind }> = ({ kind }) => {
       </header>
 
       <main className="mx-auto w-full max-w-4xl px-5 py-14 sm:px-8">
-        <h1 className="text-[30px] font-extrabold tracking-[-0.03em] text-white sm:text-[36px]">
+        <h1 className="text-[30px] font-extrabold tracking-[-0.03em] text-fg-1 sm:text-[36px]">
           {doc.title}
         </h1>
-        <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-[#F5B451]/25 bg-[#F5B451]/[0.07] px-3 py-1 text-[11px] font-semibold text-[#F5B451]">
+        <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-warning/25 bg-warning/[0.07] px-3 py-1 text-[11px] font-semibold text-tint-amber">
           {doc.updated}
         </p>
-        <p className="mt-5 max-w-2xl text-[14px] leading-relaxed text-[#8A97AE]">{doc.intro}</p>
+        <p className="mt-5 max-w-2xl text-[14px] leading-relaxed text-fg-4">{doc.intro}</p>
 
         <div className="mt-8 space-y-3">
           {doc.sections.map((s) => (
             <div
               key={s.heading}
-              className="rounded-[14px] border border-[var(--ws-hairline)] bg-[#0d1420] p-5"
+              className="rounded-[14px] border border-[var(--ws-hairline)] bg-surface p-5"
             >
-              <h2 className="text-[15px] font-bold tracking-tight text-white">{s.heading}</h2>
-              <p className="mt-2 text-[13px] leading-relaxed text-[#8A97AE]">{s.body}</p>
+              <h2 className="text-[15px] font-bold tracking-tight text-fg-1">{s.heading}</h2>
+              <p className="mt-2 text-[13px] leading-relaxed text-fg-4">{s.body}</p>
             </div>
           ))}
         </div>

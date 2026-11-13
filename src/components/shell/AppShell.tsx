@@ -36,10 +36,10 @@ export const AppShell: React.FC<AppShellProps> = ({
   const item = navItemFor(activeRoute);
 
   return (
-    <div className="flex min-h-screen bg-[#060b16]">
+    <div className="flex min-h-screen bg-app">
       {/* Desktop sidebar */}
       <aside
-        className="sticky top-0 hidden h-screen shrink-0 border-r border-[#162133] lg:block"
+        className="sticky top-0 hidden h-screen shrink-0 border-r border-line-soft lg:block"
         style={{ width: 'var(--nav-width)' }}
       >
         <Sidebar
@@ -74,7 +74,7 @@ export const AppShell: React.FC<AppShellProps> = ({
         </main>
 
         {/* Mobile bottom tab bar */}
-        <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[#162133] bg-[#0a1018]/95 backdrop-blur-xl lg:hidden">
+        <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-line-soft bg-surface-deep/95 backdrop-blur-xl lg:hidden">
           <div className="grid grid-cols-4">
             {NAV_ITEMS.map((nav) => {
               const Icon = nav.icon;
@@ -84,7 +84,7 @@ export const AppShell: React.FC<AppShellProps> = ({
                   key={nav.route}
                   onClick={() => onNavigate(nav.route)}
                   className={`flex flex-col items-center gap-1 py-2.5 text-[10px] font-semibold transition-colors ${
-                    active ? 'text-[#60A5FA]' : 'text-slate-500'
+                    active ? 'text-accent-soft' : 'text-fg-5'
                   }`}
                 >
                   <Icon className="h-[18px] w-[18px]" />

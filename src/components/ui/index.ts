@@ -5,3 +5,4 @@ export * from './Progress';
 export * from './Controls';
 export * from './StatCard';
 export * from './Charts';
+export * from './ThemeToggle';

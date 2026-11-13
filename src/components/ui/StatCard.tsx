@@ -29,11 +29,11 @@ export const StatCard: React.FC<StatCardProps> = ({
       style={{ background: `linear-gradient(90deg, transparent, ${TONE_HEX[tone]}, transparent)` }}
     />
     <div className="flex items-start justify-between gap-2">
-      <span className="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-slate-500">
+      <span className="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-fg-5">
         {label}
       </span>
       {icon && (
-        <span className="text-slate-500" style={{ color: TONE_HEX[tone] }}>
+        <span className="text-fg-5" style={{ color: TONE_HEX[tone] }}>
           {icon}
         </span>
       )}
@@ -41,7 +41,7 @@ export const StatCard: React.FC<StatCardProps> = ({
     <div className="mt-2 flex items-end gap-2">
       <span
         className="tabular text-[26px] font-bold leading-none tracking-tight"
-        style={{ color: tone === 'neutral' ? '#F1F5F9' : TONE_HEX[tone] }}
+        style={{ color: tone === 'neutral' ? 'var(--fg-1)' : TONE_HEX[tone] }}
       >
         {value}
       </span>
@@ -51,7 +51,7 @@ export const StatCard: React.FC<StatCardProps> = ({
         </span>
       )}
     </div>
-    {hint && <div className="mt-1.5 truncate text-[11px] text-slate-500">{hint}</div>}
+    {hint && <div className="mt-1.5 truncate text-[11px] text-fg-5">{hint}</div>}
   </Card>
 );
 
@@ -79,14 +79,14 @@ export const EmptyState: React.FC<EmptyStateProps> = ({
   <div className={`flex flex-col items-center justify-center gap-2 px-6 py-12 text-center ${className}`}>
     {icon && (
       <span
-        className="flex h-11 w-11 items-center justify-center rounded-full border border-[#1e2b40] bg-[#121b2b]"
+        className="flex h-11 w-11 items-center justify-center rounded-full border border-line bg-surface-raised"
         style={{ color: TONE_HEX[tone] }}
       >
         {icon}
       </span>
     )}
-    <div className="text-[13px] font-semibold text-slate-200">{title}</div>
-    {description && <div className="max-w-sm text-[12px] leading-relaxed text-slate-500">{description}</div>}
+    <div className="text-[13px] font-semibold text-fg-2">{title}</div>
+    {description && <div className="max-w-sm text-[12px] leading-relaxed text-fg-5">{description}</div>}
     {action && <div className="mt-2">{action}</div>}
   </div>
 );
@@ -126,12 +126,12 @@ export const SectionTitle: React.FC<SectionTitleProps> = ({
   <div className="flex flex-wrap items-end justify-between gap-3">
     <div className="min-w-0">
       {eyebrow && (
-        <div className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-[#2E8AD8]">
+        <div className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-accent-strong">
           {eyebrow}
         </div>
       )}
-      <h1 className="mt-1 text-[19px] font-bold tracking-tight text-white">{title}</h1>
-      {description && <p className="mt-1 text-[12.5px] text-slate-400">{description}</p>}
+      <h1 className="mt-1 text-[19px] font-bold tracking-tight text-fg-1">{title}</h1>
+      {description && <p className="mt-1 text-[12.5px] text-fg-4">{description}</p>}
     </div>
     {actions && <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>}
   </div>

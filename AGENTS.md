@@ -122,6 +122,35 @@ The UI follows the design language of reatech360.com. Keep to it:
 - Typography is Plus Jakarta Sans for headings, Inter for body, JetBrains
   Mono for figures.
 
+## Theming (dark + light)
+
+The product ships both a dark and a light palette and lets the operator switch
+at runtime.
+
+- All colours are semantic CSS variables in `src/index.css`: `:root` holds the
+  dark values, `[data-theme='light']` overrides them. Tailwind bridges the
+  variables through `@theme inline` (e.g. `--color-fg-1`), so components use
+  `bg-surface`, `text-fg-3`, `border-line`, `text-success`, etc. Never hardcode
+  a hex or `rgba()` in a component — add or reuse a token instead.
+- `src/lib/theme.ts` owns the runtime. The choice is stored in `localStorage`
+  (`ws-theme`) and applied to `<html data-theme>`; an inline script in
+  `index.html` resolves it before React mounts so there is no flash. Use the
+  `useTheme()` hook; `setTheme`/`toggle` write the attribute.
+- `src/components/ui/ThemeToggle.tsx` is the control (`icon` and `switch`
+  variants). It is wired into the landing nav, the workspace topbar and the
+  sidebar footer.
+- Chart colours cannot be CSS classes, so the palette is mirrored as
+  `--chart-*` variables and read at runtime via `readChartColors()` in
+  `InteractiveLightweightChart.tsx`, which rebuilds the chart when the theme
+  changes. `TONE_HEX` in `ui/format.ts` likewise returns `var(...)` strings so
+  inline styles and SVG follow the theme.
+- The landing hero sits on a dark photograph in both themes. `.ws-hero-band`
+  pins the dark token values for that subtree so light-mode text stays legible
+  over the image.
+- Contrast is verified with a Puppeteer audit over both themes; muted text tiers
+  (`fg-5`/`fg-6`) and the semantic tones are tuned to clear 4.5:1 on their
+  surfaces in each theme.
+
 ## Pushing to GitHub
 
 The dev-container `GITHUB_TOKEN` and the OpenHands git credential helper both

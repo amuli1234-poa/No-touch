@@ -114,10 +114,10 @@ export const AnalysisPage: React.FC<AnalysisPageProps> = ({
       {/* Large interactive chart */}
       <div className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-[13px] font-semibold text-white">
+          <h2 className="text-[13px] font-semibold text-fg-1">
             {selectedMeta?.displayName ?? selectedSymbol} · price action
           </h2>
-          <div className="inline-flex items-center gap-0.5 rounded-[10px] border border-[#1e2b40] bg-[#0b1220] p-0.5">
+          <div className="inline-flex items-center gap-0.5 rounded-[10px] border border-line bg-surface-deepest p-0.5">
             {TIMEFRAMES.map((tf) => (
               <button
                 key={tf}
@@ -125,8 +125,8 @@ export const AnalysisPage: React.FC<AnalysisPageProps> = ({
                 aria-pressed={selectedTimeframe === tf}
                 className={`rounded-[8px] px-3 py-1 text-[11.5px] font-semibold transition-colors ${
                   selectedTimeframe === tf
-                    ? 'bg-[#0068B5] text-white'
-                    : 'text-slate-400 hover:bg-[#121b2b] hover:text-slate-100'
+                    ? 'bg-accent text-on-accent'
+                    : 'text-fg-4 hover:bg-surface-raised hover:text-fg-1'
                 }`}
               >
                 {tf}
@@ -315,7 +315,7 @@ export const AnalysisPage: React.FC<AnalysisPageProps> = ({
 
       {activeOpp && (
         <div className="space-y-2">
-          <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+          <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-fg-5">
             Opportunity detail
           </h3>
           <OpportunityCard opp={activeOpp} onSelectMarket={onSelectSymbol} isSelected />
@@ -343,10 +343,10 @@ const Row: React.FC<{ label: string; value: React.ReactNode; tone?: keyof typeof
   tone
 }) => (
   <div className="flex items-center justify-between gap-3 text-[12px]">
-    <span className="text-slate-500">{label}</span>
+    <span className="text-fg-5">{label}</span>
     <span
       className="tabular truncate font-semibold"
-      style={{ color: tone ? TONE_HEX[tone] : '#E2E8F0' }}
+      style={{ color: tone ? TONE_HEX[tone] : 'var(--fg-2)' }}
     >
       {value}
     </span>
@@ -360,14 +360,14 @@ const ScoreRow: React.FC<{
   tone: keyof typeof TONE_HEX;
 }> = ({ label, value, max, tone }) => (
   <div className="flex items-center gap-2 text-[11.5px]">
-    <span className="w-20 shrink-0 text-slate-500">{label}</span>
-    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#0b1220]">
+    <span className="w-20 shrink-0 text-fg-5">{label}</span>
+    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-deepest">
       <div
         className="h-full rounded-full transition-[width] duration-500"
         style={{ width: `${(value / max) * 100}%`, backgroundColor: TONE_HEX[tone] }}
       />
     </div>
-    <span className="tabular w-12 shrink-0 text-right font-semibold text-slate-300">
+    <span className="tabular w-12 shrink-0 text-right font-semibold text-fg-3">
       {value}/{max}
     </span>
   </div>

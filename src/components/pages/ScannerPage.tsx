@@ -82,7 +82,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
         title="Scanner overview"
         description="Continuous qualification across Deriv synthetic indices using the 2m displacement / 5m alignment model."
         actions={
-          <div className="hidden items-center gap-2 rounded-[10px] border border-[#162133] bg-[#0d1420] px-3 py-1.5 md:flex">
+          <div className="hidden items-center gap-2 rounded-[10px] border border-line-soft bg-surface px-3 py-1.5 md:flex">
             <StatusDot
               tone={connectionState === 'CONNECTED' ? 'success' : connectionState === 'RECONNECTING' ? 'warning' : 'danger'}
               pulse={connectionState === 'CONNECTED'}
@@ -142,7 +142,7 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
       {activeMonitored.length > 0 && (
         <Card variant="raised" className="overflow-hidden">
           <CardHeader
-            icon={<Sparkles className="h-4 w-4 text-sky-400" />}
+            icon={<Sparkles className="h-4 w-4 text-accent-cyan" />}
             title={`Live path monitor · ${activeMonitored.length} in-flight contract${activeMonitored.length > 1 ? 's' : ''}`}
             subtitle="Verifying continuous excursion survival against the live tick stream"
             actions={<Badge tone="info" dot>Live</Badge>}
@@ -156,29 +156,29 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                   key={c.id}
                   className={`rounded-[10px] border px-3 py-2.5 ${
                     lost
-                      ? 'border-rose-500/30 bg-rose-500/[0.06]'
-                      : 'border-[#1e2b40] bg-[#0a1018]'
+                      ? 'border-danger/30 bg-danger/[0.06]'
+                      : 'border-line bg-surface-deep'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-[12.5px] font-semibold text-slate-100">
+                    <span className="truncate text-[12.5px] font-semibold text-fg-1">
                       {c.displayName}
                     </span>
                     <Badge tone={lost ? 'danger' : 'success'} dot>
                       {lost ? 'Touched' : 'Surviving'}
                     </Badge>
                   </div>
-                  <div className="tabular mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-slate-400">
+                  <div className="tabular mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-fg-4">
                     <span>
                       Barrier{' '}
-                      <span className="text-slate-200">{c.barrierLevel.toFixed(3)}</span>
+                      <span className="text-fg-2">{c.barrierLevel.toFixed(3)}</span>
                     </span>
                     <span className="text-right">
                       Distance{' '}
-                      <span className="text-slate-200">{c.currentDistance.toFixed(3)}</span>
+                      <span className="text-fg-2">{c.currentDistance.toFixed(3)}</span>
                     </span>
                     <span>
-                      Expiry <span className="text-slate-200">{remaining}s</span>
+                      Expiry <span className="text-fg-2">{remaining}s</span>
                     </span>
                     <span className="text-right" style={{ color: TONE_HEX.info }}>
                       ${c.payout.toFixed(2)} payout
@@ -212,13 +212,13 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
         <div className="min-w-0 space-y-4 xl:col-span-8">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <LineChartIcon className="h-4 w-4 text-[#2E8AD8]" />
-              <h2 className="text-[13px] font-semibold text-white">Chart workspace</h2>
-              <span className="text-[11px] text-slate-500">
+              <LineChartIcon className="h-4 w-4 text-accent-strong" />
+              <h2 className="text-[13px] font-semibold text-fg-1">Chart workspace</h2>
+              <span className="text-[11px] text-fg-5">
                 {selectedMeta?.displayName ?? selectedSymbol} · 2m primary / 5m confirmation
               </span>
             </div>
-            <div className="inline-flex items-center gap-0.5 rounded-[10px] border border-[#1e2b40] bg-[#0b1220] p-0.5">
+            <div className="inline-flex items-center gap-0.5 rounded-[10px] border border-line bg-surface-deepest p-0.5">
               {TIMEFRAMES.map((tf) => (
                 <button
                   key={tf}
@@ -226,8 +226,8 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
                   aria-pressed={selectedTimeframe === tf}
                   className={`rounded-[8px] px-2.5 py-1 text-[11.5px] font-semibold transition-colors ${
                     selectedTimeframe === tf
-                      ? 'bg-[#0068B5] text-white'
-                      : 'text-slate-400 hover:bg-[#121b2b] hover:text-slate-100'
+                      ? 'bg-accent text-on-accent'
+                      : 'text-fg-4 hover:bg-surface-raised hover:text-fg-1'
                   }`}
                 >
                   {tf}
@@ -251,12 +251,12 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
           {activeOpp && (
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                <h3 className="text-[11px] font-semibold uppercase tracking-[0.12em] text-fg-5">
                   Target market opportunity analysis
                 </h3>
                 <button
                   onClick={() => setInspecting((v) => !v)}
-                  className="text-[11.5px] font-medium text-[#60A5FA] hover:text-[#2E8AD8]"
+                  className="text-[11.5px] font-medium text-accent-soft hover:text-accent-strong"
                 >
                   {inspecting ? 'Hide detail' : 'Show detail'}
                 </button>
@@ -322,22 +322,22 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
               />
             </div>
             {activeOpp ? (
-              <div className="border-t border-[#1e2b40] p-4">
+              <div className="border-t border-line p-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-fg-5">
                     Current setup
                   </span>
-                  <span className="tabular text-[13px] font-semibold text-[#60A5FA]">
+                  <span className="tabular text-[13px] font-semibold text-accent-soft">
                     {activeOpp.score.total}/100
                   </span>
                 </div>
-                <p className="mt-2 text-[11.5px] leading-relaxed text-slate-400">
+                <p className="mt-2 text-[11.5px] leading-relaxed text-fg-4">
                   {activeOpp.explanation}
                 </p>
               </div>
             ) : (
               <EmptyState
-                className="border-t border-[#1e2b40]"
+                className="border-t border-line"
                 icon={<Activity className="h-5 w-5" />}
                 title="No active analysis"
                 description="Select a market from the scanner to inspect its structural context."
@@ -351,10 +351,10 @@ export const ScannerPage: React.FC<ScannerPageProps> = ({
 };
 
 const ContextCell: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="rounded-[10px] border border-[#162133] bg-[#0a1018] px-3 py-2.5">
-    <div className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+  <div className="rounded-[10px] border border-line-soft bg-surface-deep px-3 py-2.5">
+    <div className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-fg-5">
       {label}
     </div>
-    <div className="mt-1 truncate text-[12.5px] font-semibold text-slate-100">{value}</div>
+    <div className="mt-1 truncate text-[12.5px] font-semibold text-fg-1">{value}</div>
   </div>
 );

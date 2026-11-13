@@ -9,12 +9,12 @@ type ButtonSize = 'sm' | 'md';
 
 const BUTTON_VARIANT: Record<ButtonVariant, string> = {
   primary:
-    'bg-[#0068B5] text-white border-[#0068B5] hover:bg-[#2E8AD8] hover:border-[#2E8AD8] shadow-[0_1px_2px_rgba(0,104,181,0.35)]',
+    'bg-accent text-on-accent border-accent hover:bg-accent-strong hover:border-accent-strong shadow-[var(--shadow-accent)]',
   secondary:
-    'bg-[#121b2b] text-slate-200 border-[#1e2b40] hover:bg-[#162133] hover:border-[#2f4258]',
-  ghost: 'bg-transparent text-slate-400 border-transparent hover:bg-[#121b2b] hover:text-slate-100',
+    'bg-surface-raised text-fg-2 border-line hover:bg-surface-elevated hover:border-line-strong',
+  ghost: 'bg-transparent text-fg-4 border-transparent hover:bg-surface-raised hover:text-fg-1',
   danger:
-    'bg-rose-500/10 text-rose-300 border-rose-500/30 hover:bg-rose-500/20'
+    'bg-danger/10 text-danger border-danger/30 hover:bg-danger/20'
 };
 
 const BUTTON_SIZE: Record<ButtonSize, string> = {
@@ -71,8 +71,8 @@ export const IconButton: React.FC<IconButtonProps> = ({
     title={label}
     className={`inline-flex h-8 w-8 items-center justify-center rounded-[9px] border transition-colors disabled:opacity-40 ${
       active
-        ? 'border-[#0068B5]/40 bg-[#0068B5]/15 text-[#60A5FA]'
-        : 'border-[#1e2b40] bg-[#121b2b] text-slate-400 hover:border-[#2f4258] hover:text-slate-100'
+        ? 'border-accent/40 bg-accent/15 text-accent-soft'
+        : 'border-line bg-surface-raised text-fg-4 hover:border-line-strong hover:text-fg-1'
     } ${className}`}
   >
     {children}
@@ -102,7 +102,7 @@ export function SegmentedControl<T extends string>({
 }: SegmentedControlProps<T>) {
   return (
     <div
-      className={`inline-flex items-center gap-0.5 rounded-[10px] border border-[#1e2b40] bg-[#0b1220] p-0.5 ${className}`}
+      className={`inline-flex items-center gap-0.5 rounded-[10px] border border-line bg-surface-deepest p-0.5 ${className}`}
     >
       {options.map((opt) => {
         const active = opt === value;
@@ -115,8 +115,8 @@ export function SegmentedControl<T extends string>({
               size === 'sm' ? 'px-2.5 py-1 text-[11.5px]' : 'px-3 py-1.5 text-[12.5px]'
             } ${
               active
-                ? 'bg-[#0068B5] text-white shadow-[0_1px_2px_rgba(0,0,0,0.35)]'
-                : 'text-slate-400 hover:bg-[#121b2b] hover:text-slate-100'
+                ? 'bg-accent text-on-accent shadow-[var(--shadow-control)]'
+                : 'text-fg-4 hover:bg-surface-raised hover:text-fg-1'
             }`}
           >
             {labels?.[opt] ?? opt}
@@ -147,7 +147,7 @@ export const Toggle: React.FC<ToggleProps> = ({ checked, onChange, label, disabl
     disabled={disabled}
     onClick={() => onChange(!checked)}
     className={`relative h-6 w-11 shrink-0 rounded-full border transition-colors disabled:opacity-40 ${
-      checked ? 'border-[#0068B5] bg-[#0068B5]' : 'border-[#1e2b40] bg-[#121b2b]'
+      checked ? 'border-accent bg-accent' : 'border-line bg-surface-raised'
     }`}
   >
     <span
@@ -170,7 +170,7 @@ interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
 export const Select: React.FC<SelectProps> = ({ options, className = '', ...rest }) => (
   <select
     {...rest}
-    className={`h-9 w-full appearance-none rounded-[10px] border border-[#1e2b40] bg-[#0b1220] px-3 text-[13px] text-slate-100 transition-colors hover:border-[#2f4258] focus:border-[#0068B5] focus:outline-none ${className}`}
+    className={`h-9 w-full appearance-none rounded-[10px] border border-line bg-surface-deepest px-3 text-[13px] text-fg-1 transition-colors hover:border-line-strong focus:border-accent focus:outline-none ${className}`}
   >
     {options.map((o) => (
       <option key={o.value} value={o.value}>
@@ -193,8 +193,8 @@ interface FieldProps {
 
 export const Field: React.FC<FieldProps> = ({ label, hint, children, className = '' }) => (
   <div className={className}>
-    <label className="mb-1.5 block text-[12px] font-medium text-slate-300">{label}</label>
+    <label className="mb-1.5 block text-[12px] font-medium text-fg-3">{label}</label>
     {children}
-    {hint && <p className="mt-1 text-[11px] text-slate-500">{hint}</p>}
+    {hint && <p className="mt-1 text-[11px] text-fg-5">{hint}</p>}
   </div>
 );

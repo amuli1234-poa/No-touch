@@ -81,12 +81,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 type="number"
                 value={settings.appId}
                 onChange={(e) => set('appId', parseInt(e.target.value, 10) || 1089)}
-                className="h-9 w-full rounded-[10px] border border-[#1e2b40] bg-[#0b1220] px-3 font-mono text-[13px] text-slate-100 transition-colors hover:border-[#2f4258] focus:border-[#0068B5] focus:outline-none"
+                className="h-9 w-full rounded-[10px] border border-line bg-surface-deepest px-3 font-mono text-[13px] text-fg-1 transition-colors hover:border-line-strong focus:border-accent focus:outline-none"
               />
             </Field>
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-[#162133] bg-[#0a1018] px-3 py-2.5">
-              <div className="text-[11.5px] text-slate-400">
-                <span className="block font-medium text-slate-300">Connection status</span>
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-line-soft bg-surface-deep px-3 py-2.5">
+              <div className="text-[11.5px] text-fg-4">
+                <span className="block font-medium text-fg-3">Connection status</span>
                 <span className="tabular">
                   {symbolCount} synthetic markets tracked
                 </span>
@@ -188,7 +188,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
           <div className="space-y-5 p-4">
             <div>
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-[12px] font-medium text-slate-300">
+                <span className="text-[12px] font-medium text-fg-3">
                   Minimum qualification score
                 </span>
                 <span className="tabular text-[13px] font-bold" style={{ color: TONE_HEX.accent }}>
@@ -202,9 +202,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 step={1}
                 value={settings.minScoreThreshold}
                 onChange={(e) => set('minScoreThreshold', parseInt(e.target.value, 10))}
-                className="w-full cursor-pointer accent-[#0068B5]"
+                className="w-full cursor-pointer accent-accent"
               />
-              <div className="mt-1 flex justify-between text-[10px] text-slate-500">
+              <div className="mt-1 flex justify-between text-[10px] text-fg-5">
                 <span>80% · watchlist</span>
                 <span>90% · strict</span>
                 <span>95% · elite</span>
@@ -213,7 +213,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
 
             <div>
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-[12px] font-medium text-slate-300">
+                <span className="text-[12px] font-medium text-fg-3">
                   FVG minimum imbalance size
                 </span>
                 <span className="tabular text-[13px] font-bold" style={{ color: TONE_HEX.info }}>
@@ -227,9 +227,9 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
                 step={0.00005}
                 value={settings.fvgMinDisplacement}
                 onChange={(e) => set('fvgMinDisplacement', parseFloat(e.target.value))}
-                className="w-full cursor-pointer accent-[#38BDF8]"
+                className="w-full cursor-pointer accent-accent-cyan"
               />
-              <p className="mt-1 text-[11px] text-slate-500">
+              <p className="mt-1 text-[11px] text-fg-5">
                 Filters out micro-noise gaps that lack institutional displacement.
               </p>
             </div>
@@ -324,15 +324,15 @@ const ExpiryOption: React.FC<{
     aria-pressed={active}
     className={`rounded-[10px] border p-3 text-left transition-colors ${
       active
-        ? 'border-[#0068B5]/50 bg-[#0068B5]/10'
-        : 'border-[#1e2b40] bg-[#0a1018] hover:border-[#2f4258]'
+        ? 'border-accent/50 bg-accent/10'
+        : 'border-line bg-surface-deep hover:border-line-strong'
     }`}
   >
-    <div className={`flex items-center gap-2 text-[12.5px] font-semibold ${active ? 'text-white' : 'text-slate-300'}`}>
+    <div className={`flex items-center gap-2 text-[12.5px] font-semibold ${active ? 'text-fg-1' : 'text-fg-3'}`}>
       <span style={{ color: active ? TONE_HEX.accent : TONE_HEX.neutral }}>{icon}</span>
       {title}
     </div>
-    <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">{description}</p>
+    <p className="mt-1.5 text-[11px] leading-relaxed text-fg-5">{description}</p>
   </button>
 );
 
@@ -345,10 +345,10 @@ const SettingToggle: React.FC<{
 }> = ({ icon, label, description, checked, onChange }) => (
   <div className="flex items-start justify-between gap-4">
     <div className="flex min-w-0 items-start gap-2.5">
-      <span className="mt-0.5 text-slate-500">{icon}</span>
+      <span className="mt-0.5 text-fg-5">{icon}</span>
       <div>
-        <div className="text-[12.5px] font-medium text-slate-200">{label}</div>
-        <div className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{description}</div>
+        <div className="text-[12.5px] font-medium text-fg-2">{label}</div>
+        <div className="mt-0.5 text-[11px] leading-relaxed text-fg-5">{description}</div>
       </div>
     </div>
     <Toggle checked={checked} onChange={onChange} label={label} />
@@ -356,8 +356,8 @@ const SettingToggle: React.FC<{
 );
 
 const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="flex items-center justify-between gap-3 border-b border-[#162133] pb-2">
-    <span className="text-[11.5px] text-slate-500">{label}</span>
-    <span className="text-[11.5px] font-medium text-slate-200">{value}</span>
+  <div className="flex items-center justify-between gap-3 border-b border-line-soft pb-2">
+    <span className="text-[11.5px] text-fg-5">{label}</span>
+    <span className="text-[11.5px] font-medium text-fg-2">{value}</span>
   </div>
 );

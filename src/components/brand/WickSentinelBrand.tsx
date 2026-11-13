@@ -56,15 +56,15 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
     <>
       <WickSentinelMark className={markClassName} />
       <span className="min-w-0 text-left">
-        <span className="block text-[15.5px] font-extrabold leading-tight tracking-[-0.02em] text-white">
-          Wick<span className="text-[#2E8AD8]">Sentinel</span>
+        <span className="block text-[15.5px] font-extrabold leading-tight tracking-[-0.02em] text-fg-1">
+          Wick<span className="text-accent-strong">Sentinel</span>
         </span>
         {showTagline ? (
-          <span className="block text-[10px] font-medium tracking-[0.02em] text-slate-500">
+          <span className="block text-[10px] font-medium tracking-[0.02em] text-fg-5">
             {BRAND.category}
           </span>
         ) : (
-          <span className="block text-[9.5px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+          <span className="block text-[9.5px] font-semibold uppercase tracking-[0.18em] text-fg-5">
             Market Intelligence
           </span>
         )}

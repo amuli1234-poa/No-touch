@@ -26,22 +26,22 @@ const PreviewChart: React.FC = () => {
   const toY = (price: number) => 100 - ((price - min) / (max - min)) * 100;
 
   return (
-    <div className="relative h-[190px] w-full overflow-hidden rounded-[10px] border border-[var(--ws-hairline)] bg-[#060b16] sm:h-[220px]">
+    <div className="relative h-[190px] w-full overflow-hidden rounded-[10px] border border-[var(--ws-hairline)] bg-app sm:h-[220px]">
       <div className="surface-grid absolute inset-0 opacity-[0.25]" />
 
       {/* Barrier — dashed line the wick must not reach */}
       <div
-        className="absolute inset-x-0 border-t border-dashed border-[#38BDF8]/50"
+        className="absolute inset-x-0 border-t border-dashed border-accent-cyan/50"
         style={{ top: `${BARRIER_Y}%` }}
       />
-      <span className="absolute right-2.5 -translate-y-1/2 rounded border border-[#38BDF8]/30 bg-[#38BDF8]/10 px-1.5 py-0.5 text-[8.5px] font-bold tracking-wide text-[#7DD3FC]" style={{ top: `${BARRIER_Y}%` }}>
+      <span className="absolute right-2.5 -translate-y-1/2 rounded border border-accent-cyan/30 bg-accent-cyan/10 px-1.5 py-0.5 text-[8.5px] font-bold tracking-wide text-tint-sky" style={{ top: `${BARRIER_Y}%` }}>
         BARRIER
       </span>
 
       <div className="absolute inset-0 flex items-end gap-[3px] px-3 pb-4 pt-6 sm:gap-1">
         {CANDLES.map((c, i) => {
           const up = c.c >= c.o;
-          const color = up ? '#2FD4A8' : '#F4739B';
+          const color = up ? 'var(--success)' : 'var(--danger)';
           const top = toY(Math.max(c.o, c.c));
           const bottom = toY(Math.min(c.o, c.c));
           const bodyH = Math.max(bottom - top, 1.4);
@@ -70,8 +70,8 @@ const PreviewKpi: React.FC<{ label: string; value: string; tone: string }> = ({
   value,
   tone
 }) => (
-  <div className="rounded-[10px] border border-[var(--ws-hairline)] bg-[#0b1220] p-2.5 sm:p-3">
-    <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</div>
+  <div className="rounded-[10px] border border-[var(--ws-hairline)] bg-surface-deepest p-2.5 sm:p-3">
+    <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-fg-5">{label}</div>
     <div className="tabular mt-1 text-[16px] font-bold sm:text-[19px]" style={{ color: tone }}>
       {value}
     </div>
@@ -83,62 +83,62 @@ const PreviewKpi: React.FC<{ label: string; value: string; tone: string }> = ({
  * sample so it is never mistaken for live market output.
  */
 export const ScannerPreview: React.FC = () => (
-  <div className="relative rounded-[16px] border border-[var(--ws-hairline)] bg-[#0d1420] p-1.5 shadow-[0_40px_100px_-40px_rgba(0,0,0,0.9)]">
-    <div className="pointer-events-none absolute -inset-x-6 -top-6 h-24 rounded-full bg-[#0068B5]/10 blur-3xl" />
+  <div className="relative rounded-[16px] border border-[var(--ws-hairline)] bg-surface p-1.5 shadow-[var(--shadow-modal)]">
+    <div className="pointer-events-none absolute -inset-x-6 -top-6 h-24 rounded-full bg-accent/10 blur-3xl" />
 
-    <div className="relative rounded-[12px] border border-[var(--ws-hairline)] bg-[#0a1018] p-3 sm:p-4">
+    <div className="relative rounded-[12px] border border-[var(--ws-hairline)] bg-surface-deep p-3 sm:p-4">
       {/* Window chrome */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--ws-hairline)] pb-3">
         <div className="flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-gradient-to-br from-[#0068B5] to-[#38BDF8]">
-            <Activity className="h-4 w-4 text-white" />
+          <span className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-gradient-to-br from-accent to-accent-cyan">
+            <Activity className="h-4 w-4 text-on-accent" />
           </span>
-          <span className="text-[11.5px] font-bold tracking-tight text-white">Live Scanner</span>
+          <span className="text-[11.5px] font-bold tracking-tight text-fg-1">Live Scanner</span>
         </div>
-        <span className="inline-flex items-center gap-1.5 rounded-md border border-[#0068B5]/30 bg-[#0068B5]/10 px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-[0.12em] text-[#60A5FA]">
+        <span className="inline-flex items-center gap-1.5 rounded-md border border-accent/30 bg-accent/10 px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-[0.12em] text-accent-soft">
           Illustrative preview
         </span>
       </div>
 
       <div className="mt-3 grid grid-cols-3 gap-2 sm:gap-2.5">
-        <PreviewKpi label="Markets" value="47" tone="#7DD3FC" />
-        <PreviewKpi label="Qualified" value="04" tone="#2FD4A8" />
-        <PreviewKpi label="Watchlist" value="07" tone="#F5B451" />
+        <PreviewKpi label="Markets" value="47" tone="var(--tint-sky)" />
+        <PreviewKpi label="Qualified" value="04" tone="var(--success)" />
+        <PreviewKpi label="Watchlist" value="07" tone="var(--warning)" />
       </div>
 
       <div className="mt-2.5">
         <div className="mb-2 flex items-center justify-between">
-          <div className="text-[11px] font-bold text-slate-200">
-            Synthetic Index <span className="font-normal text-slate-500">· 2m primary / 5m confirmation</span>
+          <div className="text-[11px] font-bold text-fg-2">
+            Synthetic Index <span className="font-normal text-fg-5">· 2m primary / 5m confirmation</span>
           </div>
-          <div className="hidden text-[10px] text-slate-500 sm:block">No Touch barrier · wick analysis</div>
+          <div className="hidden text-[10px] text-fg-5 sm:block">No Touch barrier · wick analysis</div>
         </div>
         <PreviewChart />
       </div>
 
       <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
-        <div className="flex items-center justify-between rounded-[10px] border border-[#2FD4A8]/25 bg-[#2FD4A8]/[0.07] px-3 py-2">
+        <div className="flex items-center justify-between rounded-[10px] border border-success/25 bg-success/[0.07] px-3 py-2">
           <div>
-            <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+            <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-fg-5">
               Signal evaluation
             </div>
-            <div className="mt-0.5 text-[11.5px] font-bold text-[#6FE3C2]">Gates passed</div>
+            <div className="mt-0.5 text-[11.5px] font-bold text-tint-teal">Gates passed</div>
           </div>
-          <div className="tabular rounded-md border border-[#2FD4A8]/30 bg-[#2FD4A8]/10 px-2 py-1 text-[12px] font-bold text-[#6FE3C2]">
+          <div className="tabular rounded-md border border-success/30 bg-success/10 px-2 py-1 text-[12px] font-bold text-tint-teal">
             92
           </div>
         </div>
-        <div className="flex items-center gap-2 rounded-[10px] border border-[var(--ws-hairline)] bg-[#0b1220] px-3 py-2">
-          <ShieldCheck className="h-4 w-4 shrink-0 text-[#7DD3FC]" />
-          <div className="text-[10.5px] leading-tight text-slate-400">
+        <div className="flex items-center gap-2 rounded-[10px] border border-[var(--ws-hairline)] bg-surface-deepest px-3 py-2">
+          <ShieldCheck className="h-4 w-4 shrink-0 text-tint-sky" />
+          <div className="text-[10.5px] leading-tight text-fg-4">
             Risk filters and structural gates evaluated before a setup is surfaced.
           </div>
         </div>
       </div>
 
-      <div className="mt-2.5 flex items-center gap-2 rounded-[10px] border border-[var(--ws-hairline)] bg-[#0b1220] px-3 py-2">
-        <Crosshair className="h-3.5 w-3.5 shrink-0 text-[#60A5FA]" />
-        <div className="text-[10.5px] leading-tight text-slate-400">
+      <div className="mt-2.5 flex items-center gap-2 rounded-[10px] border border-[var(--ws-hairline)] bg-surface-deepest px-3 py-2">
+        <Crosshair className="h-3.5 w-3.5 shrink-0 text-accent-soft" />
+        <div className="text-[10.5px] leading-tight text-fg-4">
           Sample interface for illustration only — figures are not live market data.
         </div>
       </div>

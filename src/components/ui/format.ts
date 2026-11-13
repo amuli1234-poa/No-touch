@@ -101,28 +101,38 @@ export function volatilityTone(regime: 'LOW' | 'MEDIUM' | 'HIGH'): Tone {
    -------------------------------------------------------------------------- */
 
 export const TONE_TEXT: Record<Tone, string> = {
-  neutral: 'text-slate-400',
-  accent: 'text-[#2E8AD8]',
-  info: 'text-sky-400',
-  success: 'text-emerald-400',
-  warning: 'text-amber-400',
-  danger: 'text-rose-400'
+  neutral: 'text-fg-4',
+  accent: 'text-accent-strong',
+  info: 'text-accent-cyan',
+  success: 'text-success',
+  warning: 'text-warning',
+  danger: 'text-danger'
 };
 
 export const TONE_BG: Record<Tone, string> = {
-  neutral: 'bg-slate-500/10 text-slate-300 border-slate-600/40',
-  accent: 'bg-[#0068B5]/12 text-[#60A5FA] border-[#0068B5]/30',
-  info: 'bg-sky-500/12 text-sky-300 border-sky-500/30',
-  success: 'bg-emerald-500/12 text-emerald-300 border-emerald-500/30',
-  warning: 'bg-amber-500/12 text-amber-300 border-amber-500/30',
-  danger: 'bg-rose-500/12 text-rose-300 border-rose-500/30'
+  neutral: 'bg-fg-5/10 text-fg-3 border-line-strong/40',
+  accent: 'bg-accent/12 text-accent-soft border-accent/30',
+  info: 'bg-accent-cyan/12 text-accent-cyan border-accent-cyan/30',
+  success: 'bg-success/12 text-success border-success/30',
+  warning: 'bg-warning/12 text-warning border-warning/30',
+  danger: 'bg-danger/12 text-danger border-danger/30'
 };
 
+/* Tone colours for inline styles and SVG attributes. These resolve through CSS
+   variables so they follow the active theme; the literals are fallbacks for the
+   dark palette (used if a var is ever unresolved). */
 export const TONE_HEX: Record<Tone, string> = {
-  neutral: '#64748B',
-  accent: '#0068B5',
-  info: '#38BDF8',
-  success: '#16A34A',
-  warning: '#F59E0B',
-  danger: '#DC2626'
+  neutral: 'var(--fg-4, #94A3B8)',
+  accent: 'var(--accent, #0068B5)',
+  info: 'var(--accent-cyan, #38BDF8)',
+  success: 'var(--success, #4ADE80)',
+  warning: 'var(--warning, #FBBF24)',
+  danger: 'var(--danger, #F87171)'
 };
+
+/** Colour for a 0–100 score bar/figure, matching `scoreTone`. */
+export function scoreHex(score: number): string {
+  if (score >= 90) return TONE_HEX.success;
+  if (score >= 80) return TONE_HEX.warning;
+  return TONE_HEX.neutral;
+}
