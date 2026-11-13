@@ -1,0 +1,78 @@
+import type { LucideIcon } from 'lucide-react';
+import {
+  Activity,
+  BarChart3,
+  Bell,
+  CreditCard,
+  FileClock,
+  Gauge,
+  Headphones,
+  LayoutDashboard,
+  ScrollText,
+  Settings,
+  ShieldCheck,
+  Users,
+  Wallet
+} from 'lucide-react';
+
+/**
+ * Sidebar navigation. `permission` gates the item: an administrator only sees
+ * routes they can actually open. The server enforces the same permissions.
+ */
+export interface NavItem {
+  key: string;
+  path: string;
+  label: string;
+  icon: LucideIcon;
+  permission: string;
+}
+
+export interface NavGroup {
+  label: string;
+  items: NavItem[];
+}
+
+export const NAV: NavGroup[] = [
+  {
+    label: 'Overview',
+    items: [
+      { key: 'dashboard', path: '/', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard.read' },
+      { key: 'analytics', path: '/analytics', label: 'Analytics', icon: BarChart3, permission: 'analytics.read' }
+    ]
+  },
+  {
+    label: 'Customers',
+    items: [
+      { key: 'users', path: '/users', label: 'Users', icon: Users, permission: 'users.read' },
+      { key: 'subscriptions', path: '/subscriptions', label: 'Subscriptions', icon: CreditCard, permission: 'subscriptions.read' },
+      { key: 'revenue', path: '/revenue', label: 'Revenue', icon: Wallet, permission: 'revenue.read' },
+      { key: 'support', path: '/support', label: 'Support', icon: Headphones, permission: 'support.read' }
+    ]
+  },
+  {
+    label: 'Operations',
+    items: [
+      { key: 'scanner', path: '/scanner', label: 'Scanner Ops', icon: Gauge, permission: 'monitoring.read' },
+      { key: 'monitoring', path: '/monitoring', label: 'System Health', icon: Activity, permission: 'monitoring.read' }
+    ]
+  },
+  {
+    label: 'Governance',
+    items: [
+      { key: 'administrators', path: '/administrators', label: 'Administrators', icon: ShieldCheck, permission: 'admins.read' },
+      { key: 'announcements', path: '/announcements', label: 'Announcements', icon: Bell, permission: 'announcements.read' },
+      { key: 'audit', path: '/audit', label: 'Audit Log', icon: ScrollText, permission: 'audit.read' },
+      { key: 'configuration', path: '/configuration', label: 'Configuration', icon: Settings, permission: 'configuration.read' },
+      { key: 'reports', path: '/reports', label: 'Reports', icon: FileClock, permission: 'analytics.read' }
+    ]
+  }
+];
+
+export function findNav(path: string): NavItem | null {
+  for (const group of NAV) {
+    for (const item of group.items) {
+      if (item.path === path) return item;
+    }
+  }
+  return null;
+}

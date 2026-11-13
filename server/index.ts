@@ -6,23 +6,30 @@ import { loadConfig, type ServerConfig } from './config.js';
 import { Store } from './store/store.js';
 import { createAuthRouter } from './routes/auth.js';
 import { createWhatsAppRouter } from './routes/whatsapp.js';
+import { createAdminApiRouter, adminCors } from './routes/admin/index.js';
+import { Telemetry, telemetryMiddleware } from './services/admin/telemetry.js';
 import { attachSession, requireSession, type SessionContext, type AuthedRequest } from './lib/session.js';
 
 /**
  * WickSentinel server: serves the built SPA and provides the OAuth + session
  * backend. It is additive — the scanner runs unchanged in the browser; this
  * process only handles authentication, sessions and per-user preferences.
+ *
+ * The administrative API (`/api/admin/v1/*`) is a separate surface with its own
+ * cookie, session store and RBAC. It never reuses trader sessions.
  */
 
 export interface AppBundle {
   app: express.Express;
   cfg: ServerConfig;
   store: Store;
+  telemetry: Telemetry;
 }
 
 /** Builds the Express app. Exported separately so tests can drive it directly. */
 export function createApp(cfg: ServerConfig, store: Store): AppBundle {
   const ctx: SessionContext = { cfg, store };
+  const telemetry = new Telemetry();
   const app = express();
   app.disable('x-powered-by');
 
@@ -39,6 +46,13 @@ export function createApp(cfg: ServerConfig, store: Store): AppBundle {
     }
     next();
   });
+
+  app.use(telemetryMiddleware(telemetry));
+
+  // Admin API needs a JSON body parser (its routes read structured payloads).
+  // Mounted before the session middleware so CORS preflight short-circuits.
+  app.use('/api/admin/v1', adminCors({ cfg, store, telemetry }), express.json({ limit: '64kb' }));
+  app.use('/api/admin/v1', createAdminApiRouter({ cfg, store, telemetry }));
 
   app.use(attachSession(ctx));
 
@@ -82,7 +96,7 @@ export function createApp(cfg: ServerConfig, store: Store): AppBundle {
     res.status(404).json({ error: 'not_found' });
   });
 
-  return { app, cfg, store };
+  return { app, cfg, store, telemetry };
 }
 
 async function main(): Promise<void> {
@@ -90,6 +104,7 @@ async function main(): Promise<void> {
   const store = new Store(cfg.dataDir);
   await store.load();
   await store.pruneExpiredSessions();
+  await store.pruneAdminSessions();
 
   const { app } = createApp(cfg, store);
 

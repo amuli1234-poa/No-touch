@@ -72,6 +72,12 @@ export function requireSession(ctx: SessionContext) {
       res.status(401).json({ error: 'unauthorized' });
       return;
     }
+    // Administrative suspension is enforced here, on the same authorization
+    // path every protected trader route already uses — not by a UI label.
+    if (req.user.suspended) {
+      res.status(403).json({ error: 'account_suspended' });
+      return;
+    }
     // Sliding renewal: extend an otherwise-valid session on use.
     const now = Date.now();
     if (session.expiresAt - now < ctx.cfg.session.ttlSeconds * 1000 * 0.5) {

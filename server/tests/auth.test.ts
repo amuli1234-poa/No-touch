@@ -132,6 +132,16 @@ function makeConfig(deriv: FakeDeriv, dataDir: string): ServerConfig {
       oauthCookieName: 'ws_oauth',
       oauthCookieTtlSeconds: 600
     },
+    admin: {
+      cookieName: 'ws_admin_session',
+      sessionTtlSeconds: 3600,
+      mfaPendingTtlSeconds: 300,
+      invitationTtlSeconds: 3600,
+      resetTtlSeconds: 3600,
+      allowedOrigins: [],
+      maxFailedLogins: 5,
+      lockoutSeconds: 60
+    },
     appOrigin: 'http://localhost:8787'
   };
 }

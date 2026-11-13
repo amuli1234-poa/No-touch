@@ -7,6 +7,12 @@ trading scanner for Deriv synthetic indices. It streams live quotes over the
 Deriv WebSocket API, qualifies setups with a 7-step sequence, and recommends
 adaptive No Touch barriers.
 
+A second, independently deployable application lives in `admin/`: the
+**WickSentinel Admin Console**. See `docs/ADMIN_DEPLOYMENT.md`. It is a separate
+Vite app (own `index.html`, own source root, builds to `dist-admin/`) that talks
+to a separate backend namespace `/api/admin/v1` with its own cookie, session
+store and RBAC. It must never share a session with the trader app.
+
 ## Commands
 
 Package manager is **bun** (project has `bun.lock`).
@@ -18,6 +24,30 @@ bun run build                     # production build
 npx tsc --noEmit                  # typecheck
 npx tsx src/tests/strategy_engine.test.ts   # engine test suite (18 tests)
 ```
+
+Admin console (uses npm scripts; `tsx` for the server, `vite` for the app):
+
+```bash
+npm run server        # backend on :8787 (serves trader API + /api/admin/v1)
+npm run dev:admin     # admin app on :3001, proxies /api/admin to :8787
+npm run build:admin   # → dist-admin/
+npm run lint:admin    # admin typecheck (tsc -p admin/tsconfig.json)
+npm run test:admin    # admin test suite (20 tests)
+npm run admin:bootstrap   # seed the first Super Admin (prints otpauth URI)
+```
+
+`npm run test:admin` and `npm run test:auth` both construct an app with
+`createApp(cfg, store)`. Any test config fixture must include the `admin` block
+(cookieName, sessionTtlSeconds, mfaPendingTtlSeconds, invitationTtlSeconds,
+resetTtlSeconds, allowedOrigins, maxFailedLogins, lockoutSeconds) or the admin
+router throws at construction.
+
+### Admin test client gotcha
+
+Tests use Node's global `fetch`. To capture `Set-Cookie`, read
+`res.headers.getSetCookie()` — the older `res.headers['set-cookie']` form is
+empty on the fetch Headers object and the cookie jar silently stays empty,
+producing confusing 401s.
 
 There is no unit-test framework; the engine suite is a plain `tsx` script with
 its own assertion helper. Run it directly, do not expect `bun test` to pick it up.

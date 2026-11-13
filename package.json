@@ -13,7 +13,12 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test": "tsx src/tests/strategy_engine.test.ts",
-    "test:auth": "tsx server/tests/auth.test.ts"
+    "test:auth": "tsx server/tests/auth.test.ts",
+    "test:admin": "tsx server/tests/admin.test.ts",
+    "admin:bootstrap": "tsx server/admin/bootstrap.ts",
+    "dev:admin": "vite --config admin/vite.config.ts --port=3001 --host=0.0.0.0",
+    "build:admin": "vite build --config admin/vite.config.ts",
+    "lint:admin": "tsc --noEmit -p admin/tsconfig.json"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

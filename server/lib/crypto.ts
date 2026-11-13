@@ -13,17 +13,17 @@ function deriveKey(secret: string, info: string, length = 32): Buffer {
   return Buffer.from(hkdfSync('sha256', secret, Buffer.from('wicksentinel'), Buffer.from(info), length));
 }
 
-export function sign(value: string, secret: string): string {
-  const mac = createHmac('sha256', deriveKey(secret, 'cookie-sign')).update(value).digest('base64url');
+export function sign(value: string, secret: string, context = 'cookie-sign'): string {
+  const mac = createHmac('sha256', deriveKey(secret, context)).update(value).digest('base64url');
   return `${value}.${mac}`;
 }
 
-export function verifySigned(token: string, secret: string): string | null {
+export function verifySigned(token: string, secret: string, context = 'cookie-sign'): string | null {
   const idx = token.lastIndexOf('.');
   if (idx === -1) return null;
   const value = token.slice(0, idx);
   const mac = token.slice(idx + 1);
-  const expected = createHmac('sha256', deriveKey(secret, 'cookie-sign')).update(value).digest('base64url');
+  const expected = createHmac('sha256', deriveKey(secret, context)).update(value).digest('base64url');
   if (mac.length !== expected.length) return null;
   let diff = 0;
   for (let i = 0; i < mac.length; i++) diff |= mac.charCodeAt(i) ^ expected.charCodeAt(i);

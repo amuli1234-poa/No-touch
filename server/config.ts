@@ -29,6 +29,19 @@ export interface ServerConfig {
     oauthCookieName: string;
     oauthCookieTtlSeconds: number;
   };
+  /** Administrative surface. Separate cookie, TTL and origin allowlist. */
+  admin: {
+    cookieName: string;
+    sessionTtlSeconds: number;
+    mfaPendingTtlSeconds: number;
+    invitationTtlSeconds: number;
+    resetTtlSeconds: number;
+    /** Explicit CORS allowlist for credentialed admin requests. Never "*". */
+    allowedOrigins: string[];
+    /** Maximum failed logins before a temporary lockout. */
+    maxFailedLogins: number;
+    lockoutSeconds: number;
+  };
   /** Public origin allowed for same-origin checks on the callback. */
   appOrigin: string;
 }
@@ -98,6 +111,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       cookieName: 'ws_session',
       oauthCookieName: 'ws_oauth',
       oauthCookieTtlSeconds: 600
+    },
+    admin: {
+      cookieName: 'ws_admin_session',
+      sessionTtlSeconds: int(env.ADMIN_SESSION_TTL_SECONDS, 60 * 60 * 8),
+      mfaPendingTtlSeconds: int(env.ADMIN_MFA_PENDING_TTL_SECONDS, 300),
+      invitationTtlSeconds: int(env.ADMIN_INVITATION_TTL_SECONDS, 60 * 60 * 48),
+      resetTtlSeconds: int(env.ADMIN_RESET_TTL_SECONDS, 60 * 60),
+      // Comma-separated allowlist. Empty in dev (same-origin via the Vite proxy).
+      allowedOrigins: (env.ADMIN_ALLOWED_ORIGINS ?? '')
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean),
+      maxFailedLogins: int(env.ADMIN_MAX_FAILED_LOGINS, 5),
+      lockoutSeconds: int(env.ADMIN_LOCKOUT_SECONDS, 15 * 60)
     },
     appOrigin
   };
