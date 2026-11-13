@@ -16,16 +16,11 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script>
       /* Resolve the theme before first paint so there is no flash of the wrong
-         palette. Stored choice wins; otherwise follow the OS preference. */
+         palette. Dark is the default; a stored choice overrides it. */
       (function () {
         try {
           var stored = localStorage.getItem('ws-theme');
-          var theme =
-            stored === 'light' || stored === 'dark'
-              ? stored
-              : window.matchMedia('(prefers-color-scheme: light)').matches
-                ? 'light'
-                : 'dark';
+          var theme = stored === 'light' || stored === 'dark' ? stored : 'dark';
           var root = document.documentElement;
           root.dataset.theme = theme;
           root.style.colorScheme = theme;

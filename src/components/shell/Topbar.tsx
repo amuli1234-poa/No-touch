@@ -1,7 +1,9 @@
 import React from 'react';
-import { RefreshCw, Bell, User, PanelLeft } from 'lucide-react';
+import { RefreshCw, Bell, User, PanelLeft, LogOut, ShieldCheck } from 'lucide-react';
 import { Button, IconButton, StatusDot, ThemeToggle, Tone } from '../ui';
 import { formatClock, formatRelative } from '../ui/format';
+import { useAuth, logout } from '../../lib/auth';
+import { navigate } from '../../lib/router';
 
 interface TopbarProps {
   title: string;
@@ -98,20 +100,98 @@ export const Topbar: React.FC<TopbarProps> = ({
         <Bell className="h-4 w-4" />
       </IconButton>
 
+      <UserMenu lastScanTimestamp={lastScanTimestamp} />
+    </div>
+  </header>
+);
+
+/**
+ * Operator menu — shows the authenticated Deriv-linked profile and offers
+ * logout. Falls back to a neutral label when the session is unavailable.
+ */
+const UserMenu: React.FC<{ lastScanTimestamp: number }> = ({ lastScanTimestamp }) => {
+  const auth = useAuth();
+  const [open, setOpen] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [open]);
+
+  const name =
+    auth.status === 'authenticated'
+      ? auth.user.loginId || 'Deriv account'
+      : 'Operator';
+  const subtitle =
+    auth.status === 'authenticated'
+      ? `${auth.user.demoAccounts} demo · ${auth.user.realAccounts} real`
+      : lastScanTimestamp
+        ? `Active ${formatRelative(lastScanTimestamp)}`
+        : 'Local session';
+
+  const handleLogout = async () => {
+    setBusy(true);
+    await logout();
+    setBusy(false);
+    navigate('/login');
+  };
+
+  return (
+    <div className="relative hidden lg:block" ref={ref}>
       <button
-        className="hidden items-center gap-2 rounded-[10px] border border-line-soft bg-surface px-2 py-1.5 transition-colors hover:border-line-strong lg:flex"
-        title="Local operator profile"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 rounded-[10px] border border-line-soft bg-surface px-2 py-1.5 transition-colors hover:border-line-strong"
+        title="Account"
+        aria-haspopup="menu"
+        aria-expanded={open}
       >
         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent/20 text-accent-soft">
           <User className="h-3.5 w-3.5" />
         </span>
-        <span className="text-left leading-tight">
-          <span className="block text-[11.5px] font-semibold text-fg-2">Operator</span>
-          <span className="block text-[9.5px] text-fg-5">
-            {lastScanTimestamp ? `Active ${formatRelative(lastScanTimestamp)}` : 'Local session'}
-          </span>
+        <span className="max-w-[130px] text-left leading-tight">
+          <span className="block truncate text-[11.5px] font-semibold text-fg-2">{name}</span>
+          <span className="block truncate text-[9.5px] text-fg-5">{subtitle}</span>
         </span>
       </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-[calc(100%+8px)] z-40 w-56 overflow-hidden rounded-[12px] border border-line-soft bg-surface shadow-[var(--shadow-modal)]"
+        >
+          <div className="border-b border-line-soft px-3.5 py-3">
+            <p className="text-[11px] font-semibold text-fg-2">
+              {auth.status === 'authenticated' ? name : 'Not signed in'}
+            </p>
+            <p className="mt-0.5 text-[10.5px] text-fg-5">
+              {auth.status === 'authenticated' ? 'Authenticated with Deriv' : 'Public preview session'}
+            </p>
+          </div>
+          {auth.status === 'authenticated' && (
+            <div className="px-3.5 py-2.5 text-[10.5px] text-fg-5">
+              <span className="inline-flex items-center gap-1.5">
+                <ShieldCheck className="h-3.5 w-3.5 text-tint-teal" />
+                Session active
+              </span>
+            </div>
+          )}
+          <button
+            role="menuitem"
+            onClick={handleLogout}
+            disabled={busy}
+            className="flex w-full items-center gap-2 border-t border-line-soft px-3.5 py-2.5 text-left text-[12px] font-medium text-fg-3 transition-colors hover:bg-surface-raised hover:text-fg-1 disabled:opacity-60"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            {busy ? 'Signing out…' : 'Log out'}
+          </button>
+        </div>
+      )}
     </div>
-  </header>
-);
+  );
+};

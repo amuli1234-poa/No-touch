@@ -1,0 +1,104 @@
+import path from 'node:path';
+
+/**
+ * Server configuration, read once from the environment.
+ *
+ * Nothing here is ever sent to the browser. The OAuth client secret (when the
+ * registered flow uses one) and the session signing secret stay server-side.
+ */
+
+export interface ServerConfig {
+  port: number;
+  isProduction: boolean;
+  dataDir: string;
+  deriv: {
+    appId: string;
+    redirectUri: string;
+    clientSecret: string | null;
+    scopes: string;
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+    userinfoEndpoint: string;
+    revocationEndpoint: string;
+    apiBaseUrl: string;
+  };
+  session: {
+    secret: string;
+    ttlSeconds: number;
+    cookieName: string;
+    oauthCookieName: string;
+    oauthCookieTtlSeconds: number;
+  };
+  /** Public origin allowed for same-origin checks on the callback. */
+  appOrigin: string;
+}
+
+function required(name: string, value: string | undefined): string {
+  if (!value || value.trim() === '') {
+    throw new Error(
+      `Missing required environment variable ${name}. See .env.example for the full list.`
+    );
+  }
+  return value.trim();
+}
+
+function int(value: string | undefined, fallback: number): number {
+  const n = value ? parseInt(value, 10) : NaN;
+  return Number.isFinite(n) ? n : fallback;
+}
+
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
+  const isProduction = env.NODE_ENV === 'production';
+  const appId = required('DERIV_APP_ID', env.DERIV_APP_ID);
+  const redirectUri = required('DERIV_REDIRECT_URI', env.DERIV_REDIRECT_URI);
+  const secret = required('SESSION_SECRET', env.SESSION_SECRET);
+
+  if (secret.length < 32) {
+    throw new Error('SESSION_SECRET must be at least 32 characters long.');
+  }
+
+  let appOrigin = '';
+  try {
+    appOrigin = new URL(redirectUri).origin;
+  } catch {
+    throw new Error(
+      'DERIV_REDIRECT_URI must be an absolute URL (e.g. https://app.example.com/auth/deriv/callback).'
+    );
+  }
+
+  return {
+    port: int(env.PORT, 8787),
+    isProduction,
+    dataDir: env.DATA_DIR ? path.resolve(env.DATA_DIR) : path.resolve(process.cwd(), 'data'),
+    deriv: {
+      appId,
+      redirectUri,
+      // Deriv's OAuth 2.0 + PKCE flow does not use a client secret for public
+      // clients (token_endpoint_auth_methods_supported includes "none"). It is
+      // only used if the registered app is a confidential client.
+      clientSecret: env.DERIV_CLIENT_SECRET?.trim() || null,
+      // Minimum scope required. Deriv's OAuth scopes are `trade`,
+      // `account_manage`, `application_read` and `payment`; `openid` is NOT
+      // allowed for Deriv OAuth apps (Deriv returns invalid_scope), so the
+      // trade-scoped accounts endpoint is the only identity source. `trade`
+      // also backs the dashboard's account selection and demo/real separation.
+      // It is read-only here: no write scope (account_manage/payment) is ever
+      // requested. If `openid` is later enabled for the app, set
+      // DERIV_SCOPES=openid to identify via userinfo without any trading scope.
+      scopes: env.DERIV_SCOPES?.trim() || 'trade',
+      authorizationEndpoint: 'https://auth.deriv.com/oauth2/auth',
+      tokenEndpoint: 'https://auth.deriv.com/oauth2/token',
+      userinfoEndpoint: 'https://auth.deriv.com/userinfo',
+      revocationEndpoint: 'https://auth.deriv.com/oauth2/revoke',
+      apiBaseUrl: 'https://api.derivws.com'
+    },
+    session: {
+      secret,
+      ttlSeconds: int(env.SESSION_TTL_SECONDS, 60 * 60 * 24 * 7),
+      cookieName: 'ws_session',
+      oauthCookieName: 'ws_oauth',
+      oauthCookieTtlSeconds: 600
+    },
+    appOrigin
+  };
+}

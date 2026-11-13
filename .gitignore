@@ -7,3 +7,6 @@ coverage/
 .env*
 !.env.example
 .idea/
+
+# Server-side auth state (users, sessions, oauth transactions)
+data/

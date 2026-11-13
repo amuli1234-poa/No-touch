@@ -38,6 +38,23 @@ node node_modules/vite/bin/vite.js --port=12000 --host=0.0.0.0
 Run it detached (`setsid nohup ... & disown`) so it survives the command
 returning, and log to a file (e.g. `/tmp/vite-live.log`).
 
+### Running locally with Deriv OAuth
+
+The registered callback is `http://localhost:3000/auth/deriv/callback`, so the
+**Vite dev server must listen on port 3000** — the browser redirects there, and
+Vite proxies `/auth/*` to the backend on `:8787`. Two processes must both be up,
+or the callback returns `ERR_CONNECTION_REFUSED` (nothing on :3000) or the
+token exchange fails (nothing on :8787):
+
+```bash
+npm run dev:all        # starts backend :8787 + Vite :3000 together
+```
+
+`npm run dev` alone only starts Vite on :3000; start the backend separately with
+`npm run server` (or `npm start`). If the callback port is changed, update the
+Redirect URI in the Deriv dashboard **and** `DERIV_REDIRECT_URI` to match
+character-for-character.
+
 ## Architecture
 
 - `src/engines/*` — pure analytical engines (MarketStructureEngine,
@@ -61,6 +78,48 @@ returning, and log to a file (e.g. `/tmp/vite-live.log`).
 - `src/components/ui/*` — design-system primitives and `format.ts` helpers.
 - `src/types/scanner.ts` — domain types; `src/types/preferences.ts` — display
   preferences.
+
+## Authentication (Deriv OAuth 2.0 + PKCE)
+
+WickSentinel authenticates users through **Deriv OAuth 2.0 Authorization Code +
+PKCE**. The scanner itself is untouched: authentication is an additive Express
+backend (`server/`) that also serves the built SPA from `dist/`.
+
+Endpoints (from `https://auth.deriv.com/.well-known/openid-configuration`):
+- Authorization: `https://auth.deriv.com/oauth2/auth` (`prompt=registration`
+  makes it the signup form; its absence is login)
+- Token: `POST https://auth.deriv.com/oauth2/token` (form-encoded, PKCE S256,
+  no client secret for the documented public-client flow)
+- Identity: `GET https://auth.deriv.com/userinfo` (OIDC `sub` is the identity)
+- Accounts: `GET https://api.derivws.com/trading/v1/options/accounts` (needs the
+  `trade` scope; demo vs real via `account_type`)
+- Revocation: `https://auth.deriv.com/oauth2/revoke`
+
+Server layout (`server/`):
+- `index.ts` — `createApp(cfg, store)` (testable) + auto-start; HTTPS enforcement,
+  SPA fallback, `/healthz`.
+- `config.ts` — reads `DERIV_APP_ID`, `DERIV_REDIRECT_URI`, `DERIV_CLIENT_SECRET`
+  (optional), `DERIV_SCOPES`, `SESSION_SECRET`, `PORT`, `NODE_ENV`.
+- `lib/pkce.ts` — CSPRNG verifier/challenge/state, timing-safe compare.
+- `lib/deriv.ts` — authorization URL, token exchange, userinfo, accounts, revoke.
+- `lib/session.ts` — signed cookie resolution, guards, sliding renewal.
+- `lib/crypto.ts` — HMAC-signed cookies + AES-256-GCM sealing of the Deriv token.
+- `store/store.ts` — JSON-file store (`data/wicksentinel.json`): users, sessions,
+  one-time OAuth transactions. Keyed by a stable id derived from the Deriv `sub`,
+  never a display name.
+- `routes/auth.ts` — `/auth/start`, `/auth/deriv/callback`, `/auth/logout`,
+  `/auth/session`, `/api/preferences`, `/api/deriv/verify`.
+
+Frontend: `src/lib/auth.ts` (client store + actions), `src/components/landing/
+AuthPage.tsx` (Sign Up / Login + error page), `src/components/auth/
+ProtectedRoute.tsx` (guards `/app`; steps aside on static hosts where no backend
+exists, so the GitHub Pages preview keeps working). Routes: `/login`,
+`/get-started`, `/signin-error` (`src/Root.tsx`).
+
+Run it: `npm run build` then `npm run server` (needs the `DERIV_*`/`SESSION_SECRET`
+env vars; see `.env.example`). In dev, Vite proxies `/auth`, `/api`, `/healthz`
+to the backend (`vite.config.ts`). Auth tests: `npm run test:auth` (14 cases).
+
 
 ## Public site (WickSentinel)
 
@@ -134,8 +193,9 @@ at runtime.
   a hex or `rgba()` in a component — add or reuse a token instead.
 - `src/lib/theme.ts` owns the runtime. The choice is stored in `localStorage`
   (`ws-theme`) and applied to `<html data-theme>`; an inline script in
-  `index.html` resolves it before React mounts so there is no flash. Use the
-  `useTheme()` hook; `setTheme`/`toggle` write the attribute.
+  `index.html` resolves it before React mounts so there is no flash. Dark is the
+  default; a stored choice overrides it. Use the `useTheme()` hook;
+  `setTheme`/`toggle` write the attribute.
 - `src/components/ui/ThemeToggle.tsx` is the control (`icon` and `switch`
   variants). It is wired into the landing nav, the workspace topbar and the
   sidebar footer.
