@@ -615,3 +615,13 @@ has Markdown at `https://developers.deriv.com/llms/<endpoint>.md` (e.g. `buy.md`
   with `maxExecutionFrequencySeconds: 0`, since the whole run is within a second.
 - Duplication note: `contractTypeFor` lives in `server/services/signals.ts`;
   do not re-implement it elsewhere.
+
+## REAL execution release review (Phase 10)
+
+- REAL execution stays DISABLED. The review is `docs/REAL_EXECUTION_RELEASE_REVIEW.md`;
+  its machine-checkable half is `test:real-gate` (5 tests pinning the fail-closed
+  contract: every flag off by default, REAL needs the master switch too, DEMO
+  never permits REAL, only exact lowercase "true" enables a switch).
+- Do NOT enable REAL, do NOT add a setter to `server/config/flags.ts`, and do
+  not document `ALLOW_REAL_EXECUTION` as settable. Enabling it is a separate,
+  explicit release act requiring the preconditions in the review doc.
