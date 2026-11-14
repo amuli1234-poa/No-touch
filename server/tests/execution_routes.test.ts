@@ -13,6 +13,8 @@ import { MarketDataService } from '../services/marketData.js';
 import { FakeBroker } from '../execution/broker/fakeBroker.js';
 import { loadExecutionFlags } from '../config/flags.js';
 import { sign, seal } from '../lib/crypto.js';
+import { AutoExecutionRunner } from '../execution/autoRunner.js';
+import { ExecutionAuditor } from '../execution/audit.js';
 import type { ServerConfig } from '../config.js';
 import type { MinimalWebSocket } from '../lib/balance.js';
 
@@ -104,7 +106,13 @@ async function marketWithTick() {
  */
 async function withServer(
   fn: (ctx: { store: Store; broker: FakeBroker; post: (path: string, body?: unknown) => Promise<{ status: number; body: any }>; get: (path: string) => Promise<{ status: number; body: any }> }) => Promise<void>,
-  opts: { flags?: Partial<ReturnType<typeof loadExecutionFlags>>; session?: boolean; token?: string | null } = {}
+  opts: {
+    flags?: Partial<ReturnType<typeof loadExecutionFlags>>;
+    session?: boolean;
+    token?: string | null;
+    /** When set, an automatic runner is wired and these preferences are stored. */
+    automatic?: boolean;
+  } = {}
 ) {
   const express = (await import('express')).default;
   const store = new Store(tmpDir(), { unsafeDisableLock: true });
@@ -148,8 +156,23 @@ async function withServer(
     derivSub: 'sub_a'
   });
 
+  let runner: AutoExecutionRunner | undefined;
+  if (opts.automatic) {
+    runner = new AutoExecutionRunner({ store, gateway, auditor: new ExecutionAuditor(store) });
+    await store.putExecutionPreferences({
+      userId: 'u_a',
+      mode: 'automatic',
+      contractFamily: 'rise_fall',
+      preferredAccountId: { demo: 'DEMO' },
+      stake: { basis: 'stake', amount: 1, currency: 'USD' },
+      parameters: { duration: 5, durationUnit: 'm', multiplier: null, cancellation: null, stopLoss: null, takeProfit: null },
+      realExecutionAuthorised: false,
+      autoStopped: false,
+      updatedAt: Date.now()
+    });
+  }
   const app = express();
-  app.use(createExecutionRouter({ cfg, store, gateway, market }));
+  app.use(createExecutionRouter({ cfg, store, gateway, market, runner }));
   const server = app.listen(0);
   const port = (server.address() as any).port;
   const base = `http://127.0.0.1:${port}`;
@@ -300,5 +323,39 @@ test('an intent without an idempotency key is refused', async () => {
     });
     assert.equal(res.status, 400);
     assert.equal(res.body.error, 'missing_idempotency_key');
+  });
+});
+
+
+test('an automatic user\'s signal is executed on creation through the runner', async () => {
+  await withServer(
+    async ({ post, broker }) => {
+      const res = await post('/api/execution/signals', {
+        symbol: 'R_100',
+        direction: 'RISE',
+        contractFamily: 'rise_fall',
+        accountId: 'DEMO',
+        timeframe: '5m'
+      });
+      assert.equal(res.status, 201, JSON.stringify(res.body));
+      // The runner ran automatically: the response carries the outcome.
+      assert.equal(res.body.auto?.outcome, 'executed', JSON.stringify(res.body));
+      assert.equal(broker.buys.length, 1);
+    },
+    { automatic: true }
+  );
+});
+
+test('a manual user\'s signal is NOT auto-executed', async () => {
+  await withServer(async ({ post, broker }) => {
+    const res = await post('/api/execution/signals', {
+      symbol: 'R_100',
+      direction: 'RISE',
+      contractFamily: 'rise_fall',
+      accountId: 'DEMO'
+    });
+    assert.equal(res.status, 201);
+    assert.equal(res.body.auto, null);
+    assert.equal(broker.buys.length, 0);
   });
 });

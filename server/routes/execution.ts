@@ -6,6 +6,7 @@ import { requireSession, type AuthedRequest } from '../lib/session.js';
 import { open } from '../lib/crypto.js';
 import type { ExecutionGateway } from '../execution/gateway.js';
 import { ExecutionError } from '../execution/gateway.js';
+import type { AutoExecutionRunner } from '../execution/autoRunner.js';
 import type { MarketDataService } from '../services/marketData.js';
 import { createSignal, SignalError } from '../services/signals.js';
 import { adapterFor, AdapterError } from '../execution/adapters/index.js';
@@ -37,6 +38,8 @@ export interface ExecutionRouterDeps {
   store: Store;
   gateway: ExecutionGateway;
   market: MarketDataService;
+  /** Optional: when present, an automatic user's signal is executed on creation. */
+  runner?: AutoExecutionRunner;
 }
 
 /** Unseals the session's Deriv token, or null when absent/expired. */
@@ -59,7 +62,7 @@ function parseFamily(value: unknown): ContractFamily | null {
 }
 
 export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
-  const { store, gateway, market } = deps;
+  const { store, gateway, market, runner } = deps;
   const ctx = { cfg: deps.cfg, store };
   const router = Router();
   const json = express.json({ limit: '32kb' });
@@ -93,7 +96,17 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
         confidence: typeof body.confidence === 'number' ? body.confidence : null,
         reason: typeof body.reason === 'string' ? body.reason : ''
       });
-      res.status(201).json({ signal });
+      // An automatic user has pre-delegated submission: run the loop now. This
+      // still passes through every gateway control (kill switches, risk,
+      // single-use); it only removes the manual click.
+      let auto = null;
+      if (runner) {
+        const prefs = store.getExecutionPreferences(user.id);
+        if (prefs?.mode === 'automatic') {
+          auto = await runner.runForUser(user, signal, tokenFor(deps, req));
+        }
+      }
+      res.status(201).json({ signal, auto });
     } catch (err) {
       if (err instanceof SignalError) {
         res.status(422).json({ error: err.code, message: err.message });

@@ -569,3 +569,17 @@ has Markdown at `https://developers.deriv.com/llms/<endpoint>.md` (e.g. `buy.md`
 - HTTP surface: `server/routes/execution.ts` (signals, intents, submit).
 - Test scripts: `test:market`, `test:signals`, `test:risk`, `test:execution`,
   `test:broker`, `test:exec-routes`. Keep them green.
+
+## Automatic execution (Phase 7)
+
+- `server/execution/autoRunner.ts` (`AutoExecutionRunner`) is the automatic loop.
+  It adds only "signal -> intent -> submit"; every gateway control still runs.
+- Only `mode: 'automatic'` users run. REAL is refused outright: automatic
+  execution is DEMO-only in this build.
+- Single-flight per account: `inFlight` skips a second signal for an account with
+  an execution in progress (skipped, never queued).
+- Auto-stop: a terminal risk reason (`daily_loss`, `consecutive_losses`,
+  `auto_stopped`) sets `autoStopped` on the user's preferences and audits it. It
+  never clears itself; the customer must turn it back on.
+- Wired in `composition.ts` (bundled as `runner`) and invoked from
+  `POST /api/execution/signals` when the user is automatic. `test:auto` covers it.

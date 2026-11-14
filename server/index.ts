@@ -84,7 +84,7 @@ export function createApp(cfg: ServerConfig, store: Store): AppBundle {
   app.use('/api/telemetry', express.json({ limit: '32kb' }));
   app.use(createTelemetryRouter(ctx));
   app.use(createBalancesRouter(ctx, balances));
-  app.use(createExecutionRouter({ cfg, store, gateway: execution.gateway, market }));
+  app.use(createExecutionRouter({ cfg, store, gateway: execution.gateway, market, runner: execution.runner }));
 
   // WhatsApp alert dispatch. Status is public (masked); sending requires a session.
   app.use(createWhatsAppRouter());

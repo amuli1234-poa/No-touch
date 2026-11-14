@@ -6,6 +6,7 @@ import { DerivBroker } from './broker/derivBroker.js';
 import { BalanceService } from '../services/balance.js';
 import { effectiveRiskProfile, evaluateRisk } from '../services/risk.js';
 import { ExecutionAuditor } from './audit.js';
+import { AutoExecutionRunner } from './autoRunner.js';
 import type { SignalRecord } from './types.js';
 
 /**
@@ -22,6 +23,7 @@ import type { SignalRecord } from './types.js';
 
 export interface ExecutionBundle {
   gateway: ExecutionGateway;
+  runner: AutoExecutionRunner;
   flags: ExecutionFlags;
 }
 
@@ -66,5 +68,6 @@ export function createExecution(cfg: ServerConfig, store: Store): ExecutionBundl
     auditor
   });
 
-  return { gateway, flags };
+  const runner = new AutoExecutionRunner({ store, gateway, auditor });
+  return { gateway, runner, flags };
 }
