@@ -70,6 +70,12 @@ interface TradingChartProps {
   /** Structure overlays (zones, trendlines, swings, patterns) to paint. */
   overlays?: readonly OverlayShape[];
   onCrosshair?: (price: number | null, epochSeconds: number | null) => void;
+  /**
+   * Bump to request a view reset. A counter (rather than a boolean) lets the
+   * caller ask for a reset repeatedly; the effect fits the visible range back
+   * to the data. Kept as a prop so the chart stays a pure renderer.
+   */
+  resetKey?: number;
 }
 
 interface SeriesState {
@@ -90,7 +96,8 @@ export const TradingChart: React.FC<TradingChartProps> = ({
   height = 420,
   levels,
   overlays,
-  onCrosshair
+  onCrosshair,
+  resetKey
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -273,6 +280,15 @@ export const TradingChart: React.FC<TradingChartProps> = ({
     if (last) series.api.update(last as CandlestickData<Time> | LineData<Time>);
     loadedCountRef.current = candles.length;
   }, [candles, symbol, timeframe, kind]);
+
+  /* ---- view reset ------------------------------------------------------- */
+  useEffect(() => {
+    if (resetKey === undefined) return;
+    const chart = chartRef.current;
+    if (!chart) return;
+    // Fitting an empty series collapses the range, so only fit with data.
+    if (candles.length > 0) chart.timeScale().fitContent();
+  }, [resetKey]);
 
   /* ---- signal level overlays ------------------------------------------- */
   // Price lines live on the series, so they must be rebuilt whenever the series

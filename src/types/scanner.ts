@@ -7,7 +7,7 @@ export interface Candle {
   volume?: number;
 }
 
-export type Timeframe = '1m' | '5m' | '15m' | '1h' | '4h';
+export type Timeframe = '1m' | '2m' | '5m' | '15m' | '1h' | '4h';
 
 export type TrendDirection = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
 

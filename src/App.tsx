@@ -7,6 +7,12 @@ import { refreshBalances, onReconnect } from './lib/balances';
 import { OpportunityScoringEngine } from './engines/OpportunityScoringEngine';
 import { AppShell } from './components/shell/AppShell';
 import { Route } from './components/shell/navigation';
+import { DrawingStore } from './features/drawing-management/DrawingStore';
+import { useDrawings } from './features/drawing-management/useDrawings';
+import { DeterministicAnalysisEngine } from './features/analysis/engines/deterministicEngine';
+import { createDeclaredAiEngines } from './features/analysis/engines/unavailableEngines';
+import { useAnalysisRunner } from './features/analysis/useAnalysisRunner';
+import type { AnalysisResult } from './features/analysis/types';
 import { BestMarketView } from './components/views/BestMarketView';
 import { StrategyScannerView } from './components/views/StrategyScannerView';
 import { MtfPrecisionEntryView } from './components/views/MtfPrecisionEntryView';
@@ -61,6 +67,10 @@ export default function App() {
   const [wsManager] = useState(() => new DerivWebSocketManager(settings.appId));
   const [storage] = useState(() => new IndexedDbStorage());
   const [waService] = useState(() => new WhatsAppService());
+
+  // Drawing layer: metadata lives in the store, independent of chart rendering.
+  const [drawingStore] = useState(() => new DrawingStore());
+  const drawings = useDrawings(drawingStore);
 
   const [connectionState, setConnectionState] = useState<
     'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING'
@@ -356,6 +366,79 @@ export default function App() {
   const activeSymbolInfo = symbols.find((s) => s.symbol === selectedSymbol);
   const activeOpp = opportunities.get(selectedSymbol);
 
+  // Timeframes with a non-empty buffer for the selected symbol. The toolbar
+  // only marks a timeframe active when its data actually arrived.
+  const availableTimeframes = useMemo<ReadonlySet<Timeframe>>(() => {
+    const symMap = wsManager.candles.get(selectedSymbol);
+    const set = new Set<Timeframe>();
+    if (symMap) {
+      for (const [tf, list] of symMap.entries()) {
+        if (list.length > 0) set.add(tf);
+      }
+    }
+    return set;
+    // candleRevision re-reads the mutated buffer.
+  }, [wsManager, selectedSymbol, candleRevision]);
+
+  // Analysis engines: the real deterministic pipeline plus the declared
+  // (currently unavailable) AI engines.
+  const engines = useMemo(
+    () => [
+      new DeterministicAnalysisEngine({
+        candlesFor: (symbol) => {
+          const symMap = wsManager.candles.get(symbol);
+          return {
+            '1m': symMap?.get('1m'),
+            '5m': symMap?.get('5m'),
+            '15m': symMap?.get('15m'),
+            '1h': symMap?.get('1h'),
+            '4h': symMap?.get('4h')
+          };
+        },
+        symbolInfoFor: (symbol) => wsManager.activeSymbols.get(symbol),
+        minScoreThreshold: settings.minScoreThreshold,
+        fvgMinDisplacement: settings.fvgMinDisplacement
+      }),
+      ...createDeclaredAiEngines()
+    ],
+    [wsManager, settings.minScoreThreshold, settings.fvgMinDisplacement]
+  );
+
+  // Create a drawing only from a validated zone, anchored to the real chart
+  // time/price coordinates the engine published.
+  const handleAnalysisResult = useCallback(
+    (result: AnalysisResult) => {
+      if (result.status !== 'COMPLETED' || !result.zone) return;
+      const zone = result.zone;
+      const lastEpoch = result.snapshot.lastCandleEpochMs / 1000;
+      const startEpoch = zone.startEpoch ?? lastEpoch - 60 * 60;
+      const endEpoch = zone.endEpoch ?? lastEpoch;
+      drawingStore.addFromZone({
+        symbol: result.symbol,
+        direction: zone.direction,
+        timeframe: result.timeframe,
+        startEpoch,
+        endEpoch,
+        upperPrice: zone.upperPrice,
+        lowerPrice: zone.lowerPrice,
+        sourceAnalysisId: result.id,
+        reason: zone.reason
+      });
+    },
+    [drawingStore]
+  );
+
+  const runner = useAnalysisRunner({
+    engines,
+    symbol: selectedSymbol,
+    displayName: activeSymbolInfo?.displayName ?? selectedSymbol,
+    timeframe: selectedTimeframe,
+    candles: activeCandles,
+    connectionState,
+    isStale: activeSymbolInfo?.isStale,
+    onResult: handleAnalysisResult
+  });
+
   const plainSymbols = useMemo(() => symbols.filter((s) => !s.is1s), [symbols]);
   const oneSecSymbols = useMemo(() => symbols.filter((s) => s.is1s), [symbols]);
   const oppList = useMemo(() => Array.from(opportunities.values()), [opportunities]);
@@ -451,12 +534,17 @@ export default function App() {
           selectedTimeframe={selectedTimeframe}
           onSelectTimeframe={setSelectedTimeframe}
           candles={activeCandles}
+          availableTimeframes={availableTimeframes}
           activeSymbolInfo={activeSymbolInfo}
           activeOpp={activeOpp}
           connectionState={connectionState}
           waStatus={waStatus}
           alertsAutoSend={settings.whatsappAutoSend}
           onOpenAnalysis={() => setRoute('ANALYSIS')}
+          drawings={drawings}
+          onToggleDrawings={() => drawingStore.setVisible(!drawings.visible)}
+          onClearDrawings={() => drawingStore.clear()}
+          runner={runner}
         />
       )}
 

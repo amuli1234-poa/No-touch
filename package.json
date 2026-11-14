@@ -16,6 +16,8 @@
     "test": "tsx src/tests/strategy_engine.test.ts",
     "test:chart": "tsx src/tests/chart_data.test.ts",
     "test:overlays": "tsx src/tests/chart_overlays.test.ts",
+    "test:drawings": "tsx src/tests/drawing_management.test.ts",
+    "test:analysis": "tsx src/tests/analysis_orchestration.test.ts",
     "test:auth": "tsx server/tests/auth.test.ts",
     "test:admin": "tsx server/tests/admin.test.ts",
     "test:store": "tsx server/tests/store_lock.test.ts",

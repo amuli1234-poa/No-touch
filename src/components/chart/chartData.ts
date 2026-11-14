@@ -27,6 +27,7 @@ export interface ChartPoint {
 /** Bar length per timeframe, in seconds. Mirrors the server aggregation periods. */
 export const TIMEFRAME_SECONDS: Record<Timeframe, number> = {
   '1m': 60,
+  '2m': 120,
   '5m': 300,
   '15m': 900,
   '1h': 3600,
@@ -34,11 +35,12 @@ export const TIMEFRAME_SECONDS: Record<Timeframe, number> = {
 };
 
 export const TIMEFRAME_LABELS: { tf: Timeframe; label: string }[] = [
-  { tf: '1m', label: 'M1' },
-  { tf: '5m', label: 'M5' },
-  { tf: '15m', label: 'M15' },
+  { tf: '4h', label: 'H4' },
   { tf: '1h', label: 'H1' },
-  { tf: '4h', label: 'H4' }
+  { tf: '15m', label: 'M15' },
+  { tf: '5m', label: 'M5' },
+  { tf: '2m', label: 'M2' },
+  { tf: '1m', label: 'M1' }
 ];
 
 function isFiniteCandle(c: Candle): boolean {

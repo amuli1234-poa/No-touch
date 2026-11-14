@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { CandlestickChart, LineChart, Wallet } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { CandlestickChart, PanelRightOpen, X } from 'lucide-react';
 import type {
   ActiveSymbol,
   Candle,
@@ -7,28 +7,28 @@ import type {
   Timeframe,
   WhatsAppProviderStatus
 } from '../../types/scanner';
-import { Card, CardHeader } from '../ui/Card';
 import { formatPrice } from '../ui/format';
 import { ChartStructureEngine } from '../../engines/ChartStructureEngine';
 import { TradingChart, type ChartKind, type ChartLevel } from './TradingChart';
-import { buildOverlays, type OverlayPreferences } from './chartOverlays';
+import { buildOverlays, type OverlayPreferences, type OverlayShape } from './chartOverlays';
 import { OverlayLegend } from './OverlayLegend';
-import { WorkspaceHeader } from './WorkspaceHeader';
+import { ChartToolbar } from '../controls/ChartToolbar';
 import { ScannerSummary } from '../views/ScannerSummary';
-import { TradePanel } from '../views/TradePanel';
+import { AnalysisPanel } from '../analysis/AnalysisPanel';
 import { useOverlayPreferences } from '../../lib/overlayPreferences';
+import type { AnalysisRunner } from '../../features/analysis/useAnalysisRunner';
+import type { DrawingState } from '../../features/drawing-management/DrawingStore';
 
 /**
- * The trading workspace: watchlist, chart and account panel.
+ * The institutional workspace: a dominant chart with a fixed right analysis
+ * panel.
  *
- * The chart is the dominant element. A single compact status strip under the
- * chart carries the scanner read (state, condition, indicators, timestamp,
- * freshness), replacing the former grid of indicator and signal cards. The
- * watchlist and account panel stay narrow so the chart keeps the most width at
- * every breakpoint; on smaller screens the account panel moves behind a tab.
+ * Layout intent (desktop): the chart takes ~72–78% of the workspace width and
+ * the analysis panel a fixed ~340–360px, so the chart is always the primary
+ * element. Below `xl` the panel becomes a slide-over drawer with a backdrop,
+ * keeping the chart full-width and the analysis action one tap away.
  *
- * All market data is owned by `App.tsx` and passed down - this component holds
- * only view state (selected symbol, chart type), never market data.
+ * All market data is owned by `App.tsx`; this component holds only view state.
  */
 
 interface TradingWorkspaceProps {
@@ -39,34 +39,58 @@ interface TradingWorkspaceProps {
   selectedTimeframe: Timeframe;
   onSelectTimeframe: (tf: Timeframe) => void;
   candles: Candle[];
+  availableTimeframes: ReadonlySet<Timeframe>;
   activeSymbolInfo?: ActiveSymbol;
   activeOpp?: OpportunitySignal;
   connectionState: 'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING';
   waStatus: WhatsAppProviderStatus;
   alertsAutoSend: boolean;
   onOpenAnalysis: () => void;
+  /** Drawing layer. */
+  drawings: DrawingState & { shapes: (symbol: string, timeframe?: string) => OverlayShape[] };
+  onToggleDrawings: () => void;
+  onClearDrawings: () => void;
+  /** Analysis runner (owned by App so results outlive route changes). */
+  runner: AnalysisRunner;
 }
-
-type MobileTab = 'chart' | 'account';
 
 export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
   symbols,
-  opportunities,
   selectedSymbol,
   onSelectSymbol,
   selectedTimeframe,
   onSelectTimeframe,
   candles,
+  availableTimeframes,
   activeSymbolInfo,
   activeOpp,
   connectionState,
-  waStatus,
-  alertsAutoSend,
-  onOpenAnalysis
+  onOpenAnalysis,
+  drawings,
+  onToggleDrawings,
+  onClearDrawings,
+  runner
 }) => {
   const [chartKind, setChartKind] = useState<ChartKind>('candles');
-  const [mobileTab, setMobileTab] = useState<MobileTab>('chart');
   const [overlayPrefs, setOverlayPrefs] = useOverlayPreferences();
+  const [overlaysVisible, setOverlaysVisible] = useState(true);
+  const [resetKey, setResetKey] = useState(0);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [chartHeight, setChartHeight] = useState(460);
+
+  // The chart is the dominant element, so give it more height on wider screens.
+  useEffect(() => {
+    const update = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      if (w < 640) setChartHeight(Math.max(280, Math.round(h * 0.42)));
+      else if (w < 1280) setChartHeight(420);
+      else setChartHeight(Math.max(420, Math.min(620, Math.round(h * 0.62))));
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
 
   const digits = (activeSymbolInfo?.pipSize ?? 0.01) < 0.01 ? 3 : 2;
 
@@ -74,16 +98,6 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
     () => ChartStructureEngine.derive(candles, selectedTimeframe),
     [candles, selectedTimeframe]
   );
-
-  const overlays = useMemo(() => {
-    const lastEpoch = candles.length > 0 ? candles[candles.length - 1].epoch : 0;
-    return buildOverlays({
-      structure,
-      opportunity: activeOpp,
-      preferences: overlayPrefs,
-      lastEpoch
-    });
-  }, [structure, activeOpp, overlayPrefs, candles]);
 
   const overlayAvailability = useMemo<Record<keyof OverlayPreferences, boolean>>(
     () => ({
@@ -101,6 +115,17 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
     [structure, activeOpp]
   );
 
+  // Structure overlays (engine-derived) + drawings (analysis-derived). Drawings
+  // are projected straight from the store, never re-derived from candles.
+  const overlays = useMemo<OverlayShape[]>(() => {
+    const lastEpoch = candles.length > 0 ? candles[candles.length - 1].epoch : 0;
+    const structureShapes = overlaysVisible
+      ? buildOverlays({ structure, opportunity: activeOpp, preferences: overlayPrefs, lastEpoch })
+      : [];
+    const drawingShapes = drawings.shapes(selectedSymbol, selectedTimeframe);
+    return [...structureShapes, ...drawingShapes];
+  }, [structure, activeOpp, overlayPrefs, candles, overlaysVisible, drawings, selectedSymbol, selectedTimeframe]);
+
   const levels = useMemo<ChartLevel[]>(() => {
     const tp = activeOpp?.entryAndTp;
     if (!tp) return [];
@@ -113,162 +138,156 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
     return out;
   }, [activeOpp]);
 
+  const analysisPanel = (
+    <AnalysisPanel
+      symbol={selectedSymbol}
+      displayName={activeSymbolInfo?.displayName ?? selectedSymbol}
+      timeframe={selectedTimeframe}
+      activeSymbol={activeSymbolInfo}
+      candleCount={candles.length}
+      connectionState={connectionState}
+      isStale={activeSymbolInfo?.isStale}
+      runner={runner}
+      drawingCount={drawings.records.length}
+      drawingsVisible={drawings.visible}
+      onToggleDrawings={onToggleDrawings}
+      onClearDrawings={onClearDrawings}
+    />
+  );
+
   return (
-    <div className="grid grid-cols-1 items-start gap-3 xl:grid-cols-12">
-      {/* Region A - watchlist. Narrow column on xl. */}
-      <aside className="xl:col-span-2">
-        <Card className="overflow-hidden p-0">
-          <CardHeader
-            title="Markets"
-            subtitle={`${symbols.length} instruments`}
-            icon={<LineChart className="h-4 w-4" />}
-          />
-          <div className="max-h-[260px] divide-y divide-line-soft overflow-y-auto xl:max-h-[680px]">
-            {symbols.length === 0 && (
-              <p className="px-3.5 py-4 text-[11.5px] text-fg-5">
-                Discovering instruments from the feed…
-              </p>
-            )}
-            {symbols.map((sym) => {
-              const opp = opportunities.get(sym.symbol);
-              const active = sym.symbol === selectedSymbol;
-              const dec = sym.pipSize < 0.01 ? 3 : 2;
-              return (
-                <button
-                  key={sym.symbol}
-                  onClick={() => onSelectSymbol(sym.symbol)}
-                  aria-current={active ? 'true' : undefined}
-                  className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors ${
-                    active ? 'bg-surface-raised text-fg-1' : 'text-fg-3 hover:bg-surface-raised'
+    <div className="flex items-start gap-3">
+      {/* Chart column — dominant region. */}
+      <div className="min-w-0 flex-1 space-y-3">
+        <div className="overflow-hidden rounded-[var(--radius-lg)] border border-line bg-surface">
+          {/* Instrument strip */}
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <label className="sr-only" htmlFor="market-select">
+                Select market
+              </label>
+              <select
+                id="market-select"
+                value={selectedSymbol}
+                onChange={(e) => onSelectSymbol(e.target.value)}
+                className="h-8 max-w-[220px] rounded-[9px] border border-line bg-surface-deepest px-2 text-[12px] font-semibold text-fg-1 focus:border-accent focus:outline-none"
+              >
+                {symbols.map((s) => (
+                  <option key={s.symbol} value={s.symbol}>
+                    {s.displayName}
+                    {s.isOpen ? '' : ' (closed)'}
+                  </option>
+                ))}
+              </select>
+              <div className="flex items-baseline gap-2">
+                <span className="tabular text-[16px] font-bold leading-none text-fg-1">
+                  {activeSymbolInfo?.lastQuote ? formatPrice(activeSymbolInfo.lastQuote, digits) : '—'}
+                </span>
+                <span
+                  className={`tabular text-[10.5px] font-semibold ${
+                    connectionState === 'CONNECTED' ? 'text-live' : 'text-danger'
                   }`}
                 >
-                  <div className="min-w-0">
-                    <div className="truncate text-[12px] font-semibold">{sym.displayName}</div>
-                    <div className="text-[10px] text-fg-5">
-                      {opp ? opp.marketCondition : 'Scanning'}
-                    </div>
-                  </div>
-                  <div className="tabular shrink-0 text-right">
-                    <div className="text-[12px] font-semibold text-fg-2">
-                      {sym.lastQuote ? formatPrice(sym.lastQuote, dec) : '—'}
-                    </div>
-                    <div
-                      className={`text-[10px] font-bold ${
-                        (opp?.score.total || 0) >= 75
-                          ? 'text-success'
-                          : (opp?.score.total || 0) >= 60
-                            ? 'text-warning'
-                            : 'text-fg-5'
-                      }`}
-                    >
-                      {opp ? `${opp.score.total}%` : '—'}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </Card>
-      </aside>
+                  ● {connectionState === 'CONNECTED' ? 'LIVE' : connectionState}
+                </span>
+              </div>
+            </div>
 
-      {/* Region B - chart + scanner summary. The dominant region. */}
-      <div className="min-w-0 space-y-3 xl:col-span-7">
-        {/* Mobile tab switch: chart / account. Hidden on xl where both show. */}
-        <div className="flex items-center gap-1 rounded-[var(--radius-md)] border border-line bg-surface-deepest p-0.5 xl:hidden">
-          {(
-            [
-              { id: 'chart', label: 'Chart', icon: CandlestickChart },
-              { id: 'account', label: 'Account', icon: Wallet }
-            ] as const
-          ).map((t) => {
-            const Icon = t.icon;
-            const active = mobileTab === t.id;
-            return (
+            <div className="flex items-center gap-1.5">
               <button
-                key={t.id}
-                onClick={() => setMobileTab(t.id)}
-                aria-pressed={active}
-                className={`flex flex-1 items-center justify-center gap-1.5 rounded-[8px] px-2 py-1.5 text-[11.5px] font-semibold transition-colors ${
-                  active ? 'bg-accent text-on-accent' : 'text-fg-4 hover:text-fg-1'
-                }`}
+                onClick={() => setPanelOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-[9px] border border-line bg-surface-raised px-2.5 py-1.5 text-[11.5px] font-semibold text-fg-2 transition-colors hover:border-line-strong xl:hidden"
               >
-                <Icon className="h-3.5 w-3.5" />
-                {t.label}
+                <PanelRightOpen className="h-3.5 w-3.5" />
+                Analysis
               </button>
-            );
-          })}
-        </div>
+              <button
+                onClick={onOpenAnalysis}
+                className="hidden items-center gap-1.5 rounded-[9px] border border-line bg-surface-raised px-2.5 py-1.5 text-[11.5px] font-semibold text-fg-2 transition-colors hover:border-line-strong xl:inline-flex"
+              >
+                <CandlestickChart className="h-3.5 w-3.5" />
+                Full breakdown
+              </button>
+            </div>
+          </div>
 
-        <div className={mobileTab === 'chart' ? 'block' : 'hidden xl:block'}>
-          <Card className="overflow-hidden p-0">
-            <div className="p-3">
-              <WorkspaceHeader
-                symbols={symbols}
-                selectedSymbol={selectedSymbol}
-                onSelectSymbol={onSelectSymbol}
-                selectedTimeframe={selectedTimeframe}
-                onSelectTimeframe={onSelectTimeframe}
-                chartKind={chartKind}
-                onSelectChartKind={setChartKind}
-                candles={candles}
-                activeSymbol={activeSymbolInfo}
-                isStale={activeSymbolInfo?.isStale}
-              />
-            </div>
-            <div className="px-3 pb-3">
-              <TradingChart
-                candles={candles}
-                symbol={selectedSymbol}
-                timeframe={selectedTimeframe}
-                kind={chartKind}
-                priceDigits={digits}
-                isStale={activeSymbolInfo?.isStale}
-                connectionState={connectionState}
-                levels={levels}
-                overlays={overlays}
-                height={440}
-              />
-            </div>
-            <div className="border-t border-line-soft px-3 py-1.5">
-              <OverlayLegend
-                preferences={overlayPrefs}
-                onToggle={setOverlayPrefs}
-                availability={overlayAvailability}
-              />
-            </div>
-          </Card>
-
-          {/* Compact scanner status strip - replaces the indicator/signal cards. */}
-          <ScannerSummary
-            opportunity={activeOpp}
-            lastTickAt={activeSymbolInfo?.lastTickEpoch ? activeSymbolInfo.lastTickEpoch * 1000 : null}
-            isStale={activeSymbolInfo?.isStale}
-            connectionState={connectionState}
-            onOpenAnalysis={onOpenAnalysis}
+          <ChartToolbar
+            selectedTimeframe={selectedTimeframe}
+            onSelectTimeframe={onSelectTimeframe}
+            availableTimeframes={availableTimeframes}
+            chartKind={chartKind}
+            onSelectChartKind={setChartKind}
+            onResetChart={() => setResetKey((k) => k + 1)}
+            drawingsVisible={drawings.visible}
+            onToggleDrawings={onToggleDrawings}
+            onClearDrawings={onClearDrawings}
+            drawingCount={drawings.records.length}
+            overlaysVisible={overlaysVisible}
+            onToggleOverlays={() => setOverlaysVisible((v) => !v)}
           />
-        </div>
 
-        <div className={mobileTab === 'account' ? 'block' : 'hidden xl:block'}>
-          <div className="xl:hidden">
-            <TradePanel
-              activeSymbol={activeSymbolInfo}
-              opportunity={activeOpp}
-              waStatus={waStatus}
-              alertsAutoSend={alertsAutoSend}
+          <div className="p-2">
+            <TradingChart
+              candles={candles}
+              symbol={selectedSymbol}
+              timeframe={selectedTimeframe}
+              kind={chartKind}
+              priceDigits={digits}
+              isStale={activeSymbolInfo?.isStale}
+              connectionState={connectionState}
+              levels={levels}
+              overlays={overlays}
+              height={chartHeight}
+              resetKey={resetKey}
+            />
+          </div>
+
+          <div className="border-t border-line-soft px-3 py-1.5">
+            <OverlayLegend
+              preferences={overlayPrefs}
+              onToggle={setOverlayPrefs}
+              availability={overlayAvailability}
             />
           </div>
         </div>
+
+        <ScannerSummary
+          opportunity={activeOpp}
+          lastTickAt={activeSymbolInfo?.lastTickEpoch ? activeSymbolInfo.lastTickEpoch * 1000 : null}
+          isStale={activeSymbolInfo?.isStale}
+          connectionState={connectionState}
+          onOpenAnalysis={onOpenAnalysis}
+        />
       </div>
 
-      {/* Region C - account panel. Narrow, desktop only. */}
-      <aside className="hidden xl:col-span-3 xl:block">
-        <TradePanel
-          activeSymbol={activeSymbolInfo}
-          opportunity={activeOpp}
-          waStatus={waStatus}
-          alertsAutoSend={alertsAutoSend}
-        />
+      {/* Right analysis panel — fixed width on desktop, drawer below xl. */}
+      <aside className="hidden shrink-0 xl:block xl:w-[340px] 2xl:w-[360px]">
+        <div className="sticky top-[64px]">{analysisPanel}</div>
       </aside>
+
+      {/* Mobile slide-over drawer */}
+      {panelOpen && (
+        <div className="fixed inset-0 z-50 xl:hidden">
+          <button
+            aria-label="Close analysis panel"
+            className="absolute inset-0 bg-app/70 backdrop-blur-[2px]"
+            onClick={() => setPanelOpen(false)}
+          />
+          <div className="absolute right-0 top-0 flex h-full w-full max-w-[380px] flex-col bg-app shadow-[var(--shadow-modal)]">
+            <div className="flex items-center justify-between border-b border-line px-3 py-2">
+              <span className="text-[12px] font-semibold text-fg-1">Analysis</span>
+              <button
+                aria-label="Close"
+                onClick={() => setPanelOpen(false)}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] border border-line bg-surface-raised text-fg-4 hover:text-fg-1"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">{analysisPanel}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

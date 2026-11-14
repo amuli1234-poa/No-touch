@@ -404,9 +404,11 @@ export class DerivWebSocketManager {
 
     // Standard 1m batch -> aggregate strictly to 5m and 15m (plus fallback 1h/4h only if native not loaded yet)
     symStore.set('1m', parsed);
+    const c2m = this.aggregateCandles(parsed, 120);
     const c5m = this.aggregateCandles(parsed, 300);
     const c15m = this.aggregateCandles(parsed, 900);
 
+    symStore.set('2m', c2m);
     symStore.set('5m', c5m);
     symStore.set('15m', c15m);
 
@@ -477,6 +479,7 @@ export class DerivWebSocketManager {
 
     const timeframes: { tf: Timeframe; period: number }[] = [
       { tf: '1m', period: 60 },
+      { tf: '2m', period: 120 },
       { tf: '5m', period: 300 },
       { tf: '15m', period: 900 },
       { tf: '1h', period: 3600 },

@@ -155,6 +155,7 @@ export const ChartStructureEngine = {
 
 const TIMEFRAME_SECONDS: Record<Timeframe, number> = {
   '1m': 60,
+  '2m': 120,
   '5m': 300,
   '15m': 900,
   '1h': 3600,

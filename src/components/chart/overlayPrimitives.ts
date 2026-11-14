@@ -44,7 +44,9 @@ function toneColors(colors: ChartColors): Record<OverlayTone, OverlayToneColors>
     patternNeckline: { line: colors.patternNeckline, label: colors.patternNeckline },
     patternBoundary: { line: colors.patternBoundary },
     patternPole: { line: colors.patternPole },
-    breakout: { line: colors.breakout, label: colors.breakout }
+    breakout: { line: colors.breakout, label: colors.breakout },
+    rise: { line: colors.rise, fill: colors.riseFill, label: colors.rise },
+    fall: { line: colors.fall, fill: colors.fallFill, label: colors.fall }
   };
 }
 

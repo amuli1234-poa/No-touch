@@ -21,47 +21,53 @@
      <html> re-skins the whole product.
      ------------------------------------------------------------------ */
 
-  /* Surfaces */
-  --app-bg: #060b16;
-  --surface: #0d1420;
-  --surface-raised: #121b2b;
-  --surface-elevated: #162133;
-  --surface-glass: rgba(13, 20, 32, 0.72);
-  --surface-deep: #0a1018;
+  /* Surfaces — institutional dark navy/charcoal scale. */
+  --app-bg: #080d16;
+  --surface: #101827;
+  --surface-raised: #141e2e;
+  --surface-elevated: #16202f;
+  --surface-glass: rgba(16, 24, 39, 0.72);
+  --surface-deep: #0b1220;
   --surface-deepest: #0b1220;
-  --surface-inset: #0a1018;
+  --surface-inset: #0b1220;
 
-  /* Accents */
-  --accent: #0068B5;
-  --accent-strong: #2E8AD8;
-  --accent-soft: #60A5FA;
-  --accent-cyan: #38BDF8;
+  /* Accents — one confident blue for interactive chrome. */
+  --accent: #2878d0;
+  --accent-strong: #3a8fe0;
+  --accent-soft: #6fb2ea;
+  --accent-cyan: #4aa3e8;
   --on-accent: #ffffff;
 
-  /* Semantic — tuned for legibility as text on dark surfaces. */
-  --success: #4ADE80;
-  --warning: #FBBF24;
-  --danger: #F87171;
+  /* Semantic status — tuned for legibility as text on dark surfaces. */
+  --success: #25b887;
+  --warning: #d9a441;
+  --danger: #d64c58;
+
+  /* Directional language. Blue and red are semantics, not predictions. */
+  --rise: #2878d0;
+  --fall: #d64c58;
+  --neutral-signal: #a0aab8;
+  --live: #25b887;
 
   /* Text */
-  --text-primary: #F1F5F9;
-  --text-secondary: #94A3B8;
-  --text-muted: #64748B;
+  --text-primary: #e6edf5;
+  --text-secondary: #8492a6;
+  --text-muted: #59677a;
 
   /* Structure */
-  --border: #1e2b40;
-  --border-soft: #162133;
-  --border-strong: #2f4258;
-  --ring: rgba(0, 104, 181, 0.45);
+  --border: #202c3d;
+  --border-soft: #182233;
+  --border-strong: #2c3a4f;
+  --ring: rgba(40, 120, 208, 0.45);
 
-  /* Text tiers used by Tailwind utilities (slate scale in dark). */
-  --fg-1: #f1f5f9;
-  --fg-2: #e2e8f0;
-  --fg-3: #cbd5e1;
-  --fg-4: #94a3b8;
-  --fg-5: #93a1b8;
-  --fg-6: #8391a8;
-  --fg-7: #64748b;
+  /* Text tiers used by Tailwind utilities. */
+  --fg-1: #e6edf5;
+  --fg-2: #d3dce8;
+  --fg-3: #b4c0d0;
+  --fg-4: #8492a6;
+  --fg-5: #6e7c90;
+  --fg-6: #59677a;
+  --fg-7: #4a5768;
 
   /* Data-viz tints that need to differ between themes. */
   --tint-sky: #7dd3fc;
@@ -83,44 +89,44 @@
     0 20px 60px -24px rgba(0, 0, 0, 0.55);
   --shadow-modal: 0 40px 100px -40px rgba(0, 0, 0, 0.9);
   --shadow-control: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --shadow-accent: 0 4px 14px -4px rgba(0, 104, 181, 0.7);
-  --shadow-accent-lg: 0 10px 30px -12px rgba(0, 104, 181, 0.9);
+  --shadow-accent: 0 4px 14px -4px rgba(40, 120, 208, 0.65);
+  --shadow-accent-lg: 0 10px 30px -12px rgba(40, 120, 208, 0.85);
 
   /* Chart surfaces + series colours (read at runtime by the chart engine,
      which needs concrete colour strings rather than classes). */
-  --chart-bg: #060b16;
-  --chart-grid: #101828;
-  --chart-border: #162133;
-  --chart-text: #94a3b8;
-  --chart-crosshair: #38bdf8;
-  --chart-crosshair-label: #075985;
-  --chart-up: #16a34a;
-  --chart-down: #dc2626;
-  --chart-spot: #38bdf8;
-  --chart-sweep: #f59e0b;
-  --chart-structural: #0068b5;
-  --chart-barrier: #dc2626;
-  --chart-swing: #fbbf24;
-  --chart-adaptive: #0ea5e9;
-  --chart-fvg: #60a5fa;
-  --chart-fvg-mid: #93c5fd;
-  --chart-zone-support: #15803d;
-  --chart-zone-resistance: #dc2626;
-  --chart-zone-support-fill: rgba(21, 128, 61, 0.11);
-  --chart-zone-resistance-fill: rgba(220, 38, 38, 0.11);
-  --chart-flip-support: #2dd4bf;
-  --chart-flip-resistance: #fb7185;
-  --chart-flip-support-fill: rgba(20, 184, 166, 0.14);
-  --chart-flip-resistance-fill: rgba(244, 63, 94, 0.14);
-  --chart-trend-bull: rgba(45, 212, 191, 0.82);
-  --chart-trend-bear: rgba(251, 146, 60, 0.82);
-  --chart-trend-neutral: rgba(148, 163, 184, 0.72);
-  --chart-protected-high: #f59e0b;
-  --chart-protected-low: #38bdf8;
-  --chart-pattern-neckline: rgba(244, 114, 182, 0.85);
-  --chart-pattern-boundary: rgba(192, 132, 252, 0.82);
-  --chart-pattern-pole: rgba(56, 189, 248, 0.72);
-  --chart-breakout: #38bdf8;
+  --chart-bg: #0b1220;
+  --chart-grid: #16202f;
+  --chart-border: #202c3d;
+  --chart-text: #8492a6;
+  --chart-crosshair: #4aa3e8;
+  --chart-crosshair-label: #1b4a72;
+  --chart-up: #25b887;
+  --chart-down: #d64c58;
+  --chart-spot: #4aa3e8;
+  --chart-sweep: #d9a441;
+  --chart-structural: #2878d0;
+  --chart-barrier: #d64c58;
+  --chart-swing: #d9a441;
+  --chart-adaptive: #2878d0;
+  --chart-fvg: #6fb2ea;
+  --chart-fvg-mid: #a9cdf0;
+  --chart-zone-support: #25b887;
+  --chart-zone-resistance: #d64c58;
+  --chart-zone-support-fill: rgba(37, 184, 135, 0.11);
+  --chart-zone-resistance-fill: rgba(214, 76, 88, 0.11);
+  --chart-flip-support: #25b887;
+  --chart-flip-resistance: #d64c58;
+  --chart-flip-support-fill: rgba(37, 184, 135, 0.14);
+  --chart-flip-resistance-fill: rgba(214, 76, 88, 0.14);
+  --chart-trend-bull: rgba(37, 184, 135, 0.82);
+  --chart-trend-bear: rgba(214, 76, 88, 0.82);
+  --chart-trend-neutral: rgba(160, 170, 184, 0.72);
+  --chart-protected-high: #d9a441;
+  --chart-protected-low: #4aa3e8;
+  --chart-pattern-neckline: rgba(111, 178, 234, 0.85);
+  --chart-pattern-boundary: rgba(160, 170, 184, 0.82);
+  --chart-pattern-pole: rgba(74, 163, 232, 0.72);
+  --chart-breakout: #4aa3e8;
 
   /* Layout */
   --nav-width: 244px;
@@ -171,6 +177,12 @@
   --success: #15803D;
   --warning: #B45309;
   --danger: #DC2626;
+
+  /* Directional language — darkened for contrast on light surfaces. */
+  --rise: #1D6FC0;
+  --fall: #C0392B;
+  --neutral-signal: #64748B;
+  --live: #15803D;
 
   /* Text */
   --text-primary: #0a1628;
@@ -285,6 +297,11 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
+
+  --color-rise: var(--rise);
+  --color-fall: var(--fall);
+  --color-neutral-signal: var(--neutral-signal);
+  --color-live: var(--live);
 
   --color-fg-1: var(--fg-1);
   --color-fg-2: var(--fg-2);

@@ -39,6 +39,10 @@ export interface ChartColors {
   patternBoundary: string;
   patternPole: string;
   breakout: string;
+  rise: string;
+  fall: string;
+  riseFill: string;
+  fallFill: string;
 }
 
 /** Fallbacks are only used if a token is missing (e.g. in a non-DOM test). */
@@ -71,8 +75,12 @@ const FALLBACK: ChartColors = {
   protectedLow: '#38bdf8',
   patternNeckline: 'rgba(244, 114, 182, 0.85)',
   patternBoundary: 'rgba(192, 132, 252, 0.82)',
-  patternPole: 'rgba(56, 189, 248, 0.72)',
-  breakout: '#38bdf8'
+  patternPole: 'rgba(74, 163, 232, 0.72)',
+  breakout: '#4aa3e8',
+  rise: '#2878d0',
+  fall: '#d64c58',
+  riseFill: 'rgba(40, 120, 208, 0.14)',
+  fallFill: 'rgba(214, 76, 88, 0.14)'
 };
 
 function readVar(styles: CSSStyleDeclaration, name: string, fallback: string): string {
@@ -119,6 +127,10 @@ export function readChartColors(theme: string): ChartColors {
     patternNeckline: readVar(styles, '--chart-pattern-neckline', FALLBACK.patternNeckline),
     patternBoundary: readVar(styles, '--chart-pattern-boundary', FALLBACK.patternBoundary),
     patternPole: readVar(styles, '--chart-pattern-pole', FALLBACK.patternPole),
-    breakout: readVar(styles, '--chart-breakout', FALLBACK.breakout)
+    breakout: readVar(styles, '--chart-breakout', FALLBACK.breakout),
+    rise: readVar(styles, '--rise', FALLBACK.rise),
+    fall: readVar(styles, '--fall', FALLBACK.fall),
+    riseFill: 'rgba(40, 120, 208, 0.14)',
+    fallFill: 'rgba(214, 76, 88, 0.14)'
   };
 }

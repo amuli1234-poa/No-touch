@@ -24,7 +24,9 @@ export type OverlayTone =
   | 'patternNeckline'
   | 'patternBoundary'
   | 'patternPole'
-  | 'breakout';
+  | 'breakout'
+  | 'rise'
+  | 'fall';
 
 export interface OverlayPreferences {
   showTrendlines: boolean;

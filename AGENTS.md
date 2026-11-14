@@ -415,3 +415,57 @@ remote-tracking ref. Do not open a pull request unless explicitly asked.
 
 Earlier notes here claimed the token was read-only and that pushes failed with
 `403 Resource not accessible by integration` — that is no longer accurate.
+
+## Multi-AI chart analyser (workspace restyle)
+
+- The institutional restyle lives in the token layer, not in components:
+  `src/index.css` `:root` holds the dark navy/charcoal palette and the
+  `@theme inline` bridge maps new semantic tokens to Tailwind classes. Use the
+  Tailwind classes (`text-rise`, `text-fall`, `text-live`,
+  `text-neutral-signal`, `bg-rise/10`, …) rather than raw hex. Blue and red
+  mean rise/fall — they are semantics, never forecasts.
+- Layout: `TradingWorkspace.tsx` is a flex row where the chart column is
+  `flex-1` (~72–78% wide) and the analysis panel is a fixed `xl:w-[340px]` /
+  `2xl:w-[360px]` aside. Below `xl` the panel is a slide-over drawer with a
+  backdrop, so the chart stays full-width on tablet/Android. The chart height is
+  responsive via a `resize` listener, not a fixed number.
+- Analysis architecture (`src/features/analysis/`):
+  - `engines/types.ts` defines `AnalysisEngine`, `MarketSnapshot` and
+    `EngineOutput`. An engine is asked for `checkAvailability()` before
+    `analyze()`; an unavailable engine is reported `UNAVAILABLE` and is **never**
+    called.
+  - `engines/deterministicEngine.ts` wraps the real
+    `OpportunityScoringEngine.analyzeTopDown` pipeline. It only reports zones the
+    engine already published (valid tradeable range + confirmed entry) and never
+    invents a price.
+  - `engines/unavailableEngines.ts` declares the specialized AI engines. No
+    inference provider is wired up (`@google/genai` is present but unused and
+    `GEMINI_API_KEY` is absent), so all of them are `UNAVAILABLE` and throw
+    rather than fabricating output. Wire a provider here and flip
+    `checkAvailability` when one exists.
+  - `snapshot.ts` builds the immutable `MarketSnapshot` with real provenance
+    (source, freshness, completeness); stale/short/malformed buffers are marked
+    incomplete and the run fails honestly.
+  - `orchestrator.ts` runs the five stages (verify → technical → AI engines →
+    comparison → validate). A directional result is produced only when the
+    deterministic engine validated a zone and no available engine contradicts
+    it; otherwise the status is `WAIT` and `zone` is null.
+  - `useAnalysisRunner.ts` owns the single-flight run lifecycle and cancels
+    in-flight work; `components/analysis/AnalysisPanel.tsx` renders the five
+    sections (Run analysis, Analysis progress, Engine status, Analysis result,
+    Next zone to watch).
+- Drawing management (`src/features/drawing-management/`) keeps drawing
+  *metadata* in a framework-agnostic `DrawingStore` (persisted under
+  `wicksentinel_drawings_v1`) and projects it to chart shapes in `geometry.ts`.
+  A drawing can only be created from a validated analysis zone
+  (`sourceAnalysisId` required) with ordered, finite coordinates; invalid input
+  is rejected rather than coerced. Coordinates are stored in chart units (epoch
+  seconds + price) so a drawing survives resizes and timeframe switches without
+  being silently moved.
+- The M2 timeframe was added to the `Timeframe` union and is aggregated in
+  `DerivWebSocketManager` from the 1m batch (and updated live). The toolbar only
+  marks a timeframe active once its buffer is non-empty, so a failed request
+  never looks like a successful switch.
+- Tests: `npm run test:drawings` and `npm run test:analysis` cover the
+  anti-fabrication guarantees (no zone without validation, unavailable engines
+  never called, disagreement ⇒ WAIT, invalid coordinates rejected).
