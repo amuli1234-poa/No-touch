@@ -10,14 +10,13 @@ import { BestMarketView } from './components/views/BestMarketView';
 import { StrategyScannerView } from './components/views/StrategyScannerView';
 import { MtfPrecisionEntryView } from './components/views/MtfPrecisionEntryView';
 import { LiveMarketScannerTable } from './components/views/LiveMarketScannerTable';
-import { DerivAdvancedChart } from './components/views/DerivAdvancedChart';
+import { TradingWorkspace } from './components/chart/TradingWorkspace';
 import { OpportunityCard } from './components/views/OpportunityCard';
 import { SignalsView } from './components/views/SignalsView';
 import { PerformanceDashboard } from './components/views/PerformanceDashboard';
 import { SettingsView } from './components/views/SettingsView';
 import { Card, CardHeader, CardBody, EmptyState } from './components/ui';
 import { SectionTitle } from './components/ui/StatCard';
-import { formatPrice } from './components/ui/format';
 import { LineChart, Clock } from 'lucide-react';
 import {
   ActiveSymbol,
@@ -396,6 +395,7 @@ export default function App() {
       latencyMs={latencyMs}
       missedTicks={missedTicks}
       signalBadge={confirmedCount}
+      lastTickAt={activeSymbolInfo?.lastTickEpoch ? activeSymbolInfo.lastTickEpoch * 1000 : null}
       mobileNavOpen={mobileNavOpen}
       onOpenMobileNav={() => setMobileNavOpen(true)}
       onCloseMobileNav={() => setMobileNavOpen(false)}
@@ -469,18 +469,20 @@ export default function App() {
       )}
 
       {route === 'LIVE_CHART' && (
-        <LiveChartTab
+        <TradingWorkspace
           symbols={symbols}
           opportunities={opportunities}
           selectedSymbol={selectedSymbol}
-          setSelectedSymbol={setSelectedSymbol}
+          onSelectSymbol={setSelectedSymbol}
           selectedTimeframe={selectedTimeframe}
-          setSelectedTimeframe={setSelectedTimeframe}
-          activeCandles={activeCandles}
+          onSelectTimeframe={setSelectedTimeframe}
+          candles={activeCandles}
           activeSymbolInfo={activeSymbolInfo}
           activeOpp={activeOpp}
           connectionState={connectionState}
           latencyMs={latencyMs}
+          waStatus={waStatus}
+          alertsAutoSend={settings.whatsappAutoSend}
           onOpenAnalysis={() => setRoute('ANALYSIS')}
         />
       )}
@@ -615,136 +617,6 @@ const MarketMetrics: React.FC<MarketMetricsProps> = ({
   );
 };
 
-/* --------------------------------------------------------------------------
-   Live chart tab — watchlist selector + advanced chart + quick context
-   -------------------------------------------------------------------------- */
-
-interface LiveChartTabProps {
-  symbols: ActiveSymbol[];
-  opportunities: Map<string, OpportunitySignal>;
-  selectedSymbol: string;
-  setSelectedSymbol: (s: string) => void;
-  selectedTimeframe: Timeframe;
-  setSelectedTimeframe: (tf: Timeframe) => void;
-  activeCandles: any[];
-  activeSymbolInfo?: ActiveSymbol;
-  activeOpp?: OpportunitySignal;
-  connectionState: 'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING';
-  latencyMs: number | null;
-  onOpenAnalysis: () => void;
-}
-
-const LiveChartTab: React.FC<LiveChartTabProps> = ({
-  symbols,
-  opportunities,
-  selectedSymbol,
-  setSelectedSymbol,
-  selectedTimeframe,
-  setSelectedTimeframe,
-  activeCandles,
-  activeSymbolInfo,
-  activeOpp,
-  connectionState,
-  latencyMs,
-  onOpenAnalysis
-}) => (
-  <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-12">
-    <aside className="overflow-hidden lg:col-span-3">
-      <Card className="overflow-hidden p-0">
-        <CardHeader
-          title="Volatility markets"
-          subtitle={`${symbols.length} instruments`}
-          icon={<LineChart className="h-4 w-4" />}
-        />
-        <div className="max-h-[240px] divide-y divide-line-soft overflow-y-auto lg:max-h-[540px]">
-          {symbols.map((sym) => {
-            const opp = opportunities.get(sym.symbol);
-            const active = sym.symbol === selectedSymbol;
-            const dec = sym.pipSize < 0.01 ? 3 : 2;
-            return (
-              <button
-                key={sym.symbol}
-                onClick={() => setSelectedSymbol(sym.symbol)}
-                className={`flex w-full items-center justify-between px-3.5 py-2.5 text-left transition-colors ${
-                  active ? 'bg-surface-raised text-fg-1' : 'text-fg-3 hover:bg-surface-raised'
-                }`}
-              >
-                <div className="min-w-0">
-                  <div className="truncate text-[12px] font-semibold">{sym.displayName}</div>
-                  <div className="text-[10px] text-fg-5">
-                    {sym.is1s ? '1s' : 'Plain'} · {opp ? opp.marketCondition : 'Scanning'}
-                  </div>
-                </div>
-                <div className="tabular text-right">
-                  <div className="text-[12px] font-semibold text-fg-2">
-                    {sym.lastQuote ? formatPrice(sym.lastQuote, dec) : '—'}
-                  </div>
-                  <div
-                    className={`text-[10px] font-bold ${
-                      (opp?.score.total || 0) >= 75
-                        ? 'text-success'
-                        : (opp?.score.total || 0) >= 60
-                          ? 'text-warning'
-                          : 'text-fg-5'
-                    }`}
-                  >
-                    {opp ? `${opp.score.total}%` : '—'}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </Card>
-    </aside>
-
-    <div className="space-y-4 lg:col-span-9">
-      <DerivAdvancedChart
-        candles={activeCandles}
-        symbol={selectedSymbol}
-        displayName={activeSymbolInfo?.displayName || selectedSymbol}
-        pipSize={activeSymbolInfo?.pipSize || 0.01}
-        timeframe={selectedTimeframe}
-        onTimeframeChange={setSelectedTimeframe}
-        opportunity={activeOpp}
-        connectionState={connectionState}
-        isStale={activeSymbolInfo?.isStale}
-        missedTicks={activeSymbolInfo?.missedTicks || 0}
-        latencyMs={latencyMs}
-      />
-
-      {activeOpp && (
-        <Card className="p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0 space-y-1">
-              <div className="text-[12px] text-fg-4">
-                Signal:{' '}
-                <strong
-                  className={
-                    activeOpp.entryAndTp.confirmed ? 'text-success' : 'text-warning'
-                  }
-                >
-                  {activeOpp.entryAndTp.confirmed
-                    ? `${activeOpp.riseFallLabel} · ${activeOpp.selectedStrategy.label} (${activeOpp.score.total}%)`
-                    : `WAITING FOR SETUP (${activeOpp.marketRegimeLabel || activeOpp.marketCondition} · ${activeOpp.score.total}%)`}
-                </strong>
-              </div>
-              <div className="text-[12.5px] leading-relaxed text-fg-3">
-                {activeOpp.explanation}
-              </div>
-            </div>
-            <button
-              onClick={onOpenAnalysis}
-              className="rounded-[10px] border border-accent/40 bg-accent/15 px-3 py-2 text-[12px] font-semibold text-accent-soft transition-colors hover:bg-accent/25"
-            >
-              Full analysis breakdown
-            </button>
-          </div>
-        </Card>
-      )}
-    </div>
-  </div>
-);
 
 /* --------------------------------------------------------------------------
    Landing intro — in-app overview surface (distinct from the public site)

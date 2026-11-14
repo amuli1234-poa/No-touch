@@ -278,6 +278,13 @@ stay labelled as illustrative — never present mock numbers as live market data
   components are presentation only.
 - Every settings/display control must drive real behaviour — no decorative
   controls.
+- **WickSentinel is a signal scanner, not an execution platform.** There is no
+  stake sizing, risk config, martingale, order placement or trade automation
+  anywhere in `src/` or `server/`. Do not add order-entry UI or imply that the
+  product trades: the right-hand workspace panel (`views/TradePanel.tsx`)
+  deliberately shows account status, real signal levels and an explicit advisory
+  notice instead. Signal levels drawn on the chart are annotations of values the
+  engine already published — the chart must never derive or suggest its own.
 
 ## Design language
 
@@ -316,9 +323,12 @@ at runtime.
   sidebar footer.
 - Chart colours cannot be CSS classes, so the palette is mirrored as
   `--chart-*` variables and read at runtime via `readChartColors()` in
-  `InteractiveLightweightChart.tsx`, which rebuilds the chart when the theme
-  changes. `TONE_HEX` in `ui/format.ts` likewise returns `var(...)` strings so
-  inline styles and SVG follow the theme.
+  `src/components/chart/chartTheme.ts`. `src/components/chart/TradingChart.tsx`
+  is the reusable Lightweight Charts wrapper (v5 `chart.addSeries(CandlestickSeries
+  | AreaSeries, …)` API); it applies theme colours live and rebuilds the series
+  in place rather than recreating the chart, so pan/zoom survives every tick.
+  `TONE_HEX` in `ui/format.ts` likewise returns `var(...)` strings so inline
+  styles and SVG follow the theme.
 - The landing hero sits on a dark photograph in both themes. `.ws-hero-band`
   pins the dark token values for that subtree so light-mode text stays legible
   over the image.

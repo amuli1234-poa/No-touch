@@ -109,6 +109,7 @@
 
   /* Layout */
   --nav-width: 244px;
+  --nav-width-collapsed: 68px;
   --topbar-height: 60px;
 
   /* ------------------------------------------------------------------

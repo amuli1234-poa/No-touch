@@ -16,6 +16,7 @@ interface AppShellProps {
   latencyMs?: number | null;
   missedTicks?: number;
   signalBadge?: number;
+  lastTickAt?: number | null;
   mobileNavOpen: boolean;
   onOpenMobileNav: () => void;
   onCloseMobileNav: () => void;
@@ -34,6 +35,7 @@ export const AppShell: React.FC<AppShellProps> = ({
   latencyMs,
   missedTicks,
   signalBadge,
+  lastTickAt,
   mobileNavOpen,
   onOpenMobileNav,
   onCloseMobileNav,
@@ -42,17 +44,41 @@ export const AppShell: React.FC<AppShellProps> = ({
   const item = navItemFor(activeRoute);
   const mobileItems = MOBILE_ROUTES.map((r) => navItemFor(r));
 
+  // Collapsing the sidebar is a display preference; persist it so the workspace
+  // reopens the way the operator left it.
+  const [collapsed, setCollapsed] = React.useState<boolean>(() => {
+    try {
+      return localStorage.getItem('ws-nav-collapsed') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggleCollapsed = React.useCallback(() => {
+    setCollapsed((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem('ws-nav-collapsed', next ? '1' : '0');
+      } catch {
+        /* storage unavailable — the in-memory state still applies */
+      }
+      return next;
+    });
+  }, []);
+
   return (
     <div className="flex min-h-screen bg-app">
-      {/* Desktop sidebar */}
+      {/* Desktop sidebar — collapsible rail. */}
       <aside
         className="sticky top-0 hidden h-screen shrink-0 border-r border-line-soft lg:block"
-        style={{ width: 'var(--nav-width)' }}
+        style={{ width: collapsed ? 'var(--nav-width-collapsed)' : 'var(--nav-width)' }}
       >
         <Sidebar
           activeRoute={activeRoute}
           onNavigate={onNavigate}
           onNavigateOverview={onNavigateOverview}
+          collapsed={collapsed}
+          onToggleCollapsed={toggleCollapsed}
+          connectionState={connectionState}
         />
       </aside>
 
@@ -77,6 +103,7 @@ export const AppShell: React.FC<AppShellProps> = ({
           latencyMs={latencyMs}
           missedTicks={missedTicks}
           signalBadge={signalBadge}
+          lastTickAt={lastTickAt}
         />
 
         <main className="min-w-0 flex-1 px-3 pb-24 pt-4 sm:px-5 sm:pt-5 lg:pb-8">

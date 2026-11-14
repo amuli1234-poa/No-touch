@@ -14,6 +14,7 @@
     "lint": "tsc --noEmit",
     "lint:server": "tsc --noEmit -p server/tsconfig.json",
     "test": "tsx src/tests/strategy_engine.test.ts",
+    "test:chart": "tsx src/tests/chart_data.test.ts",
     "test:auth": "tsx server/tests/auth.test.ts",
     "test:admin": "tsx server/tests/admin.test.ts",
     "test:store": "tsx server/tests/store_lock.test.ts",

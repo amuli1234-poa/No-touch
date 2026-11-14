@@ -17,6 +17,8 @@ interface TopbarProps {
   latencyMs?: number | null;
   missedTicks?: number;
   signalBadge?: number;
+  /** Epoch (ms) of the most recent market tick, for the freshness indicator. */
+  lastTickAt?: number | null;
 }
 
 const CONNECTION_TONE: Record<TopbarProps['connectionState'], Tone> = {
@@ -42,8 +44,12 @@ export const Topbar: React.FC<TopbarProps> = ({
   scanDisabled,
   latencyMs,
   missedTicks,
-  signalBadge
-}) => (
+  signalBadge,
+  lastTickAt
+}) => {
+  const { freshness, freshnessLabel } = useFreshness(connectionState, lastTickAt);
+
+  return (
   <header className="sticky top-0 z-30 border-b border-line-soft bg-app/85 backdrop-blur-xl">
     <div className="flex h-[60px] items-center gap-3 px-3 sm:px-5">
       <IconButton
@@ -79,6 +85,22 @@ export const Topbar: React.FC<TopbarProps> = ({
             {missedTicks} missed
           </span>
         )}
+        <span className="h-4 w-px bg-surface-elevated" />
+        {/* Market-data freshness: age of the most recent tick. Distinct from
+            the connection state — a live socket can still deliver stale data. */}
+        <div className="flex flex-col leading-tight">
+          <span className="text-[9.5px] font-semibold uppercase tracking-[0.1em] text-fg-6">
+            Data
+          </span>
+          <span
+            className={`tabular text-[11px] font-medium ${
+              freshness === 'live' ? 'text-success' : freshness === 'stale' ? 'text-warning' : 'text-fg-5'
+            }`}
+            title="Age of the most recent market tick"
+          >
+            {freshnessLabel}
+          </span>
+        </div>
         <span className="h-4 w-px bg-surface-elevated" />
         <div className="flex flex-col leading-tight">
           <span className="text-[9.5px] font-semibold uppercase tracking-[0.1em] text-fg-6">
@@ -125,7 +147,34 @@ export const Topbar: React.FC<TopbarProps> = ({
       <UserMenu lastScanTimestamp={lastScanTimestamp} />
     </div>
   </header>
-);
+  );
+};
+
+type Freshness = 'live' | 'stale' | 'offline' | 'unknown';
+
+/**
+ * Age of the most recent market tick, independent of socket state. A connected
+ * socket that has gone quiet is reported as stale rather than live, because the
+ * distinction matters to anyone reading a price off the screen.
+ */
+function useFreshness(
+  connectionState: 'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING',
+  lastTickAt?: number | null
+): { freshness: Freshness; freshnessLabel: string } {
+  const [now, setNow] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  if (connectionState === 'DISCONNECTED') return { freshness: 'offline', freshnessLabel: 'Offline' };
+  if (!lastTickAt) return { freshness: 'unknown', freshnessLabel: '—' };
+
+  const ageMs = now - lastTickAt;
+  if (ageMs < 3000) return { freshness: 'live', freshnessLabel: 'Live' };
+  if (ageMs < 10000) return { freshness: 'live', freshnessLabel: `${(ageMs / 1000).toFixed(1)}s ago` };
+  return { freshness: 'stale', freshnessLabel: `${Math.round(ageMs / 1000)}s ago` };
+}
 
 /**
  * Operator menu — shows the authenticated Deriv-linked profile and offers
