@@ -2,6 +2,8 @@ import React from 'react';
 import { ChevronDown, RefreshCw, Wallet } from 'lucide-react';
 import { Badge, StatusDot, type Tone } from '../ui';
 import {
+  BALANCE_STATE_LABEL,
+  formatMoney,
   refreshBalances,
   selectAccount,
   useBalances,
@@ -28,19 +30,7 @@ const STATE_TONE: Record<BalanceState, Tone> = {
   disconnected: 'danger'
 };
 
-const STATE_LABEL: Record<BalanceState, string> = {
-  ok: 'Live',
-  stale: 'Stale',
-  unavailable: 'Unavailable',
-  disconnected: 'Disconnected'
-};
-
-/** Money with its currency, or an em dash when there is no figure to show. */
-function formatMoney(balance: number | null, currency: string | null): string {
-  if (balance === null) return '—';
-  const amount = balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return currency ? `${amount} ${currency}` : amount;
-}
+const STATE_LABEL = BALANCE_STATE_LABEL;
 
 /** "Updated 12s ago" style label; "Never" when there has been no good read. */
 function lastUpdatedLabel(lastUpdated: number | null, now: number): string {

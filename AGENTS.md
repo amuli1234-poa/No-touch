@@ -243,9 +243,15 @@ server-side only) and is the sole authority on which accounts exist and their
 mode; the client cannot widen its view by naming another account id. The
 workspace header shows the selected account's balance via
 `src/components/shell/AccountBalance.tsx` and `src/lib/balances.ts`, with DEMO
-and REAL listed separately. A null balance renders as "—"/"Unavailable" and is
-never shown as `0`. The figure is informational and never authorizes a trade.
-Balance tests: `npm run test:balance` (16 cases).
+and REAL listed separately. The right-hand account panel
+(`views/TradePanel.tsx`) renders the same store: one row per mode showing the
+actual balance and currency, with the selected account highlighted and a
+per-row loading / live / stale / unavailable / disconnected state. The shared
+`formatMoney` / `pickAccount` / `BALANCE_STATE_LABEL` helpers live in
+`src/lib/balances.ts` so both surfaces render identically. A null balance
+renders as "—"/"Unavailable" and is never shown as `0`. The figure is
+informational and never authorizes a trade. Balance tests:
+`npm run test:balance` (19 cases) and `npm run test:balance-display` (14 cases).
 
 **Scanner telemetry.** The engines run in the browser, so the admin console can
 only show measured figures because the client reports them. `src/services/

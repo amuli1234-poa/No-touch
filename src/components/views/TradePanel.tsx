@@ -1,10 +1,21 @@
 import React from 'react';
-import { BadgeCheck, ChevronDown, Info, Lock, Send, ShieldCheck, Wallet } from 'lucide-react';
+import { BadgeCheck, ChevronDown, Info, Lock, RefreshCw, Send, ShieldCheck, Wallet } from 'lucide-react';
 import type { ActiveSymbol, OpportunitySignal, WhatsAppProviderStatus } from '../../types/scanner';
 import { Card, CardHeader, CardBody } from '../ui/Card';
 import { Badge, StatusDot } from '../ui/Badge';
 import { formatPrice } from '../ui/format';
 import { useAuth } from '../../lib/auth';
+import {
+  BALANCE_STATE_LABEL,
+  formatMoney,
+  pickAccount,
+  refreshBalances,
+  selectAccount,
+  useBalances,
+  type AccountBalance,
+  type BalanceState,
+  type BalancesState
+} from '../../lib/balances';
 import type { Tone } from '../ui/format';
 
 /**
@@ -36,13 +47,29 @@ export const TradePanel: React.FC<TradePanelProps> = ({
   alertsAutoSend
 }) => {
   const auth = useAuth();
+  const balances = useBalances();
   const digits = (activeSymbol?.pipSize ?? 0.01) < 0.01 ? 3 : 2;
   const [detailOpen, setDetailOpen] = React.useState(false);
+  const [refreshing, setRefreshing] = React.useState(false);
 
   const accountLabel =
     auth.status === 'authenticated' ? auth.user.loginId || 'Deriv account' : 'Not connected';
-  const demo = auth.status === 'authenticated' ? auth.user.demoAccounts : 0;
-  const real = auth.status === 'authenticated' ? auth.user.realAccounts : 0;
+  const demoCount = auth.status === 'authenticated' ? auth.user.demoAccounts : 0;
+  const realCount = auth.status === 'authenticated' ? auth.user.realAccounts : 0;
+
+  // The server is the authority on which accounts exist; these pick the record
+  // to display per mode, preferring the customer's current selection.
+  const demoAccount = pickAccount(balances.accounts, 'demo', balances.selectedAccountId);
+  const realAccount = pickAccount(balances.accounts, 'real', balances.selectedAccountId);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await refreshBalances({ force: true });
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -52,13 +79,38 @@ export const TradePanel: React.FC<TradePanelProps> = ({
         <CardBody className="space-y-3 pt-0">
           {auth.status === 'authenticated' ? (
             <>
-              <div className="flex items-center gap-2">
-                <BadgeCheck className="h-4 w-4 text-tint-teal" />
-                <span className="truncate text-[13px] font-semibold text-fg-1">{accountLabel}</span>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <BadgeCheck className="h-4 w-4 shrink-0 text-tint-teal" />
+                  <span className="truncate text-[13px] font-semibold text-fg-1">{accountLabel}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleRefresh()}
+                  disabled={refreshing}
+                  aria-label="Refresh balances"
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] border border-line-soft text-fg-5 transition-colors hover:border-line-strong hover:text-fg-3 disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-3 w-3 ${refreshing ? 'animate-spin' : ''}`} />
+                </button>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <ModeTile label="Demo" count={demo} tone="info" />
-                <ModeTile label="Real" count={real} tone="warning" />
+              <div className="space-y-2">
+                <ModeBalanceRow
+                  label="Demo"
+                  count={demoCount}
+                  account={demoAccount}
+                  status={balances.status}
+                  selected={balances.selectedAccountId === demoAccount?.accountId}
+                  onSelect={selectAccount}
+                />
+                <ModeBalanceRow
+                  label="Real"
+                  count={realCount}
+                  account={realAccount}
+                  status={balances.status}
+                  selected={balances.selectedAccountId === realAccount?.accountId}
+                  onSelect={selectAccount}
+                />
               </div>
               <p className="flex items-start gap-1.5 text-[10.5px] leading-relaxed text-fg-5">
                 <ShieldCheck className="mt-0.5 h-3 w-3 shrink-0 text-tint-teal" />
@@ -178,17 +230,67 @@ export const TradePanel: React.FC<TradePanelProps> = ({
   );
 };
 
-const ModeTile: React.FC<{ label: string; count: number; tone: Tone }> = ({ label, count, tone }) => (
-  <div className="rounded-[var(--radius-md)] border border-line-soft bg-surface-deep px-2.5 py-2">
-    <span className="block text-[9.5px] font-semibold uppercase tracking-[0.1em] text-fg-6">
-      {label}
-    </span>
-    <span className="mt-0.5 flex items-baseline gap-1">
-      <span className="tabular text-[16px] font-bold text-fg-1">{count}</span>
-      <span className="text-[10px] text-fg-5">{count === 1 ? 'account' : 'accounts'}</span>
-    </span>
-    <span className="mt-1 block">
-      <StatusDot tone={count > 0 ? tone : 'neutral'} label={count > 0 ? 'Available' : 'None'} />
-    </span>
-  </div>
-);
+/** Status tone per balance state, matching the header chip. */
+const ROW_TONE: Record<BalanceState, Tone> = {
+  ok: 'success',
+  stale: 'warning',
+  unavailable: 'neutral',
+  disconnected: 'danger'
+};
+
+const ROW_STATUS = BALANCE_STATE_LABEL;
+
+/**
+ * One mode's account row: the actual balance and currency, with a status that
+ * distinguishes live / stale / unavailable / disconnected. A loading state is
+ * shown while the first read is in flight, and a failed read is never rendered
+ * as 0 — the value is an em dash.
+ */
+const ModeBalanceRow: React.FC<{
+  label: string;
+  count: number;
+  account: AccountBalance | null;
+  status: BalancesState['status'];
+  selected: boolean;
+  onSelect: (accountId: string) => void;
+}> = ({ label, count, account, status, selected, onSelect }) => {
+  const loading = status === 'loading' && !account;
+
+  return (
+    <button
+      type="button"
+      disabled={!account}
+      onClick={() => account && onSelect(account.accountId)}
+      className={`w-full rounded-[var(--radius-md)] border px-3 py-2 text-left transition-colors ${
+        selected ? 'border-line-strong bg-surface-raised' : 'border-line-soft bg-surface-deep'
+      } ${account ? 'hover:border-line-strong' : 'cursor-default'}`}
+    >
+      <span className="flex items-center justify-between gap-2">
+        <span className="text-[9.5px] font-semibold uppercase tracking-[0.1em] text-fg-6">{label}</span>
+        {loading ? (
+          <span className="text-[10px] text-fg-5">Loading…</span>
+        ) : account ? (
+          <StatusDot tone={ROW_TONE[account.state]} label={ROW_STATUS[account.state]} />
+        ) : count > 0 ? (
+          <StatusDot tone="neutral" label="Loading" />
+        ) : (
+          <StatusDot tone="neutral" label="None" />
+        )}
+      </span>
+      <span className="mt-1 flex items-baseline justify-between gap-2">
+        {loading ? (
+          <span className="tabular text-[16px] font-bold text-fg-4">…</span>
+        ) : (
+          <span
+            className={`tabular text-[16px] font-bold ${account && account.balance !== null ? 'text-fg-1' : 'text-fg-5'}`}
+          >
+            {formatMoney(account?.balance ?? null, account?.currency ?? null)}
+          </span>
+        )}
+        <span className="shrink-0 text-[10px] text-fg-5">
+          {count === 1 ? '1 account' : `${count} accounts`}
+        </span>
+      </span>
+    </button>
+  );
+};

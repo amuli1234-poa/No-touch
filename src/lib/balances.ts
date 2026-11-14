@@ -150,6 +150,40 @@ export function onReconnect(): void {
   void refreshBalances({ force: true });
 }
 
+/* ---------------------------- presentation ---------------------------- */
+
+/**
+ * Money with its currency, or an em dash when there is no figure. A failed read
+ * is never rendered as 0 — the caller passes null and gets "—".
+ */
+export function formatMoney(balance: number | null, currency: string | null): string {
+  if (balance === null) return '—';
+  const amount = balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return currency ? `${amount} ${currency}` : amount;
+}
+
+/**
+ * Picks the record to show for a mode: the customer's selected account when it
+ * matches the mode, otherwise the first of that mode. Only chooses among records
+ * the server returned — it never invents one.
+ */
+export function pickAccount(
+  accounts: AccountBalance[],
+  mode: 'demo' | 'real',
+  selectedAccountId: string | null
+): AccountBalance | null {
+  const selected = accounts.find((a) => a.accountId === selectedAccountId);
+  if (selected && selected.mode === mode) return selected;
+  return accounts.find((a) => a.mode === mode) ?? null;
+}
+
+export const BALANCE_STATE_LABEL: Record<BalanceState, string> = {
+  ok: 'Live',
+  stale: 'Stale',
+  unavailable: 'Unavailable',
+  disconnected: 'Disconnected'
+};
+
 /* ------------------------------ hooks --------------------------------- */
 
 export function useBalances(): BalancesState {
