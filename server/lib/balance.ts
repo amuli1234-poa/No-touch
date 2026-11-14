@@ -23,8 +23,12 @@ import type { ServerConfig } from '../config.js';
  */
 
 export interface DerivBalance {
-  /** Balance as reported by Deriv, or null when the payload carried no usable number. */
-  balance: number | null;
+  /**
+   * Balance as reported by Deriv. Always a finite number: a payload with no
+   * usable figure is rejected as `balance_failed`, never resolved as null, so a
+   * parse failure can never be mistaken for a real (or zero) balance.
+   */
+  balance: number;
   currency: string | null;
   loginId: string | null;
 }
@@ -119,6 +123,29 @@ function toNumber(value: unknown): number | null {
 }
 
 /**
+ * Extracts the balance fields from a `balance` message.
+ *
+ * Deriv nests them under a `balance` object:
+ *   { "balance": { "balance": 10092.59, "currency": "USD", "loginid": "VRTC…" },
+ *     "msg_type": "balance" }
+ * Older/flat payloads carry the fields at the top level, so we accept both.
+ */
+function readBalanceFields(msg: any): DerivBalance {
+  const body = msg.balance && typeof msg.balance === 'object' ? msg.balance : msg;
+  const balance = toNumber(body.balance);
+  if (balance === null) {
+    // Never resolve an unusable payload: it would surface as a valid-but-null
+    // balance and get cached as `ok`.
+    throw new DerivBalanceError('balance_failed', 'Deriv returned a balance message without a usable figure.');
+  }
+  return {
+    balance,
+    currency: typeof body.currency === 'string' ? body.currency : null,
+    loginId: typeof body.loginid === 'string' ? body.loginid : null
+  };
+}
+
+/**
  * Reads one account's balance. `accountId` MUST already have been validated
  * against the session user's account list by the caller.
  */
@@ -182,13 +209,14 @@ export async function fetchBalance(
         );
         return;
       }
-      finish(() =>
-        resolve({
-          balance: toNumber(msg.balance),
-          currency: typeof msg.currency === 'string' ? msg.currency : null,
-          loginId: typeof msg.loginid === 'string' ? msg.loginid : null
-        })
-      );
+      let parsed: DerivBalance;
+      try {
+        parsed = readBalanceFields(msg);
+      } catch (err) {
+        finish(() => reject(err));
+        return;
+      }
+      finish(() => resolve(parsed));
     });
 
     socket.addEventListener('error', () => {

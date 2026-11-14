@@ -105,7 +105,16 @@ test('reader returns the balance pushed by Deriv over the account socket', async
         wsFactory: () => {
           const sock = fakeSocket((data, s) => {
             assert.deepEqual(JSON.parse(data), { balance: 1, req_id: 1 });
-            s.emit('message', { data: JSON.stringify({ msg_type: 'balance', balance: 1234.56, currency: 'USD', loginid: 'VRTC1' }) });
+            // Deriv nests the fields under `balance`, as documented for
+            // "Account Management -> Balance" on developers.deriv.com.
+            s.emit('message', {
+              data: JSON.stringify({
+                echo_req: { balance: 1, req_id: 1 },
+                balance: { balance: 1234.56, currency: 'USD', loginid: 'VRTC1' },
+                msg_type: 'balance',
+                req_id: 1
+              })
+            });
           });
           setImmediate(() => sock.emit('open'));
           return sock;
@@ -114,6 +123,53 @@ test('reader returns the balance pushed by Deriv over the account socket', async
       assert.equal(result.balance, 1234.56);
       assert.equal(result.currency, 'USD');
       assert.equal(result.loginId, 'VRTC1');
+    }
+  );
+});
+
+test('reader still accepts a flat balance payload', async () => {
+  const cfg = makeConfig(os.tmpdir());
+  await withStubbedFetch(
+    { data: { url: 'wss://api.derivws.com/trading/v1/options/ws/demo?otp=abc' } },
+    200,
+    async () => {
+      const result = await fetchBalance(cfg, 'token', 'DOT1', {
+        wsFactory: () => {
+          const sock = fakeSocket((_data, s) => {
+            s.emit('message', { data: JSON.stringify({ msg_type: 'balance', balance: 7.5, currency: 'USD', loginid: 'D1' }) });
+          });
+          setImmediate(() => sock.emit('open'));
+          return sock;
+        }
+      });
+      assert.equal(result.balance, 7.5);
+      assert.equal(result.loginId, 'D1');
+    }
+  );
+});
+
+test('reader rejects a balance message with no usable figure (never resolves null)', async () => {
+  const cfg = makeConfig(os.tmpdir());
+  await withStubbedFetch(
+    { data: { url: 'wss://api.derivws.com/trading/v1/options/ws/demo?otp=abc' } },
+    200,
+    async () => {
+      await assert.rejects(
+        () =>
+          fetchBalance(cfg, 'token', 'DOT1', {
+            wsFactory: () => {
+              // A `balance` message whose figure is absent/unusable. Previously
+              // this resolved as { balance: null }, which the service cached as
+              // `ok` and the UI showed as "—".
+              const sock = fakeSocket((_data, s) => {
+                s.emit('message', { data: JSON.stringify({ msg_type: 'balance', balance: {} }) });
+              });
+              setImmediate(() => sock.emit('open'));
+              return sock;
+            }
+          }),
+        (err: unknown) => err instanceof DerivBalanceError && err.code === 'balance_failed'
+      );
     }
   );
 });
@@ -242,6 +298,35 @@ test('service reports unavailable (balance null, never zero) when the first read
   assert.equal(result.balance, null);
   assert.equal(result.lastUpdated, null);
   assert.notEqual(result.balance, 0);
+});
+
+test('service maps an unusable balance payload to unavailable, never ok with a null balance', async () => {
+  const cfg = makeConfig(os.tmpdir());
+  // End-to-end through the real reader: a documented nested payload with no
+  // usable figure must not be cached as `ok`.
+  const svc = new BalanceService(cfg, {
+    fetcher: (c, token, accountId) =>
+      withStubbedFetch(
+        { data: { url: 'wss://api.derivws.com/trading/v1/options/ws/demo?otp=abc' } },
+        200,
+        () =>
+          fetchBalance(c, token, accountId, {
+            wsFactory: () => {
+              const sock = fakeSocket((_data, s) => {
+                s.emit('message', { data: JSON.stringify({ msg_type: 'balance', balance: {} }) });
+              });
+              setImmediate(() => sock.emit('open'));
+              return sock;
+            }
+          })
+      )
+  });
+  const user = makeUser('u1', [{ accountId: 'D1', type: 'demo', currency: 'USD' }]);
+
+  const result = await svc.read(user, 'D1', 'token');
+  assert.equal(result.state, 'unavailable');
+  assert.equal(result.balance, null);
+  assert.equal(result.reason, 'balance_failed');
 });
 
 test('service reports disconnected when there is no usable Deriv token', async () => {

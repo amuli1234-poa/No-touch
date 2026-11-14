@@ -222,8 +222,13 @@ Server layout (`server/`):
   the verified session, never the body.
 - `lib/balance.ts` — reads one account's balance over Deriv's WebSocket API:
   `POST /trading/v1/options/accounts/{id}/otp` (scope `trade`) returns an
-  account-bound socket URL, then `{ "balance": 1 }` yields the figure. No new
-  scope and no dependency (Node 24 has a global `WebSocket`).
+  account-bound socket URL, then `{ "balance": 1 }` yields the figure. Deriv
+  **nests** the fields — `{ "balance": { "balance": …, "currency": …,
+  "loginid": … }, "msg_type": "balance" }` — so the reader accepts the nested
+  object (and a flat payload for older servers). A message with no usable figure
+  is rejected as `balance_failed`, never resolved as `null`, so a parse failure
+  can never be cached as `ok`. No new scope and no dependency (Node 24 has a
+  global `WebSocket`).
 - `services/balance.ts` — `BalanceService`: enforces account ownership and mode
   against the user's own stored accounts, keeps DEMO and REAL strictly separate,
   and caches per account with a TTL. Reports `ok` / `stale` / `unavailable` /
