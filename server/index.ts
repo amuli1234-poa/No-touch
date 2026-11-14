@@ -7,6 +7,8 @@ import { Store } from './store/store.js';
 import { createAuthRouter } from './routes/auth.js';
 import { createWhatsAppRouter } from './routes/whatsapp.js';
 import { createTelemetryRouter } from './routes/telemetry.js';
+import { createBalancesRouter } from './routes/balances.js';
+import { BalanceService } from './services/balance.js';
 import { createAdminApiRouter, adminCors } from './routes/admin/index.js';
 import { Telemetry, telemetryMiddleware } from './services/admin/telemetry.js';
 import { attachSession, requireSession, type SessionContext, type AuthedRequest } from './lib/session.js';
@@ -31,6 +33,9 @@ export interface AppBundle {
 export function createApp(cfg: ServerConfig, store: Store): AppBundle {
   const ctx: SessionContext = { cfg, store };
   const telemetry = new Telemetry();
+  // One balance service per process so the auth router and the balance router
+  // share the same cache and invalidation (reauthorization clears it).
+  const balances = new BalanceService(cfg);
   const app = express();
   app.disable('x-powered-by');
 
@@ -61,12 +66,13 @@ export function createApp(cfg: ServerConfig, store: Store): AppBundle {
     res.json({ ok: true });
   });
 
-  app.use(createAuthRouter(ctx));
+  app.use(createAuthRouter(ctx, balances));
 
   // Client telemetry ingest. Needs a JSON body parser, scoped to its own
   // namespace so it never widens the surface of any other route.
   app.use('/api/telemetry', express.json({ limit: '32kb' }));
   app.use(createTelemetryRouter(ctx));
+  app.use(createBalancesRouter(ctx, balances));
 
   // WhatsApp alert dispatch. Status is public (masked); sending requires a session.
   app.use(createWhatsAppRouter());

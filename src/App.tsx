@@ -3,6 +3,7 @@ import { DerivWebSocketManager } from './services/DerivWebSocketManager';
 import { IndexedDbStorage } from './services/IndexedDbStorage';
 import { WhatsAppService } from './services/WhatsAppService';
 import { telemetry } from './services/TelemetryService';
+import { refreshBalances, onReconnect } from './lib/balances';
 import { OpportunityScoringEngine } from './engines/OpportunityScoringEngine';
 import { AppShell } from './components/shell/AppShell';
 import { Route } from './components/shell/navigation';
@@ -154,8 +155,14 @@ export default function App() {
     // Client telemetry: start the batched sender for this page load.
     telemetry.start();
 
+    // Load the customer's account balances (DEMO + REAL kept separate).
+    void refreshBalances();
+
     const connHandler = (state: 'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING') => {
       setConnectionState(state);
+      // Revalidate balances when the feed reconnects: a fresh connection is a
+      // natural point to confirm the account authorization still holds.
+      if (state === 'CONNECTED') onReconnect();
     };
     wsManager.onConnectionChange(connHandler);
 

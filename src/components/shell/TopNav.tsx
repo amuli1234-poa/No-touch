@@ -3,6 +3,7 @@ import { Bell, ChevronDown, LogOut, RefreshCw, ShieldCheck, User } from 'lucide-
 import { IconButton, StatusDot, ThemeToggle, Button, type Tone } from '../ui';
 import { NAV_SECTIONS, Route, activeSectionId } from './navigation';
 import { useAuth, logout } from '../../lib/auth';
+import { AccountBalanceChip } from './AccountBalance';
 import { navigate } from '../../lib/router';
 
 /**
@@ -116,6 +117,9 @@ export const TopNav: React.FC<TopNavProps> = ({
             {freshnessLabel}
           </span>
         </div>
+
+        {/* Selected-account balance — informational; never authorizes a trade. */}
+        <AccountBalanceChip />
 
         <Button
           variant="secondary"

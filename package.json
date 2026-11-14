@@ -21,6 +21,7 @@
     "test:store": "tsx server/tests/store_lock.test.ts",
     "test:migrate": "tsx server/tests/migration.test.ts",
     "test:telemetry": "tsx server/tests/telemetry.test.ts",
+    "test:balance": "tsx server/tests/balance.test.ts",
     "db:migrate": "tsx server/store/migrate.ts",
     "admin:bootstrap": "tsx server/admin/bootstrap.ts",
     "dev:admin": "vite --config admin/vite.config.ts --port=3001 --host=0.0.0.0",

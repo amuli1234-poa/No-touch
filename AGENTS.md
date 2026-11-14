@@ -34,6 +34,7 @@ npm run build:admin   # → dist-admin/
 npm run lint:admin    # admin typecheck (tsc -p admin/tsconfig.json)
 npm run test:admin    # admin test suite (20 tests)
 npm run test:telemetry # telemetry ingest + admin read-path (8 tests)
+npm run test:balance   # account balances: isolation, DEMO/REAL, stale (16 tests)
 npm run admin:bootstrap   # seed the first Super Admin (prints otpauth URI)
 ```
 
@@ -219,6 +220,27 @@ Server layout (`server/`):
   `/api/telemetry/heartbeat`. Session-required, rate-limited and size-capped;
   best-effort (a rejection never blocks the scanner). `userId` always comes from
   the verified session, never the body.
+- `lib/balance.ts` — reads one account's balance over Deriv's WebSocket API:
+  `POST /trading/v1/options/accounts/{id}/otp` (scope `trade`) returns an
+  account-bound socket URL, then `{ "balance": 1 }` yields the figure. No new
+  scope and no dependency (Node 24 has a global `WebSocket`).
+- `services/balance.ts` — `BalanceService`: enforces account ownership and mode
+  against the user's own stored accounts, keeps DEMO and REAL strictly separate,
+  and caches per account with a TTL. Reports `ok` / `stale` / `unavailable` /
+  `disconnected`; a failed read never becomes `0`.
+- `routes/balances.ts` — `GET /api/balances` (all accounts) and
+  `GET /api/balances/:accountId` (`?mode=` asserts mode, `?refresh=1` forces a
+  re-read). Session-required; a foreign account id or a mode mismatch is `403`,
+  never a substituted account.
+
+**Account balances are read-only.** The backend holds the Deriv token (sealed,
+server-side only) and is the sole authority on which accounts exist and their
+mode; the client cannot widen its view by naming another account id. The
+workspace header shows the selected account's balance via
+`src/components/shell/AccountBalance.tsx` and `src/lib/balances.ts`, with DEMO
+and REAL listed separately. A null balance renders as "—"/"Unavailable" and is
+never shown as `0`. The figure is informational and never authorizes a trade.
+Balance tests: `npm run test:balance` (16 cases).
 
 **Scanner telemetry.** The engines run in the browser, so the admin console can
 only show measured figures because the client reports them. `src/services/

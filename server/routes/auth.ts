@@ -14,6 +14,7 @@ import { createCodeVerifier, createCodeChallenge, createState, createOpaqueId, t
 import { parseCookies, setCookie, clearCookie, redirectWithError } from '../lib/http.js';
 import { seal } from '../lib/crypto.js';
 import { issueSessionCookie, requireSession, type SessionContext, type AuthedRequest } from '../lib/session.js';
+import type { BalanceService } from '../services/balance.js';
 import { recordServerEvent } from '../activity/service.js';
 
 /**
@@ -46,7 +47,7 @@ function accountRefs(accounts: DerivAccount[]) {
   return accounts.map((a) => ({ accountId: a.accountId, type: a.type, currency: a.currency, status: a.status }));
 }
 
-export function createAuthRouter(ctx: SessionContext): Router {
+export function createAuthRouter(ctx: SessionContext, balances?: BalanceService): Router {
   const { cfg, store } = ctx;
   const router = Router();
 
@@ -158,6 +159,9 @@ export function createAuthRouter(ctx: SessionContext): Router {
     // 8. Open a fresh application session bound to the user and the token.
     //    Any prior sessions for this user are revoked to keep one live session.
     await store.revokeUserSessions(user.id);
+    // Reauthorization may have changed the account set; drop any cached balances
+    // so the next read reflects the new authorization rather than a stale one.
+    balances?.invalidateUser(user.id);
     const sessionId = createOpaqueId();
     const session: SessionRecord = {
       id: sessionId,

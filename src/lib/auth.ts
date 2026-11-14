@@ -1,4 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import { resetBalances } from './balances';
 
 /**
  * Frontend authentication client.
@@ -97,6 +98,7 @@ export async function logout(): Promise<void> {
     await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' });
   } finally {
     setState({ status: 'anonymous' });
+    resetBalances();
   }
 }
 
