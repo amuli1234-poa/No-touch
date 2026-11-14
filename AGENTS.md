@@ -247,11 +247,22 @@ and REAL listed separately. The right-hand account panel
 (`views/TradePanel.tsx`) renders the same store: one row per mode showing the
 actual balance and currency, with the selected account highlighted and a
 per-row loading / live / stale / unavailable / disconnected state. The shared
-`formatMoney` / `pickAccount` / `BALANCE_STATE_LABEL` helpers live in
-`src/lib/balances.ts` so both surfaces render identically. A null balance
-renders as "—"/"Unavailable" and is never shown as `0`. The figure is
-informational and never authorizes a trade. Balance tests:
-`npm run test:balance` (19 cases) and `npm run test:balance-display` (14 cases).
+`formatMoney` / `pickAccount` / `BALANCE_STATE_LABEL` / `lastUpdatedShort` /
+`lastUpdatedLabel` helpers live in `src/lib/balances.ts` so both surfaces render
+identically. A null balance renders as "—"/"Unavailable" and is never shown as
+`0`. The figure is informational and never authorizes a trade.
+
+The header chip (`AccountBalance.tsx`) is responsive: at every width it shows
+the mode badge and balance; the state label, last-read age, currency suffix and
+in-bar refresh appear from `sm` up. It opens a switcher listing every account,
+and picking one re-reads with `?refresh=1`, so the bar updates immediately. On
+phones the switcher drops to a full-width sheet. Prefer `max-*:hidden` over
+`hidden sm:*` for hiding a `Button`/`IconButton`, whose base class hard-codes
+`inline-flex` — Tailwind emits `.inline-flex` after `.hidden`, so the plain
+`hidden` utility loses at equal specificity and the element stays visible.
+
+Balance tests: `npm run test:balance` (19 cases) and
+`npm run test:balance-display` (25 cases).
 
 **Scanner telemetry.** The engines run in the browser, so the admin console can
 only show measured figures because the client reports them. `src/services/

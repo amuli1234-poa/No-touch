@@ -184,6 +184,32 @@ export const BALANCE_STATE_LABEL: Record<BalanceState, string> = {
   disconnected: 'Disconnected'
 };
 
+/**
+ * Short age of the last good read, for the compact nav bar: "12s", "3m", "2h",
+ * or "—" when there has never been a good read. Never a number when the age is
+ * unknown, so a missing read cannot read as fresh.
+ */
+export function lastUpdatedShort(lastUpdated: number | null, now: number): string {
+  if (lastUpdated === null) return '—';
+  const seconds = Math.max(0, Math.floor((now - lastUpdated) / 1000));
+  if (seconds < 5) return 'now';
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  return `${Math.floor(minutes / 60)}h`;
+}
+
+/** Full "Updated 12s ago" label, for the dropdown; "Never updated" when none. */
+export function lastUpdatedLabel(lastUpdated: number | null, now: number): string {
+  if (lastUpdated === null) return 'Never updated';
+  const seconds = Math.max(0, Math.floor((now - lastUpdated) / 1000));
+  if (seconds < 5) return 'Updated just now';
+  if (seconds < 60) return `Updated ${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `Updated ${minutes}m ago`;
+  return `Updated ${Math.floor(minutes / 60)}h ago`;
+}
+
 /* ------------------------------ hooks --------------------------------- */
 
 export function useBalances(): BalancesState {

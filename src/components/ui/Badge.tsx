@@ -32,13 +32,16 @@ interface StatusDotProps {
   pulse?: boolean;
   size?: 'sm' | 'md';
   label?: string;
+  /** Applied to the label text, e.g. to hide it at narrow widths. */
+  labelClassName?: string;
 }
 
 export const StatusDot: React.FC<StatusDotProps> = ({
   tone,
   pulse = false,
   size = 'sm',
-  label
+  label,
+  labelClassName = ''
 }) => (
   <span className="inline-flex items-center gap-2">
     <span
@@ -47,6 +50,8 @@ export const StatusDot: React.FC<StatusDotProps> = ({
       }`}
       style={{ backgroundColor: TONE_HEX[tone] }}
     />
-    {label && <span className="text-[11px] font-medium text-fg-3">{label}</span>}
+    {label && (
+      <span className={`text-[11px] font-medium text-fg-3 ${labelClassName}`}>{label}</span>
+    )}
   </span>
 );

@@ -1,4 +1,11 @@
-import { formatMoney, pickAccount, BALANCE_STATE_LABEL, type AccountBalance } from '../lib/balances';
+import {
+  formatMoney,
+  pickAccount,
+  BALANCE_STATE_LABEL,
+  lastUpdatedShort,
+  lastUpdatedLabel,
+  type AccountBalance
+} from '../lib/balances';
 
 /**
  * Tests for the balance display helpers.
@@ -65,6 +72,22 @@ assert(BALANCE_STATE_LABEL.ok === 'Live', 'ok maps to Live');
 assert(BALANCE_STATE_LABEL.unavailable === 'Unavailable', 'unavailable maps to Unavailable');
 assert(BALANCE_STATE_LABEL.disconnected === 'Disconnected', 'disconnected maps to Disconnected');
 assert(BALANCE_STATE_LABEL.stale === 'Stale', 'stale maps to Stale');
+
+/* --------------------------- last updated ---------------------------- */
+
+const T = 1_000_000_000_000;
+assert(lastUpdatedShort(null, T) === '—', 'short age: a never-read balance shows a dash, not 0');
+assert(lastUpdatedShort(T, T) === 'now', 'short age: a just-now read shows "now"');
+assert(lastUpdatedShort(T, T + 12_000) === '12s', 'short age: seconds');
+assert(lastUpdatedShort(T, T + 3 * 60_000) === '3m', 'short age: minutes');
+assert(lastUpdatedShort(T, T + 2 * 3_600_000) === '2h', 'short age: hours');
+assert(lastUpdatedShort(T, T - 5_000) === 'now', 'short age: a future timestamp clamps to now');
+
+assert(lastUpdatedLabel(null, T) === 'Never updated', 'full age: never-read reads plainly');
+assert(lastUpdatedLabel(T, T) === 'Updated just now', 'full age: just now');
+assert(lastUpdatedLabel(T, T + 45_000) === 'Updated 45s ago', 'full age: seconds');
+assert(lastUpdatedLabel(T, T + 5 * 60_000) === 'Updated 5m ago', 'full age: minutes');
+assert(lastUpdatedLabel(T, T + 4 * 3_600_000) === 'Updated 4h ago', 'full age: hours');
 
 console.log(`\n${'='.repeat(52)}`);
 console.log(`Balance display tests: ${passCount} passed, ${failCount} failed`);

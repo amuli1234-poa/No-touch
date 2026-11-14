@@ -53,7 +53,7 @@ export const TopNav: React.FC<TopNavProps> = ({
 
   return (
     <header className="sticky top-0 z-40 border-b border-line-soft bg-app/90 backdrop-blur-xl">
-      <div className="mx-auto flex h-[52px] max-w-[1680px] items-center gap-2 px-3 sm:px-4">
+      <div className="mx-auto flex h-[52px] max-w-[1680px] items-center gap-1.5 px-3 sm:gap-2 sm:px-4">
         {/* Brand */}
         <button
           onClick={() => onNavigate('LIVE_CHART')}
@@ -127,12 +127,12 @@ export const TopNav: React.FC<TopNavProps> = ({
           onClick={onScanAll}
           disabled={isScanning || scanDisabled}
           icon={<RefreshCw className={`h-3.5 w-3.5 ${isScanning ? 'animate-spin' : ''}`} />}
-          className="hidden sm:inline-flex"
+          className="max-sm:hidden"
         >
           {isScanning ? 'Scanning' : 'Scan'}
         </Button>
 
-        <IconButton label="Alerts" className="relative hidden sm:inline-flex">
+        <IconButton label="Alerts" className="relative max-sm:hidden">
           <Bell className="h-4 w-4" />
           {!!signalBadge && signalBadge > 0 && (
             <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-success px-1 text-[9.5px] font-bold text-on-accent">
