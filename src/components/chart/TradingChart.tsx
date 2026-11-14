@@ -14,8 +14,10 @@ import {
   LineStyle
 } from 'lightweight-charts';
 import type { Candle } from '../../types/scanner';
-import { toChartBars, toLinePoints, type ChartBar, type ChartPoint } from './chartData';
+import { toChartBars, toLinePoints, loadMode, type ChartBar, type ChartPoint } from './chartData';
 import { readChartColors, type ChartColors } from './chartTheme';
+import { OverlayPrimitive } from './overlayPrimitives';
+import type { OverlayShape } from './chartOverlays';
 import { useTheme } from '../../lib/theme';
 
 /**
@@ -65,6 +67,8 @@ interface TradingChartProps {
   connectionState: 'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING';
   height?: number;
   levels?: ChartLevel[];
+  /** Structure overlays (zones, trendlines, swings, patterns) to paint. */
+  overlays?: readonly OverlayShape[];
   onCrosshair?: (price: number | null, epochSeconds: number | null) => void;
 }
 
@@ -85,14 +89,20 @@ export const TradingChart: React.FC<TradingChartProps> = ({
   connectionState,
   height = 420,
   levels,
+  overlays,
   onCrosshair
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<SeriesState | null>(null);
   const colorsRef = useRef<ChartColors | null>(null);
+  const overlayPrimRef = useRef<OverlayPrimitive | null>(null);
+  const overlaysRef = useRef<readonly OverlayShape[]>(overlays ?? []);
+  overlaysRef.current = overlays ?? [];
   /** Identity of the data currently loaded, to distinguish a new series from an update. */
   const loadedKeyRef = useRef<string>('');
+  /** Bar count of the loaded data, to detect a full history batch arriving. */
+  const loadedCountRef = useRef<number>(0);
   const crosshairCbRef = useRef(onCrosshair);
   crosshairCbRef.current = onCrosshair;
   const { theme } = useTheme();
@@ -161,6 +171,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({
       chartRef.current = null;
       seriesRef.current = null;
       loadedKeyRef.current = '';
+      loadedCountRef.current = 0;
     };
     // Height is a layout input; a change legitimately rebuilds the chart.
   }, [height, priceDigits]);
@@ -215,8 +226,20 @@ export const TradingChart: React.FC<TradingChartProps> = ({
           });
 
     seriesRef.current = { api, kind };
+
+    // Structure overlays live on the series, so the primitive must move to the
+    // new series when the type is swapped.
+    const prim = new OverlayPrimitive(
+      overlaysRef.current,
+      colors,
+      (p: number) => p.toFixed(priceDigits)
+    );
+    api.attachPrimitive(prim);
+    overlayPrimRef.current = prim;
+
     // Force a full reload into the new series.
     loadedKeyRef.current = '';
+    loadedCountRef.current = 0;
   }, [kind, theme]);
 
   /* ---- data ------------------------------------------------------------- */
@@ -224,25 +247,31 @@ export const TradingChart: React.FC<TradingChartProps> = ({
     const series = seriesRef.current;
     if (!series) return;
     const key = `${symbol}|${timeframe}`;
+    const mode = loadMode({
+      keyChanged: loadedKeyRef.current !== key,
+      barCount: candles.length,
+      loadedCount: loadedCountRef.current
+    });
 
-    if (loadedKeyRef.current !== key) {
-      // New instrument or timeframe: full replace, then fit the visible range.
+    if (mode === 'full') {
       const data = kind === 'candles' ? toChartBars(candles) : toLinePoints(candles);
       series.api.setData(data as (CandlestickData<Time> | LineData<Time>)[]);
-      chartRef.current?.timeScale().fitContent();
+      // Only fit once there is something to fit; fitting an empty series resets
+      // the visible range to nothing and hides the first real bars.
+      if (candles.length > 0) chartRef.current?.timeScale().fitContent();
       loadedKeyRef.current = key;
+      loadedCountRef.current = candles.length;
       return;
     }
 
-    // Same series: apply only the latest bar incrementally so pan/zoom and
+    if (candles.length === 0) return;
+
+    // Same series, same history depth: apply only the latest bar so pan/zoom and
     // the scroll position survive every live update.
-    if (candles.length === 0) {
-      series.api.setData([]);
-      return;
-    }
     const bars = kind === 'candles' ? toChartBars(candles) : toLinePoints(candles);
     const last = bars[bars.length - 1];
     if (last) series.api.update(last as CandlestickData<Time> | LineData<Time>);
+    loadedCountRef.current = candles.length;
   }, [candles, symbol, timeframe, kind]);
 
   /* ---- signal level overlays ------------------------------------------- */
@@ -280,6 +309,13 @@ export const TradingChart: React.FC<TradingChartProps> = ({
       });
     };
   }, [levels, kind, theme]);
+
+  /* ---- structure overlays ----------------------------------------------- */
+  useEffect(() => {
+    const prim = overlayPrimRef.current;
+    if (!prim) return;
+    prim.update(overlays ?? [], colorsRef.current ?? readChartColors(theme));
+  }, [overlays, theme]);
 
   const disconnected = connectionState !== 'CONNECTED';
   return (

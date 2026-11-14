@@ -9,11 +9,15 @@ import type {
 } from '../../types/scanner';
 import { Card, CardHeader, CardBody } from '../ui/Card';
 import { formatPrice } from '../ui/format';
+import { ChartStructureEngine } from '../../engines/ChartStructureEngine';
 import { TradingChart, type ChartKind, type ChartLevel } from './TradingChart';
+import { buildOverlays, type OverlayPreferences } from './chartOverlays';
+import { OverlayLegend } from './OverlayLegend';
 import { WorkspaceHeader } from './WorkspaceHeader';
 import { IndicatorPanel } from '../views/IndicatorPanel';
 import { SignalPanel } from '../views/SignalPanel';
 import { TradePanel } from '../views/TradePanel';
+import { useOverlayPreferences } from '../../lib/overlayPreferences';
 
 /**
  * The trading workspace: watchlist, chart, analysis and account panel.
@@ -65,8 +69,45 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
 }) => {
   const [chartKind, setChartKind] = useState<ChartKind>('candles');
   const [mobileTab, setMobileTab] = useState<MobileTab>('chart');
+  const [overlayPrefs, setOverlayPrefs] = useOverlayPreferences();
 
   const digits = (activeSymbolInfo?.pipSize ?? 0.01) < 0.01 ? 3 : 2;
+
+  // Structure overlays are derived from the candles on screen, so the chart and
+  // the analysis panels always describe the same market — never a second,
+  // independently-computed picture of it.
+  const structure = useMemo(
+    () => ChartStructureEngine.derive(candles, selectedTimeframe),
+    [candles, selectedTimeframe]
+  );
+
+  const overlays = useMemo(() => {
+    const lastEpoch = candles.length > 0 ? candles[candles.length - 1].epoch : 0;
+    return buildOverlays({
+      structure,
+      opportunity: activeOpp,
+      preferences: overlayPrefs,
+      lastEpoch
+    });
+  }, [structure, activeOpp, overlayPrefs, candles]);
+
+  // Which overlay categories actually have something to draw right now. Used to
+  // disable toggles rather than offer a control that would do nothing.
+  const overlayAvailability = useMemo<Record<keyof OverlayPreferences, boolean>>(
+    () => ({
+      showSupportResistance: structure.supportZones.length + structure.resistanceZones.length > 0,
+      showSupplyDemand: [...structure.supportZones, ...structure.resistanceZones].some(
+        (z) => !z.isFlip && (z.hasBaseFormation || z.causedDisplacement)
+      ),
+      showTrendlines: structure.trendlines.length > 0,
+      showProtectedSwings: Boolean(structure.protectedHigh || structure.protectedLow),
+      showChartPatterns: Boolean(structure.confirmedPattern),
+      showBreakoutLevels:
+        Boolean(activeOpp?.tradingRange.isValid) &&
+        activeOpp?.tradingRange.breakoutState !== 'INSIDE_RANGE'
+    }),
+    [structure, activeOpp]
+  );
 
   // Published signal levels only. A WAIT signal carries no entry/TP, so the
   // chart stays clean rather than inventing levels to fill the space. Memoised
@@ -199,7 +240,15 @@ export const TradingWorkspace: React.FC<TradingWorkspaceProps> = ({
                 isStale={activeSymbolInfo?.isStale}
                 connectionState={connectionState}
                 levels={levels}
+                overlays={overlays}
                 height={440}
+              />
+            </div>
+            <div className="border-t border-line-soft px-3.5 py-2">
+              <OverlayLegend
+                preferences={overlayPrefs}
+                onToggle={setOverlayPrefs}
+                availability={overlayAvailability}
               />
             </div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line-soft px-3.5 py-2 text-[10.5px] text-fg-5">

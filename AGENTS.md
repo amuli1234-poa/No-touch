@@ -329,6 +329,21 @@ at runtime.
   in place rather than recreating the chart, so pan/zoom survives every tick.
   `TONE_HEX` in `ui/format.ts` likewise returns `var(...)` strings so inline
   styles and SVG follow the theme.
+- Chart-structure overlays (S/R + flip zones, supply/demand, trendlines,
+  protected swings, confirmed patterns, breakout levels) are split so each layer
+  is independently testable: `src/engines/ChartStructureEngine.ts` derives the
+  structure from candles (pure engine logic), `src/components/chart/chartOverlays.ts`
+  maps structure to a flat list of drawable shapes, and
+  `src/components/chart/overlayPrimitives.ts` paints them through a Lightweight
+  Charts `ISeriesPrimitive` (the library has no zone/segment primitive of its
+  own). Visibility toggles live in `OverlayLegend.tsx` and persist via
+  `src/lib/overlayPreferences.ts`. The chart still only annotates values the
+  engine already published — never derives or invents levels of its own.
+- The chart's data effect distinguishes a full repaint from a one-bar update via
+  `loadMode()` in `chartData.ts`. This matters because a symbol's first render
+  often happens before its history arrives; treating that empty state as
+  "loaded" left the chart showing a single bar. Do not call `fitContent()` on an
+  empty series — it collapses the visible range.
 - The landing hero sits on a dark photograph in both themes. `.ws-hero-band`
   pins the dark token values for that subtree so light-mode text stays legible
   over the image.

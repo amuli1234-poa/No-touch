@@ -5,6 +5,7 @@ import {
   lastClose,
   priceChange,
   seriesKey,
+  loadMode,
   TIMEFRAME_SECONDS
 } from '../components/chart/chartData';
 
@@ -135,6 +136,23 @@ console.log('\n[9] Timeframe periods');
   assert(TIMEFRAME_SECONDS['15m'] === 900, '15m is 900s');
   assert(TIMEFRAME_SECONDS['1h'] === 3600, '1h is 3600s');
   assert(TIMEFRAME_SECONDS['4h'] === 14400, '4h is 14400s');
+}
+
+/* 10. Load mode: full vs incremental repaint */
+console.log('\n[10] Load mode decision');
+{
+  const m = (keyChanged: boolean, barCount: number, loadedCount: number) =>
+    loadMode({ keyChanged, barCount, loadedCount });
+
+  assert(m(true, 100, 0) === 'full', 'new symbol/timeframe forces full repaint');
+  assert(m(true, 0, 0) === 'full', 'first render of a new key is full even when empty');
+  assert(m(false, 0, 0) === 'incremental', 'empty to empty stays incremental');
+  assert(m(false, 1, 0) === 'incremental', 'first arriving bar is a single update');
+  assert(m(false, 500, 0) === 'full', 'history arriving after an empty render forces full repaint');
+  assert(m(false, 101, 100) === 'incremental', 'one new bar is incremental');
+  assert(m(false, 150, 100) === 'full', 'a batch of new bars forces full repaint');
+  assert(m(false, 40, 100) === 'full', 'a shorter history (symbol switch) forces full repaint');
+  assert(m(false, 100, 100) === 'incremental', 'unchanged depth is incremental');
 }
 
 console.log(`\n${'='.repeat(52)}`);

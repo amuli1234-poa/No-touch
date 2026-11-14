@@ -124,3 +124,27 @@ export function seriesKey(symbol: string, timeframe: Timeframe, candles: readonl
   const last = candles[candles.length - 1];
   return `${symbol}|${timeframe}|${candles.length}|${last.epoch}|${last.close}`;
 }
+
+export type LoadMode = 'full' | 'incremental';
+
+/**
+ * Decide whether a candle snapshot must be painted in full or can be applied as
+ * a single-bar update.
+ *
+ * This is subtle enough to have caused a real bug: the first render for a symbol
+ * frequently happens before its history has arrived (zero bars), and marking
+ * that as "loaded" meant the arriving history was later applied incrementally —
+ * leaving the chart showing only its final bar. A jump in depth, or a shrink
+ * (a new symbol whose history is shorter), therefore forces a full repaint; only
+ * a same-depth tick on an already-populated series may be incremental.
+ */
+export function loadMode(args: {
+  keyChanged: boolean;
+  barCount: number;
+  loadedCount: number;
+}): LoadMode {
+  if (args.keyChanged) return 'full';
+  if (args.barCount < args.loadedCount) return 'full';
+  if (args.barCount > args.loadedCount + 1) return 'full';
+  return 'incremental';
+}

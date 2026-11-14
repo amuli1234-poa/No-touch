@@ -288,18 +288,6 @@ export interface FibonacciConfluence {
   target1618: number;
 }
 
-export interface ChartOverlayPreferences {
-  showTrendlines: boolean;
-  showSupportResistance: boolean;
-  showFlippedSR?: boolean;
-  showSupplyDemand: boolean;
-  showBreakoutLevels: boolean;
-  showProtectedSwings: boolean;
-  showChartPatterns: boolean;
-  showTradeLevels: boolean;
-  showPositionTool?: boolean;
-}
-
 export interface TradeableRangeBox {
   timeframe: Timeframe;
   isValid: boolean;
