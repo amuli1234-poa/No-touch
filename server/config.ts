@@ -11,6 +11,18 @@ export interface ServerConfig {
   port: number;
   isProduction: boolean;
   dataDir: string;
+  /**
+   * Persistence engine. `auto` uses SQLite when a database file is present and
+   * JSON otherwise; `sqlite`/`json` force one. Set STORAGE_ENGINE to pin it.
+   */
+  storageEngine: 'auto' | 'json' | 'sqlite';
+  /** Client telemetry retention and liveness. */
+  telemetry: {
+    /** Days of activity events to keep; older rows are pruned at boot. */
+    retentionDays: number;
+    /** Scanner rows unseen for longer than this are pruned. */
+    scannerSessionTtlSeconds: number;
+  };
   deriv: {
     appId: string;
     redirectUri: string;
@@ -60,6 +72,14 @@ function int(value: string | undefined, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/** Validates STORAGE_ENGINE. An unknown value is a config error, not a silent default. */
+function parseEngine(value: string | undefined): ServerConfig['storageEngine'] {
+  const v = value?.trim().toLowerCase();
+  if (!v) return 'auto';
+  if (v === 'auto' || v === 'json' || v === 'sqlite') return v;
+  throw new Error(`STORAGE_ENGINE must be one of auto, json, sqlite (got "${value}").`);
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const isProduction = env.NODE_ENV === 'production';
   const appId = required('DERIV_APP_ID', env.DERIV_APP_ID);
@@ -83,6 +103,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     port: int(env.PORT, 8787),
     isProduction,
     dataDir: env.DATA_DIR ? path.resolve(env.DATA_DIR) : path.resolve(process.cwd(), 'data'),
+    storageEngine: parseEngine(env.STORAGE_ENGINE),
+    telemetry: {
+      // 90 days is enough to compute 30-day DAU/MAU with history to spare.
+      retentionDays: Math.max(1, int(env.TELEMETRY_RETENTION_DAYS, 90)),
+      // Keep a scanner row for 1 hour after its last heartbeat.
+      scannerSessionTtlSeconds: Math.max(60, int(env.SCANNER_SESSION_TTL_SECONDS, 3600))
+    },
     deriv: {
       appId,
       redirectUri,

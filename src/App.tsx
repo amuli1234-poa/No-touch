@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { DerivWebSocketManager } from './services/DerivWebSocketManager';
 import { IndexedDbStorage } from './services/IndexedDbStorage';
 import { WhatsAppService } from './services/WhatsAppService';
+import { telemetry } from './services/TelemetryService';
 import { OpportunityScoringEngine } from './engines/OpportunityScoringEngine';
 import { AppShell } from './components/shell/AppShell';
 import { Route } from './components/shell/navigation';
@@ -123,6 +124,7 @@ export default function App() {
     };
     setSettings(normalized);
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(normalized));
+    telemetry.settingsChanged();
     if (normalized.appId !== settings.appId) {
       wsManager.updateAppId(normalized.appId);
     }
@@ -153,6 +155,9 @@ export default function App() {
     });
 
     refreshWaStatus();
+
+    // Client telemetry: start the batched sender for this page load.
+    telemetry.start();
 
     const connHandler = (state: 'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING') => {
       setConnectionState(state);
@@ -214,6 +219,7 @@ export default function App() {
       wsManager.offTick(tickHandler);
       wsManager.offConnectionChange(connHandler);
       wsManager.destroy();
+      telemetry.stop();
     };
   }, [wsManager, storage, refreshWaStatus]);
 
@@ -253,6 +259,7 @@ export default function App() {
           (!old || old.setupTier !== 'HIGH_QUALITY')
         ) {
           playChime();
+          telemetry.signal(opportunity.symbol, selectedTimeframe, opportunity.score.total);
           const histEntry: SignalHistoryEntry = {
             id: opportunity.id,
             symbol: opportunity.symbol,
@@ -302,7 +309,8 @@ export default function App() {
       waService,
       storage,
       playChime,
-      dispatchWhatsAppAlert
+      dispatchWhatsAppAlert,
+      selectedTimeframe
     ]
   );
 
@@ -310,13 +318,15 @@ export default function App() {
     if (isScanning || symbols.length === 0) return;
     setIsScanning(true);
     setLastScanTimestamp(Date.now());
+    const openSymbols = symbols.filter((s) => s.isOpen);
+    telemetry.setScanning(true, openSymbols.map((s) => s.symbol), [selectedTimeframe]);
     try {
-      const openSymbols = symbols.filter((s) => s.isOpen);
       await Promise.allSettled(openSymbols.map((s) => scanMarket(s.symbol)));
     } finally {
       setIsScanning(false);
+      telemetry.setScanning(false, openSymbols.map((s) => s.symbol), [selectedTimeframe]);
     }
-  }, [symbols, isScanning, scanMarket]);
+  }, [symbols, isScanning, scanMarket, selectedTimeframe]);
 
   useEffect(() => {
     const interval = setInterval(() => {

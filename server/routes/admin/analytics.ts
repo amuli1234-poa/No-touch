@@ -2,14 +2,16 @@ import { Router, type Response } from 'express';
 import type { AdminRouteContext } from './helpers.js';
 import { requireAdmin } from '../../middleware/adminAuth.js';
 import type { AdminAuthedRequest } from '../../lib/adminSession.js';
+import { summarise } from '../../activity/service.js';
 
 /**
  * Analytics (`/api/admin/v1/analytics/*`).
  *
- * Only metrics the platform can actually compute from real records are
- * returned. Retention, churn and conversion require subscription history that
- * does not exist here, so they are reported as unavailable rather than
- * estimated.
+ * Activity-derived figures (DAU/MAU, feature usage, scanner activity) are now
+ * computed from the real `activityEvents` collection, which the client and the
+ * auth path write to. Metrics that still have no source — retention, churn,
+ * conversion — need subscription history that does not exist, so they remain
+ * reported as unavailable rather than estimated.
  */
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -45,21 +47,46 @@ export function createAnalyticsRouter(ctx: AdminRouteContext): Router {
   });
 
   router.get('/active-users', requireAdmin(ctx, 'analytics.read'), (_req: AdminAuthedRequest, res: Response) => {
-    // DAU/MAU require a login-activity event stream. We can only report users
-    // with a live session right now (a real, if narrow, signal).
+    // DAU/MAU come from the activity event log: a user counts as active on a
+    // day when they produced at least one event (sign-in, scan, signal, ...).
+    const summary = summarise(store);
     const withSession = store.listUsers().filter((u) => store.countActiveSessionsForUser(u.id) > 0).length;
     return res.json({
       withLiveSession: withSession,
-      dau: null,
-      mau: null,
-      unavailable: 'Daily/monthly active user counts require a login-event history that is not retained.'
+      dau: summary.dau,
+      mau: summary.mau,
+      activeScannerSessions: summary.activeScannerSessions,
+      signalsLast24h: summary.signalsLast24h,
+      lastEventAt: summary.lastEventAt
     });
   });
 
-  router.get('/feature-usage', requireAdmin(ctx, 'analytics.read'), (_req: AdminAuthedRequest, res: Response) => {
+  router.get('/feature-usage', requireAdmin(ctx, 'analytics.read'), (req: AdminAuthedRequest, res: Response) => {
+    const days = Math.min(365, Math.max(7, parseInt(String(req.query.days ?? '30'), 10) || 30));
+    const now = Date.now();
+    const since = startOfDayUtc(now) - (days - 1) * DAY;
+
+    // Count events by kind within the window — real feature-usage signal from
+    // what the client actually reported, not an estimate.
+    const byKind = new Map<string, number>();
+    const bySymbol = new Map<string, number>();
+    for (const e of store.listActivityEvents()) {
+      if (e.timestamp < since) continue;
+      byKind.set(e.kind, (byKind.get(e.kind) ?? 0) + 1);
+      if (e.kind === 'signal.generated' && e.symbol) {
+        bySymbol.set(e.symbol, (bySymbol.get(e.symbol) ?? 0) + 1);
+      }
+    }
+
+    const items = [...byKind.entries()]
+      .map(([kind, count]) => ({ kind, count }))
+      .sort((a, b) => b.count - a.count);
+
     return res.json({
-      items: [],
-      unavailable: 'Scanner feature usage is not reported to the server; the scanner runs client-side.'
+      days,
+      items,
+      topSymbols: [...bySymbol.entries()].map(([symbol, count]) => ({ symbol, count })).sort((a, b) => b.count - a.count).slice(0, 10),
+      total: items.reduce((acc, i) => acc + i.count, 0)
     });
   });
 

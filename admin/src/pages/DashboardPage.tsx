@@ -12,7 +12,12 @@ interface Summary {
   revenue: { mrr: number | null; currency: string | null; unavailable?: string };
   support: { open: number };
   system: { uptimeSeconds: number; requests: number; errorRate: number; latency: { count: number; avgMs: number; p95Ms: number; maxMs: number } };
-  scanner: { activeSessions: number | null; unavailable?: string };
+  scanner: {
+    activeSessions: number;
+    signalsLast24h: number;
+    engineErrorsLast24h: number;
+    lastEventAt: number | null;
+  };
 }
 
 interface Alert {
@@ -62,11 +67,10 @@ export function DashboardPage() {
             <StatCard label="Error rate" value={formatPercent(s.system.errorRate, 2)} tone={s.system.errorRate > 0.05 ? 'warn' : 'success'} icon={<Activity size={14} />} hint={`p95 ${s.system.latency.p95Ms} ms`} />
             <StatCard
               label="Scanner sessions"
-              value={s.scanner.activeSessions === null ? 'Unavailable' : formatNumber(s.scanner.activeSessions)}
-              unavailable
+              value={formatNumber(s.scanner.activeSessions)}
               tone="blue"
               icon={<Gauge size={14} />}
-              hint="Not reported to the server"
+              hint={`${formatNumber(s.scanner.signalsLast24h)} signals · 24h`}
             />
           </div>
 
@@ -136,7 +140,6 @@ export function DashboardPage() {
               <div className="col gap">
                 {s.subscriptions.unavailable && <UnavailableNote text={s.subscriptions.unavailable} />}
                 {s.revenue.unavailable && <UnavailableNote text={s.revenue.unavailable} />}
-                {s.scanner.unavailable && <UnavailableNote text={s.scanner.unavailable} />}
               </div>
             </Card>
           </div>

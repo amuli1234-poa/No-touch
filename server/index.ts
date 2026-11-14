@@ -6,6 +6,7 @@ import { loadConfig, type ServerConfig } from './config.js';
 import { Store } from './store/store.js';
 import { createAuthRouter } from './routes/auth.js';
 import { createWhatsAppRouter } from './routes/whatsapp.js';
+import { createTelemetryRouter } from './routes/telemetry.js';
 import { createAdminApiRouter, adminCors } from './routes/admin/index.js';
 import { Telemetry, telemetryMiddleware } from './services/admin/telemetry.js';
 import { attachSession, requireSession, type SessionContext, type AuthedRequest } from './lib/session.js';
@@ -62,6 +63,11 @@ export function createApp(cfg: ServerConfig, store: Store): AppBundle {
 
   app.use(createAuthRouter(ctx));
 
+  // Client telemetry ingest. Needs a JSON body parser, scoped to its own
+  // namespace so it never widens the surface of any other route.
+  app.use('/api/telemetry', express.json({ limit: '32kb' }));
+  app.use(createTelemetryRouter(ctx));
+
   // WhatsApp alert dispatch. Status is public (masked); sending requires a session.
   app.use(createWhatsAppRouter());
 
@@ -101,18 +107,37 @@ export function createApp(cfg: ServerConfig, store: Store): AppBundle {
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
-  const store = new Store(cfg.dataDir);
+  const store = new Store(cfg.dataDir, { engine: cfg.storageEngine });
   await store.load();
+  console.log(`[server] Storage engine: ${store.storage.kind}`);
   await store.pruneExpiredSessions();
   await store.pruneAdminSessions();
+  // Telemetry retention: drop old activity events and stale scanner rows so the
+  // high-volume collections stay bounded.
+  const prunedEvents = await store.pruneActivityEvents(cfg.telemetry.retentionDays);
+  const prunedSessions = await store.pruneScannerSessions(cfg.telemetry.scannerSessionTtlSeconds * 1000);
+  if (prunedEvents > 0 || prunedSessions > 0) {
+    console.log(`[server] Telemetry retention: pruned ${prunedEvents} events, ${prunedSessions} scanner sessions.`);
+  }
 
   const { app } = createApp(cfg, store);
 
-  app.listen(cfg.port, () => {
+  const server = app.listen(cfg.port, () => {
     console.log(`[server] WickSentinel listening on :${cfg.port} (${cfg.isProduction ? 'production' : 'development'})`);
     console.log(`[server] Deriv redirect URI: ${cfg.deriv.redirectUri}`);
     if (!cfg.deriv.clientSecret) console.log('[server] Public PKCE client (no DERIV_CLIENT_SECRET set).');
   });
+
+  // Release the data-directory lock on shutdown so a restart (or the bootstrap
+  // command) is not blocked by a lock this process no longer needs.
+  const shutdown = (signal: string) => {
+    console.log(`[server] ${signal} received, shutting down.`);
+    server.close(() => {
+      void store.close().finally(() => process.exit(0));
+    });
+  };
+  process.once('SIGINT', () => shutdown('SIGINT'));
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
 }
 
 // Only auto-start when executed directly (not when imported by tests).

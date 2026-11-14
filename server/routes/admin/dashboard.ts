@@ -2,6 +2,7 @@ import { Router, type Response } from 'express';
 import type { AdminRouteContext } from './helpers.js';
 import { requireAdmin } from '../../middleware/adminAuth.js';
 import type { AdminAuthedRequest } from '../../lib/adminSession.js';
+import { summarise } from '../../activity/service.js';
 
 /**
  * Executive dashboard metrics (`/api/admin/v1/dashboard/*`).
@@ -37,6 +38,7 @@ export function createDashboardRouter(ctx: AdminRouteContext): Router {
 
     // "Active" = has at least one live session right now (real, not estimated).
     const activeSessions = store.listUsers().reduce((acc, u) => acc + (store.countActiveSessionsForUser(u.id) > 0 ? 1 : 0), 0);
+    const activity = summarise(store);
 
     return res.json({
       generatedAt: now,
@@ -70,10 +72,11 @@ export function createDashboardRouter(ctx: AdminRouteContext): Router {
         latency: telemetry.latencySummary()
       },
       scanner: {
-        // Honest UNKNOWN: the scanner runs client-side; the server cannot count
-        // active engine sessions without a client heartbeat that does not exist.
-        activeSessions: null,
-        unavailable: 'Scanner sessions run in the browser and are not reported to the server.'
+        // Now measured from client heartbeats and reported events.
+        activeSessions: activity.activeScannerSessions,
+        signalsLast24h: activity.signalsLast24h,
+        engineErrorsLast24h: activity.engineErrorsLast24h,
+        lastEventAt: activity.lastEventAt
       }
     });
   });

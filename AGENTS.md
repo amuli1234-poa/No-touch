@@ -33,8 +33,27 @@ npm run dev:admin     # admin app on :3001, proxies /api/admin to :8787
 npm run build:admin   # → dist-admin/
 npm run lint:admin    # admin typecheck (tsc -p admin/tsconfig.json)
 npm run test:admin    # admin test suite (20 tests)
+npm run test:telemetry # telemetry ingest + admin read-path (8 tests)
 npm run admin:bootstrap   # seed the first Super Admin (prints otpauth URI)
 ```
+
+`npx tsc --noEmit` only covers the browser app: the root `tsconfig.json`
+excludes `server/`. Typecheck the backend with `npm run lint:server`
+(`tsc -p server/tsconfig.json`), which is not part of `npm run lint`.
+
+Data store (see `docs/storage-migration.md` for the full procedure):
+
+```bash
+npm run test:store    # cross-process lock + foreign-write tests (10 tests)
+npm run test:migrate  # JSON -> SQLite migration safety tests (8 tests)
+npm run db:migrate    # migrate data/ JSON into SQLite (server must be stopped)
+npm run db:migrate -- --verify-only   # check an existing database, read-only
+```
+
+`STORAGE_ENGINE` picks the backend: `auto` (default; SQLite when
+`wicksentinel.db` exists, else JSON), `json`, or `sqlite`. Tests honour
+`TEST_STORAGE_ENGINE` the same way, so the full auth/admin suites can be run
+against SQLite with `TEST_STORAGE_ENGINE=sqlite npm run test:admin`.
 
 `npm run test:admin` and `npm run test:auth` both construct an app with
 `createApp(cfg, store)`. Any test config fixture must include the `admin` block
@@ -168,11 +187,39 @@ Server layout (`server/`):
 - `lib/deriv.ts` — authorization URL, token exchange, userinfo, accounts, revoke.
 - `lib/session.ts` — signed cookie resolution, guards, sliding renewal.
 - `lib/crypto.ts` — HMAC-signed cookies + AES-256-GCM sealing of the Deriv token.
-- `store/store.ts` — JSON-file store (`data/wicksentinel.json`): users, sessions,
-  one-time OAuth transactions. Keyed by a stable id derived from the Deriv `sub`,
-  never a display name.
+- `store/store.ts` — durable store: users, sessions, one-time OAuth
+  transactions, plus the admin domain. Keyed by a stable id derived from the
+  Deriv `sub`, never a display name. Reads are served from an in-memory cache;
+  writes go through a pluggable backend (`store/backend.ts`):
+  `store/json_backend.ts` (`data/wicksentinel.json`, the original engine) or
+  `store/sqlite_backend.ts` (`data/wicksentinel.db`, WAL + transactions).
+  Both take an exclusive `data/wicksentinel.lock`, so one process per data
+  directory. Migrate with `npm run db:migrate`.
 - `routes/auth.ts` — `/auth/start`, `/auth/deriv/callback`, `/auth/logout`,
-  `/auth/session`, `/api/preferences`, `/api/deriv/verify`.
+  `/auth/session`, `/api/preferences`, `/api/deriv/verify`. Sign-in/sign-out also
+  emit best-effort activity events (see telemetry below).
+- `activity/types.ts` — activity-event and scanner-session record shapes, plus
+  `SCANNER_ACTIVE_WINDOW_MS` (a scanner counts as "active now" if seen within
+  2 minutes).
+- `activity/service.ts` — validation and aggregation for telemetry. `ingestEvents`
+  accepts only known client kinds and bounded primitives; `recordHeartbeat`
+  upserts a scanner session; `summarise()` computes DAU/MAU/active sessions.
+- `routes/telemetry.ts` — `POST /api/telemetry/events` and
+  `/api/telemetry/heartbeat`. Session-required, rate-limited and size-capped;
+  best-effort (a rejection never blocks the scanner). `userId` always comes from
+  the verified session, never the body.
+
+**Scanner telemetry.** The engines run in the browser, so the admin console can
+only show measured figures because the client reports them. `src/services/
+TelemetryService.ts` batches events (one page load = one session id) and posts
+them via `/api/telemetry/*`; `src/App.tsx` drives its lifecycle and emits
+`scan.started`/`scan.stopped`/`signal.generated`/`settings.changed`. The admin
+read-paths (`analytics/active-users`, `analytics/feature-usage`,
+`monitoring/scanner-sessions`, `monitoring/data-freshness`, `dashboard/summary`)
+consume these records. Where no source exists — billing, subscriptions, market
+data — the admin UI reports **Unavailable**; never substitute an estimate.
+Scanner sessions are keyed by `<userId>:<clientSessionId>` because the client id
+is untrusted.
 
 Frontend: `src/lib/auth.ts` (client store + actions), `src/components/landing/
 AuthPage.tsx` (Sign Up / Login + error page), `src/components/auth/

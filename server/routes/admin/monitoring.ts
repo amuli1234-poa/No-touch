@@ -2,14 +2,17 @@ import { Router, type Response } from 'express';
 import type { AdminRouteContext } from './helpers.js';
 import { requireAdmin } from '../../middleware/adminAuth.js';
 import type { AdminAuthedRequest } from '../../lib/adminSession.js';
+import { summarise } from '../../activity/service.js';
+import { SCANNER_ACTIVE_WINDOW_MS } from '../../activity/types.js';
 
 /**
  * Operations monitoring (`/api/admin/v1/monitoring/*`).
  *
- * Statuses are derived from real, in-process telemetry. Where the platform has
- * no telemetry source the status is reported as UNKNOWN — never a fabricated
- * "healthy". Specifically, scanner-engine health cannot be observed from the
- * server because the engines run in the browser.
+ * Statuses are derived from real, in-process telemetry plus the activity log
+ * the client now reports into. Scanner-engine health is inferred from reported
+ * engine errors: with a live heartbeat we can tell DEGRADED from HEALTHY. Where
+ * there is genuinely no source (the Deriv stream is client-side) the status
+ * stays UNKNOWN — never a fabricated "healthy".
  */
 
 export type ServiceStatus = 'HEALTHY' | 'DEGRADED' | 'OFFLINE' | 'UNKNOWN';
@@ -22,10 +25,27 @@ export function createMonitoringRouter(ctx: AdminRouteContext): Router {
     const latency = telemetry.latencySummary();
     const errorRate = telemetry.errorRate;
     const requests = telemetry.requestCount;
+    const summary = summarise(store);
 
     let apiStatus: ServiceStatus = 'HEALTHY';
     if (requests > 20 && errorRate > 0.1) apiStatus = 'DEGRADED';
     if (requests > 20 && errorRate > 0.25) apiStatus = 'OFFLINE';
+
+    // Scanner health is inferred from the client heartbeat + reported errors:
+    //   no live sessions        -> UNKNOWN (nothing to judge)
+    //   sessions but no errors  -> HEALTHY
+    //   sessions with errors    -> DEGRADED
+    let scannerStatus: ServiceStatus = 'UNKNOWN';
+    let scannerDetail = 'No scanner heartbeat received; engines run in the browser.';
+    if (summary.activeScannerSessions > 0) {
+      if (summary.engineErrorsLast24h > 0) {
+        scannerStatus = 'DEGRADED';
+        scannerDetail = `${summary.activeScannerSessions} active, ${summary.engineErrorsLast24h} engine errors in 24h`;
+      } else {
+        scannerStatus = 'HEALTHY';
+        scannerDetail = `${summary.activeScannerSessions} active, no engine errors in 24h`;
+      }
+    }
 
     return res.json({
       generatedAt: Date.now(),
@@ -51,8 +71,8 @@ export function createMonitoringRouter(ctx: AdminRouteContext): Router {
         {
           key: 'scanner_engines',
           label: 'Scanner engines',
-          status: 'UNKNOWN' as ServiceStatus,
-          detail: 'Engines run in the browser; the server receives no engine telemetry.'
+          status: scannerStatus,
+          detail: scannerDetail
         }
       ],
       metrics: {
@@ -60,11 +80,15 @@ export function createMonitoringRouter(ctx: AdminRouteContext): Router {
         requests,
         errors: telemetry.errorCount,
         errorRate,
-        latency
+        latency,
+        activeScannerSessions: summary.activeScannerSessions,
+        signalsLast24h: summary.signalsLast24h,
+        engineErrorsLast24h: summary.engineErrorsLast24h
       },
       notes: [
         'HEALTHY/DEGRADED/OFFLINE reflect real request telemetry for the API process only.',
-        'UNKNOWN is shown where no telemetry source exists (client-side scanner, Deriv stream).'
+        'Scanner status is inferred from client heartbeats and reported engine errors.',
+        'UNKNOWN is shown where no telemetry source exists (the client-side Deriv stream).'
       ]
     });
   });
@@ -73,12 +97,44 @@ export function createMonitoringRouter(ctx: AdminRouteContext): Router {
     return res.json({ items: telemetry.errors(20) });
   });
 
+  router.get('/scanner-sessions', requireAdmin(ctx, 'monitoring.read'), (_req: AdminAuthedRequest, res: Response) => {
+    const now = Date.now();
+    const summary = summarise(store, now);
+    const sessions = store
+      .listScannerSessions()
+      .map((s) => ({
+        id: s.id,
+        userId: s.userId,
+        symbols: s.symbols,
+        timeframes: s.timeframes,
+        startedAt: s.startedAt,
+        lastSeenAt: s.lastSeenAt,
+        signalCount: s.signalCount,
+        errorCount: s.errorCount,
+        clientVersion: s.clientVersion,
+        active: now - s.lastSeenAt <= SCANNER_ACTIVE_WINDOW_MS
+      }))
+      .sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+
+    return res.json({
+      generatedAt: now,
+      active: summary.activeScannerSessions,
+      total: sessions.length,
+      signalsLast24h: summary.signalsLast24h,
+      engineErrorsLast24h: summary.engineErrorsLast24h,
+      items: sessions
+    });
+  });
+
   router.get('/data-freshness', requireAdmin(ctx, 'monitoring.read'), (_req: AdminAuthedRequest, res: Response) => {
-    // The only server-side "freshness" we can honestly report is the recency of
-    // the last mutation, inferred from admin session/audit timestamps.
+    // Server-side freshness: the most recent admin action (audit log) and the
+    // most recent client activity event. Market-data freshness stays a
+    // client-side concern and is reported as unavailable.
     const lastAudit = store.listAudit().at(-1)?.timestamp ?? null;
+    const lastEventAt = store.listActivityEvents().at(-1)?.timestamp ?? null;
     return res.json({
       lastAdminActivityAt: lastAudit,
+      lastClientActivityAt: lastEventAt,
       marketData: null,
       unavailable: 'Market data freshness is a client-side concern and is not reported to the server.'
     });

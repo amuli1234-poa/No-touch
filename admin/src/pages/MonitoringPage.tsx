@@ -13,6 +13,9 @@ interface Overview {
     errors: number;
     errorRate: number;
     latency: { count: number; avgMs: number; p95Ms: number; maxMs: number };
+    activeScannerSessions: number;
+    signalsLast24h: number;
+    engineErrorsLast24h: number;
   };
   notes: string[];
 }
@@ -42,7 +45,11 @@ function statusMeta(status: string): { tone: string; dot: string } {
 export function MonitoringPage() {
   const overview = useAsync<Overview>(() => api.get('/monitoring/overview'), []);
   const errors = useAsync<{ items: ErrorRow[] }>(() => api.get('/monitoring/errors'), []);
-  const freshness = useAsync<{ lastAdminActivityAt: number | null; unavailable?: string }>(() => api.get('/monitoring/data-freshness'), []);
+  const freshness = useAsync<{
+    lastAdminActivityAt: number | null;
+    lastClientActivityAt: number | null;
+    unavailable?: string;
+  }>(() => api.get('/monitoring/data-freshness'), []);
 
   const m = overview.data?.metrics;
 
@@ -136,6 +143,14 @@ export function MonitoringPage() {
               <div className="row-between">
                 <span className="muted small">Last administrative activity</span>
                 <span className="strong">{freshness.data?.lastAdminActivityAt ? formatRelative(freshness.data.lastAdminActivityAt) : 'None yet'}</span>
+              </div>
+              <div className="row-between">
+                <span className="muted small">Last client activity</span>
+                <span className="strong">{freshness.data?.lastClientActivityAt ? formatRelative(freshness.data.lastClientActivityAt) : 'None yet'}</span>
+              </div>
+              <div className="row-between">
+                <span className="muted small">Active scanner sessions</span>
+                <span className="strong">{formatNumber(m?.activeScannerSessions ?? 0)}</span>
               </div>
               <div className="row-between">
                 <span className="muted small">Market data</span>

@@ -1,6 +1,5 @@
-import fs from 'node:fs';
-import fsp from 'node:fs/promises';
 import path from 'node:path';
+
 import type {
   AdminUserRecord,
   AdminSessionRecord,
@@ -14,14 +13,25 @@ import type {
   AdminNoteRecord,
   PlatformConfigRecord
 } from '../admin/types.js';
+import type {
+  ActivityEventRecord,
+  ScannerSessionRecord
+} from '../activity/types.js';
+import { JsonBackend } from './json_backend.js';
+import { SqliteBackend, sqliteFileExists } from './sqlite_backend.js';
+import type { StorageBackend, StoredRecord } from './backend.js';
 
 /**
- * Minimal durable store backed by a single JSON file.
+ * Durable store for users, sessions, OAuth transactions and the admin domain.
  *
- * The existing project had no database, so nothing is replaced here — this is
- * additive. It holds three collections: users (keyed by a stable Deriv
- * identity), server-side sessions, and one-time OAuth transactions. Writes are
- * serialised through a promise chain and flushed atomically (write + rename).
+ * Reads are served from an in-memory cache so the public API stays synchronous
+ * (callers depend on that). Writes update the cache and are written through to
+ * a pluggable backend, which owns durability and atomicity:
+ *   - `JsonBackend`   — the original single-file engine, kept for rollback;
+ *   - `SqliteBackend` — transactional storage for multi-user execution.
+ *
+ * Exactly one process may open a data directory at a time; the backend takes an
+ * exclusive lock to enforce that.
  */
 
 export interface DerivAccountRef {
@@ -29,6 +39,22 @@ export interface DerivAccountRef {
   type: 'demo' | 'real';
   currency?: string;
   status?: string;
+}
+
+/** Persistence engines the store can run on. `auto` prefers SQLite when present. */
+export type StorageEngine = 'json' | 'sqlite' | 'auto';
+
+export interface StoreOptions {
+  /**
+   * Skips the exclusive data-directory lock. For tests and read-only tooling
+   * only — it re-enables the cross-process clobbering the lock exists to stop,
+   * so no production path may set it.
+   */
+  unsafeDisableLock?: boolean;
+  /** Which backend to open. Defaults to `auto`. */
+  engine?: StorageEngine;
+  /** Overrides backend selection entirely (used by the migration tooling). */
+  backend?: StorageBackend;
 }
 
 export interface UserRecord {
@@ -93,6 +119,8 @@ interface Database {
   announcements: Record<string, AnnouncementRecord>;
   featureFlags: Record<string, FeatureFlagRecord>;
   adminNotes: Record<string, AdminNoteRecord>;
+  activityEvents: ActivityEventRecord[];
+  scannerSessions: Record<string, ScannerSessionRecord>;
   platformConfig: PlatformConfigRecord;
 }
 
@@ -110,59 +138,88 @@ const EMPTY: Database = {
   announcements: {},
   featureFlags: {},
   adminNotes: {},
+  activityEvents: [],
+  scannerSessions: {},
   platformConfig: { maintenanceMode: false, registrationOpen: true, supportEmail: null, updatedBy: null, updatedAt: 0 }
 };
 
+/**
+ * Chooses a backend. `auto` uses SQLite when a database file is present and
+ * falls back to JSON otherwise, so an un-migrated deployment keeps working and
+ * a migrated one switches over without an environment change.
+ */
+export function resolveBackend(dataDir: string, options: StoreOptions): StorageBackend {
+  if (options.backend) return options.backend;
+
+  const engine = options.engine ?? 'auto';
+  const disable = { unsafeDisableLock: options.unsafeDisableLock };
+
+  if (engine === 'json') return new JsonBackend(dataDir, disable);
+  if (engine === 'sqlite') return new SqliteBackend(dataDir, disable);
+
+  return sqliteFileExists(dataDir) ? new SqliteBackend(dataDir, disable) : new JsonBackend(dataDir, disable);
+}
+
 export class Store {
   private db: Database = structuredClone(EMPTY);
-  private file: string;
-  private queue: Promise<void> = Promise.resolve();
+  private readonly backend: StorageBackend;
   private loaded = false;
 
-  constructor(dataDir: string) {
-    fs.mkdirSync(dataDir, { recursive: true });
-    this.file = path.join(dataDir, 'wicksentinel.json');
+  constructor(dataDir: string, options: StoreOptions = {}) {
+    this.backend = resolveBackend(path.resolve(dataDir), options);
+  }
+
+  /** The active backend — exposed for the migration tooling and diagnostics. */
+  get storage(): StorageBackend {
+    return this.backend;
   }
 
   async load(): Promise<void> {
+    await this.backend.open();
+
     try {
-      const raw = await fsp.readFile(this.file, 'utf8');
-      const parsed = JSON.parse(raw) as Partial<Database>;
-      // Additive merge: unknown/absent collections fall back to defaults so an
-      // older data file (pre-admin) loads without migration or data loss.
       this.db = {
         ...structuredClone(EMPTY),
-        ...parsed,
-        users: parsed.users ?? {},
-        sessions: parsed.sessions ?? {},
-        oauthTransactions: parsed.oauthTransactions ?? {},
-        adminUsers: parsed.adminUsers ?? {},
-        adminSessions: parsed.adminSessions ?? {},
-        adminInvitations: parsed.adminInvitations ?? {},
-        adminPasswordResets: parsed.adminPasswordResets ?? {},
-        auditLogs: parsed.auditLogs ?? [],
-        supportTickets: parsed.supportTickets ?? {},
-        supportTicketMessages: parsed.supportTicketMessages ?? {},
-        announcements: parsed.announcements ?? {},
-        featureFlags: parsed.featureFlags ?? {},
-        adminNotes: parsed.adminNotes ?? {},
-        platformConfig: { ...EMPTY.platformConfig, ...(parsed.platformConfig ?? {}) }
+        users: (await this.backend.loadKeyed('users')) as unknown as Database['users'],
+        sessions: (await this.backend.loadKeyed('sessions')) as unknown as Database['sessions'],
+        oauthTransactions: (await this.backend.loadKeyed('oauthTransactions')) as unknown as Database['oauthTransactions'],
+        adminUsers: (await this.backend.loadKeyed('adminUsers')) as unknown as Database['adminUsers'],
+        adminSessions: (await this.backend.loadKeyed('adminSessions')) as unknown as Database['adminSessions'],
+        adminInvitations: (await this.backend.loadKeyed('adminInvitations')) as unknown as Database['adminInvitations'],
+        adminPasswordResets: (await this.backend.loadKeyed('adminPasswordResets')) as unknown as Database['adminPasswordResets'],
+        auditLogs: (await this.backend.loadAppend('auditLogs')) as unknown as Database['auditLogs'],
+        supportTickets: (await this.backend.loadKeyed('supportTickets')) as unknown as Database['supportTickets'],
+        supportTicketMessages: (await this.backend.loadKeyed('supportTicketMessages')) as unknown as Database['supportTicketMessages'],
+        announcements: (await this.backend.loadKeyed('announcements')) as unknown as Database['announcements'],
+        featureFlags: (await this.backend.loadKeyed('featureFlags')) as unknown as Database['featureFlags'],
+        adminNotes: (await this.backend.loadKeyed('adminNotes')) as unknown as Database['adminNotes'],
+        activityEvents: (await this.backend.loadAppend('activityEvents')) as unknown as Database['activityEvents'],
+        scannerSessions: (await this.backend.loadKeyed('scannerSessions')) as unknown as Database['scannerSessions']
       };
-    } catch (err: any) {
-      if (err?.code !== 'ENOENT') throw err;
-      this.db = structuredClone(EMPTY);
+      const platformConfig = await this.backend.loadSingleton('platformConfig');
+      this.db.platformConfig = { ...EMPTY.platformConfig, ...((platformConfig ?? {}) as Partial<PlatformConfigRecord>) };
+    } catch (err) {
+      await this.backend.close();
+      throw err;
     }
+
     this.loaded = true;
   }
 
-  private persist(): Promise<void> {
-    const snapshot = JSON.stringify(this.db, null, 2);
-    this.queue = this.queue.then(async () => {
-      const tmp = `${this.file}.${process.pid}.tmp`;
-      await fsp.writeFile(tmp, snapshot, 'utf8');
-      await fsp.rename(tmp, this.file);
-    });
-    return this.queue;
+  /** Releases the backend and its data-directory lock. Called on shutdown. */
+  async close(): Promise<void> {
+    await this.backend.close();
+    this.loaded = false;
+  }
+
+  /**
+   * Runs `fn` in a single backend transaction. Writes made through this store
+   * inside `fn` commit together or roll back together on SQLite. The JSON
+   * backend has no transaction, so callers needing atomicity must use SQLite.
+   */
+  async transaction<T>(fn: () => Promise<T>): Promise<T> {
+    this.ensureLoaded();
+    return this.backend.transaction(fn);
   }
 
   private ensureLoaded(): void {
@@ -173,9 +230,9 @@ export class Store {
 
   async createOAuthTransaction(tx: OAuthTransaction): Promise<void> {
     this.ensureLoaded();
-    this.pruneOAuthTransactions();
+    await this.pruneOAuthTransactions();
     this.db.oauthTransactions[tx.state] = tx;
-    await this.persist();
+    await this.backend.putKeyed('oauthTransactions', tx.state, tx as unknown as StoredRecord);
   }
 
   getOAuthTransaction(state: string): OAuthTransaction | null {
@@ -189,14 +246,17 @@ export class Store {
     const tx = this.db.oauthTransactions[state];
     if (!tx || tx.consumedAt !== null) return false;
     tx.consumedAt = Date.now();
-    await this.persist();
+    await this.backend.putKeyed('oauthTransactions', state, tx as unknown as StoredRecord);
     return true;
   }
 
-  private pruneOAuthTransactions(): void {
+  private async pruneOAuthTransactions(): Promise<void> {
     const cutoff = Date.now() - 15 * 60 * 1000;
     for (const [state, tx] of Object.entries(this.db.oauthTransactions)) {
-      if (tx.createdAt < cutoff || tx.consumedAt !== null) delete this.db.oauthTransactions[state];
+      if (tx.createdAt < cutoff || tx.consumedAt !== null) {
+        delete this.db.oauthTransactions[state];
+        await this.backend.deleteKeyed('oauthTransactions', state);
+      }
     }
   }
 
@@ -244,7 +304,7 @@ export class Store {
     this.ensureLoaded();
     user.updatedAt = Date.now();
     this.db.users[user.id] = user;
-    await this.persist();
+    await this.backend.putKeyed('users', user.id, user as unknown as StoredRecord);
     return user;
   }
 
@@ -253,7 +313,7 @@ export class Store {
   async createSession(session: SessionRecord): Promise<void> {
     this.ensureLoaded();
     this.db.sessions[session.id] = session;
-    await this.persist();
+    await this.backend.putKeyed('sessions', session.id, session as unknown as StoredRecord);
   }
 
   getSession(id: string): SessionRecord | null {
@@ -264,39 +324,35 @@ export class Store {
   async updateSession(session: SessionRecord): Promise<void> {
     this.ensureLoaded();
     this.db.sessions[session.id] = session;
-    await this.persist();
+    await this.backend.putKeyed('sessions', session.id, session as unknown as StoredRecord);
   }
 
   async deleteSession(id: string): Promise<void> {
     this.ensureLoaded();
     delete this.db.sessions[id];
-    await this.persist();
+    await this.backend.deleteKeyed('sessions', id);
   }
 
   /** Revokes every session belonging to a user (e.g. Deriv authorization revoked). */
   async revokeUserSessions(userId: string): Promise<void> {
     this.ensureLoaded();
-    let changed = false;
     for (const s of Object.values(this.db.sessions)) {
       if (s.userId === userId && !s.revoked) {
         s.revoked = true;
-        changed = true;
+        await this.backend.putKeyed('sessions', s.id, s as unknown as StoredRecord);
       }
     }
-    if (changed) await this.persist();
   }
 
   async pruneExpiredSessions(): Promise<void> {
     this.ensureLoaded();
     const now = Date.now();
-    let changed = false;
     for (const [id, s] of Object.entries(this.db.sessions)) {
       if (s.expiresAt <= now) {
         delete this.db.sessions[id];
-        changed = true;
+        await this.backend.deleteKeyed('sessions', id);
       }
     }
-    if (changed) await this.persist();
   }
 
   /* ====================================================================== */
@@ -330,7 +386,7 @@ export class Store {
     this.ensureLoaded();
     admin.updatedAt = Date.now();
     this.db.adminUsers[admin.id] = admin;
-    await this.persist();
+    await this.backend.putKeyed('adminUsers', admin.id, admin as unknown as StoredRecord);
     return admin;
   }
 
@@ -339,7 +395,7 @@ export class Store {
   async createAdminSession(session: AdminSessionRecord): Promise<void> {
     this.ensureLoaded();
     this.db.adminSessions[session.id] = session;
-    await this.persist();
+    await this.backend.putKeyed('adminSessions', session.id, session as unknown as StoredRecord);
   }
 
   getAdminSession(id: string): AdminSessionRecord | null {
@@ -350,25 +406,23 @@ export class Store {
   async updateAdminSession(session: AdminSessionRecord): Promise<void> {
     this.ensureLoaded();
     this.db.adminSessions[session.id] = session;
-    await this.persist();
+    await this.backend.putKeyed('adminSessions', session.id, session as unknown as StoredRecord);
   }
 
   async deleteAdminSession(id: string): Promise<void> {
     this.ensureLoaded();
     delete this.db.adminSessions[id];
-    await this.persist();
+    await this.backend.deleteKeyed('adminSessions', id);
   }
 
   async revokeAdminSessions(adminId: string): Promise<void> {
     this.ensureLoaded();
-    let changed = false;
     for (const s of Object.values(this.db.adminSessions)) {
       if (s.adminId === adminId && !s.revoked) {
         s.revoked = true;
-        changed = true;
+        await this.backend.putKeyed('adminSessions', s.id, s as unknown as StoredRecord);
       }
     }
-    if (changed) await this.persist();
   }
 
   /* ----------------------- invitations & resets ------------------------- */
@@ -376,7 +430,7 @@ export class Store {
   async createInvitation(inv: AdminInvitationRecord): Promise<void> {
     this.ensureLoaded();
     this.db.adminInvitations[inv.id] = inv;
-    await this.persist();
+    await this.backend.putKeyed('adminInvitations', inv.id, inv as unknown as StoredRecord);
   }
 
   getInvitationByTokenHash(tokenHash: string): AdminInvitationRecord | null {
@@ -394,14 +448,14 @@ export class Store {
     const inv = this.db.adminInvitations[id];
     if (inv) {
       inv.consumedAt = Date.now();
-      await this.persist();
+      await this.backend.putKeyed('adminInvitations', id, inv as unknown as StoredRecord);
     }
   }
 
   async createPasswordReset(reset: AdminPasswordResetRecord): Promise<void> {
     this.ensureLoaded();
     this.db.adminPasswordResets[reset.id] = reset;
-    await this.persist();
+    await this.backend.putKeyed('adminPasswordResets', reset.id, reset as unknown as StoredRecord);
   }
 
   getPasswordResetByTokenHash(tokenHash: string): AdminPasswordResetRecord | null {
@@ -414,7 +468,7 @@ export class Store {
     const r = this.db.adminPasswordResets[id];
     if (r) {
       r.consumedAt = Date.now();
-      await this.persist();
+      await this.backend.putKeyed('adminPasswordResets', id, r as unknown as StoredRecord);
     }
   }
 
@@ -424,7 +478,7 @@ export class Store {
   async appendAudit(record: AuditRecord): Promise<void> {
     this.ensureLoaded();
     this.db.auditLogs.push(record);
-    await this.persist();
+    await this.backend.appendRecord('auditLogs', record as unknown as StoredRecord);
   }
 
   listAudit(): AuditRecord[] {
@@ -437,7 +491,7 @@ export class Store {
   async createTicket(ticket: SupportTicketRecord): Promise<void> {
     this.ensureLoaded();
     this.db.supportTickets[ticket.id] = ticket;
-    await this.persist();
+    await this.backend.putKeyed('supportTickets', ticket.id, ticket as unknown as StoredRecord);
   }
 
   getTicket(id: string): SupportTicketRecord | null {
@@ -454,13 +508,13 @@ export class Store {
     this.ensureLoaded();
     ticket.updatedAt = Date.now();
     this.db.supportTickets[ticket.id] = ticket;
-    await this.persist();
+    await this.backend.putKeyed('supportTickets', ticket.id, ticket as unknown as StoredRecord);
   }
 
   async addTicketMessage(message: SupportTicketMessageRecord): Promise<void> {
     this.ensureLoaded();
     this.db.supportTicketMessages[message.id] = message;
-    await this.persist();
+    await this.backend.putKeyed('supportTicketMessages', message.id, message as unknown as StoredRecord);
   }
 
   listTicketMessages(ticketId: string): SupportTicketMessageRecord[] {
@@ -476,7 +530,7 @@ export class Store {
     this.ensureLoaded();
     announcement.updatedAt = Date.now();
     this.db.announcements[announcement.id] = announcement;
-    await this.persist();
+    await this.backend.putKeyed('announcements', announcement.id, announcement as unknown as StoredRecord);
   }
 
   getAnnouncement(id: string): AnnouncementRecord | null {
@@ -494,7 +548,7 @@ export class Store {
   async upsertFeatureFlag(flag: FeatureFlagRecord): Promise<void> {
     this.ensureLoaded();
     this.db.featureFlags[flag.key] = flag;
-    await this.persist();
+    await this.backend.putKeyed('featureFlags', flag.key, flag as unknown as StoredRecord);
   }
 
   getFeatureFlag(key: string): FeatureFlagRecord | null {
@@ -512,7 +566,7 @@ export class Store {
   async addAdminNote(note: AdminNoteRecord): Promise<void> {
     this.ensureLoaded();
     this.db.adminNotes[note.id] = note;
-    await this.persist();
+    await this.backend.putKeyed('adminNotes', note.id, note as unknown as StoredRecord);
   }
 
   listAdminNotes(userId: string): AdminNoteRecord[] {
@@ -532,7 +586,7 @@ export class Store {
   async setPlatformConfig(config: PlatformConfigRecord): Promise<void> {
     this.ensureLoaded();
     this.db.platformConfig = config;
-    await this.persist();
+    await this.backend.putSingleton('platformConfig', config as unknown as StoredRecord);
   }
 
   /* --------------------- trader user admin helpers ---------------------- */
@@ -558,19 +612,92 @@ export class Store {
     this.ensureLoaded();
     user.updatedAt = Date.now();
     this.db.users[user.id] = user;
-    await this.persist();
+    await this.backend.putKeyed('users', user.id, user as unknown as StoredRecord);
   }
 
   async pruneAdminSessions(): Promise<void> {
     this.ensureLoaded();
     const now = Date.now();
-    let changed = false;
     for (const [id, s] of Object.entries(this.db.adminSessions)) {
       if (s.expiresAt <= now) {
         delete this.db.adminSessions[id];
-        changed = true;
+        await this.backend.deleteKeyed('adminSessions', id);
       }
     }
-    if (changed) await this.persist();
+  }
+
+  /* ====================================================================== */
+  /*  Activity & scanner telemetry (additive).                             */
+  /* ====================================================================== */
+
+  /** Appends one activity event. Events are never edited or removed by hand. */
+  async appendActivityEvent(event: ActivityEventRecord): Promise<void> {
+    this.ensureLoaded();
+    this.db.activityEvents.push(event);
+    await this.backend.appendRecord('activityEvents', event as unknown as StoredRecord);
+  }
+
+  /**
+   * All activity events, oldest first. Bounded by `retentionDays` pruning, so
+   * callers can treat this as a bounded working set.
+   */
+  listActivityEvents(): ActivityEventRecord[] {
+    this.ensureLoaded();
+    return this.db.activityEvents;
+  }
+
+  /**
+   * Drops activity events older than `retentionDays`. Audit records are NOT
+   * affected — only the high-volume telemetry collection is pruned.
+   */
+  async pruneActivityEvents(retentionDays: number): Promise<number> {
+    this.ensureLoaded();
+    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    const before = this.db.activityEvents.length;
+    this.db.activityEvents = this.db.activityEvents.filter((e) => e.timestamp >= cutoff);
+    await this.backend.deleteAppendBefore('activityEvents', cutoff);
+    return before - this.db.activityEvents.length;
+  }
+
+  /* ------------------------- scanner sessions --------------------------- */
+
+  /**
+   * Records a scanner heartbeat, creating the session row on first sight.
+   * Updates in place so a long-running scanner is one row, not one per beat.
+   */
+  async upsertScannerSession(session: ScannerSessionRecord): Promise<void> {
+    this.ensureLoaded();
+    this.db.scannerSessions[session.id] = session;
+    await this.backend.putKeyed('scannerSessions', session.id, session as unknown as StoredRecord);
+  }
+
+  getScannerSession(id: string): ScannerSessionRecord | null {
+    this.ensureLoaded();
+    return this.db.scannerSessions[id] ?? null;
+  }
+
+  listScannerSessions(): ScannerSessionRecord[] {
+    this.ensureLoaded();
+    return Object.values(this.db.scannerSessions);
+  }
+
+  /** Scanner sessions seen within `windowMs` of `now`. The "active now" count. */
+  countActiveScannerSessions(windowMs: number, now = Date.now()): number {
+    this.ensureLoaded();
+    return Object.values(this.db.scannerSessions).filter((s) => now - s.lastSeenAt <= windowMs).length;
+  }
+
+  /** Removes scanner rows not seen within `windowMs`, so the set stays bounded. */
+  async pruneScannerSessions(windowMs: number, now = Date.now()): Promise<number> {
+    this.ensureLoaded();
+    let removed = 0;
+    for (const [id, s] of Object.entries(this.db.scannerSessions)) {
+      if (now - s.lastSeenAt > windowMs) {
+        delete this.db.scannerSessions[id];
+        await this.backend.deleteKeyed('scannerSessions', id);
+        removed += 1;
+      }
+    }
+    return removed;
   }
 }

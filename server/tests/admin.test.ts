@@ -27,6 +27,7 @@ function makeConfig(dataDir: string): ServerConfig {
     port: 0,
     isProduction: false,
     dataDir,
+    storageEngine: (process.env.TEST_STORAGE_ENGINE as ServerConfig['storageEngine']) ?? 'auto',
     deriv: {
       appId: '34WRcFqUqhHMuCW3O9NQy',
       redirectUri: 'http://localhost:3000/auth/deriv/callback',
@@ -116,7 +117,7 @@ class Client {
 }
 
 async function startApp(cfg: ServerConfig) {
-  const store = new Store(cfg.dataDir);
+  const store = new Store(cfg.dataDir, { engine: cfg.storageEngine });
   await store.load();
   const { app } = createApp(cfg, store);
   const server = http.createServer(app);

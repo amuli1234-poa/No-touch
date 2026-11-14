@@ -14,6 +14,7 @@ import { createCodeVerifier, createCodeChallenge, createState, createOpaqueId, t
 import { parseCookies, setCookie, clearCookie, redirectWithError } from '../lib/http.js';
 import { seal } from '../lib/crypto.js';
 import { issueSessionCookie, requireSession, type SessionContext, type AuthedRequest } from '../lib/session.js';
+import { recordServerEvent } from '../activity/service.js';
 
 /**
  * OAuth 2.0 Authorization Code + PKCE routes.
@@ -172,6 +173,13 @@ export function createAuthRouter(ctx: SessionContext): Router {
     await store.createSession(session);
     issueSessionCookie(ctx, res, sessionId, cfg.session.ttlSeconds);
 
+    // Best-effort activity trail; a failure here must not break sign-in.
+    try {
+      await recordServerEvent(store, 'auth.login', user.id);
+    } catch {
+      // ignore — telemetry is not on the critical path
+    }
+
     // 9. Hand off to the SPA workspace.
     res.redirect(`${cfg.appOrigin}/app`);
   });
@@ -181,10 +189,12 @@ export function createAuthRouter(ctx: SessionContext): Router {
   router.post('/auth/logout', async (req, res) => {
     const cookies = parseCookies(req.headers.cookie);
     const raw = cookies[cfg.session.cookieName];
+    let logoutUserId: string | null = null;
     if (raw) {
       const sessionId = raw.split('.')[0];
       const session = store.getSession(sessionId);
       if (session) {
+        logoutUserId = session.userId;
         try {
           const { open } = await import('../lib/crypto.js');
           const token = open(session.derivTokenSealed, cfg.session.secret);
@@ -196,6 +206,11 @@ export function createAuthRouter(ctx: SessionContext): Router {
       }
     }
     clearCookie(res, cfg.session.cookieName, { path: '/' });
+    try {
+      await recordServerEvent(store, 'auth.logout', logoutUserId);
+    } catch {
+      // ignore — telemetry is not on the critical path
+    }
     res.status(204).end();
   });
 

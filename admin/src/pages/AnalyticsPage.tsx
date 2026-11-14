@@ -19,10 +19,31 @@ interface UserSeries {
 
 interface ActiveUsers {
   withLiveSession: number;
-  dau: number | null;
-  mau: number | null;
-  unavailable?: string;
+  dau: number;
+  mau: number;
+  activeScannerSessions: number;
+  signalsLast24h: number;
+  lastEventAt: number | null;
 }
+
+interface FeatureUsage {
+  days: number;
+  items: { kind: string; count: number }[];
+  topSymbols: { symbol: string; count: number }[];
+  total: number;
+}
+
+/** Human labels for the event kinds the client reports. */
+const KIND_LABELS: Record<string, string> = {
+  'auth.login': 'Sign-ins',
+  'auth.logout': 'Sign-outs',
+  'app.opened': 'App opened',
+  'scan.started': 'Scans started',
+  'scan.stopped': 'Scans stopped',
+  'signal.generated': 'Signals generated',
+  'engine.error': 'Engine errors',
+  'settings.changed': 'Settings changed'
+};
 
 export function AnalyticsPage() {
   const [days, setDays] = useState(30);
@@ -31,7 +52,7 @@ export function AnalyticsPage() {
   const retention = useAsync<{ unavailable?: string }>(() => api.get('/analytics/retention'), []);
   const conversion = useAsync<{ rate: number | null; unavailable?: string }>(() => api.get('/analytics/conversion'), []);
   const churn = useAsync<{ rate: number | null; unavailable?: string }>(() => api.get('/analytics/churn'), []);
-  const usage = useAsync<{ unavailable?: string }>(() => api.get('/analytics/feature-usage'), []);
+  const usage = useAsync<FeatureUsage>(() => api.get('/analytics/feature-usage' + qs({ days })), [days]);
 
   const series = users.data?.series ?? [];
   const totalNew = series.reduce((acc, p) => acc + p.newUsers, 0);
@@ -54,7 +75,7 @@ export function AnalyticsPage() {
       <div className="grid grid-4 mb-lg">
         <StatCard label="Total users" value={formatNumber(users.data?.total ?? 0)} icon={<Users size={14} />} hint="All registered traders" />
         <StatCard label="New in period" value={formatNumber(totalNew)} tone="success" icon={<BarChart3 size={14} />} hint={`Last ${days} days`} />
-        <StatCard label="Live sessions now" value={formatNumber(active.data?.withLiveSession ?? 0)} icon={<Activity size={14} />} hint="Users with an active session" />
+        <StatCard label="Active today (DAU)" value={formatNumber(active.data?.dau ?? 0)} icon={<Activity size={14} />} hint="Produced an event in the last 24h" />
         <StatCard label="Conversion rate" value={conversion.data?.rate === null || conversion.data?.rate === undefined ? 'Unavailable' : formatPercent(conversion.data.rate)} unavailable tone="violet" icon={<BarChart3 size={14} />} hint="Needs subscription records" />
       </div>
 
@@ -78,7 +99,7 @@ export function AnalyticsPage() {
       </Card>
 
       <div className="grid grid-2 mb-lg">
-        <Card title="Engagement" subtitle="What the server can observe">
+        <Card title="Engagement" subtitle="Active users, from the activity log">
           {active.loading ? (
             <LoadingBlock />
           ) : (
@@ -89,22 +110,49 @@ export function AnalyticsPage() {
               </div>
               <div className="row-between">
                 <span className="muted small">Daily active users</span>
-                <span className="faint">Unavailable</span>
+                <span className="strong">{formatNumber(active.data?.dau ?? 0)}</span>
               </div>
               <div className="row-between">
                 <span className="muted small">Monthly active users</span>
-                <span className="faint">Unavailable</span>
+                <span className="strong">{formatNumber(active.data?.mau ?? 0)}</span>
               </div>
-              {active.data?.unavailable && <UnavailableNote text={active.data.unavailable} />}
+              <div className="row-between">
+                <span className="muted small">Active scanner sessions</span>
+                <span className="strong">{formatNumber(active.data?.activeScannerSessions ?? 0)}</span>
+              </div>
+              <div className="row-between">
+                <span className="muted small">Signals (last 24h)</span>
+                <span className="strong">{formatNumber(active.data?.signalsLast24h ?? 0)}</span>
+              </div>
+              <div className="tiny faint">
+                Active = at least one recorded event in the window. A user with no activity since telemetry began is
+                not counted.
+              </div>
             </div>
           )}
         </Card>
 
-        <Card title="Feature usage" subtitle="Client-side scanner activity">
+        <Card title="Feature usage" subtitle={`Event volume, last ${days} days`}>
           {usage.loading ? (
             <LoadingBlock />
+          ) : usage.data && usage.data.items.length > 0 ? (
+            <div className="col gap">
+              {usage.data.items.map((i) => (
+                <div className="row-between" key={i.kind}>
+                  <span className="muted small">{KIND_LABELS[i.kind] ?? i.kind}</span>
+                  <span className="strong">{formatNumber(i.count)}</span>
+                </div>
+              ))}
+              {usage.data.topSymbols.length > 0 && (
+                <div className="tiny faint" style={{ marginTop: 8 }}>
+                  Top signal symbols: {usage.data.topSymbols.map((s) => `${s.symbol} (${s.count})`).join(', ')}
+                </div>
+              )}
+            </div>
           ) : (
-            <UnavailableNote text={usage.data?.unavailable ?? 'Feature usage is not reported to the server.'} />
+            <Empty title="No activity recorded yet">
+              No client events have been reported in this window. Usage appears here once traders run the scanner.
+            </Empty>
           )}
         </Card>
       </div>

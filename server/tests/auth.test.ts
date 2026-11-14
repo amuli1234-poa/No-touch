@@ -114,6 +114,7 @@ function makeConfig(deriv: FakeDeriv, dataDir: string): ServerConfig {
     port: 0,
     isProduction: false,
     dataDir,
+    storageEngine: (process.env.TEST_STORAGE_ENGINE as ServerConfig['storageEngine']) ?? 'auto',
     deriv: {
       appId: '34WRcFqUqhHMuCW3O9NQy',
       redirectUri: 'http://localhost:3000/auth/deriv/callback',
@@ -148,9 +149,9 @@ function makeConfig(deriv: FakeDeriv, dataDir: string): ServerConfig {
 
 async function startApp(deriv: FakeDeriv) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ws-auth-test-'));
-  const store = new Store(dataDir);
-  await store.load();
   const cfg = makeConfig(deriv, dataDir);
+  const store = new Store(dataDir, { engine: cfg.storageEngine });
+  await store.load();
   const { app } = createApp(cfg, store);
   const server = http.createServer(app);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
