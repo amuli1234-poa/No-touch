@@ -1,14 +1,11 @@
 import {
   Activity,
-  Award,
   BarChart3,
   Bell,
   Compass,
-  Layers,
+  LayoutDashboard,
   LineChart,
   Sliders,
-  Sparkles,
-  Zap,
   type LucideIcon
 } from 'lucide-react';
 
@@ -24,113 +21,126 @@ export type Route =
   | 'HISTORY'
   | 'SETTINGS';
 
-export type NavGroup = 'Discovery' | 'Markets' | 'Intelligence' | 'System';
-
 export interface NavItem {
   route: Route;
   label: string;
-  shortLabel: string;
   description: string;
   icon: LucideIcon;
-  group: NavGroup;
 }
 
 export const NAV_ITEMS: NavItem[] = [
   {
     route: 'BEST_MARKET',
     label: 'Best Market',
-    shortLabel: 'Best',
     description: 'Highest-confluence opportunity ranked across the watchlist',
-    icon: Sparkles,
-    group: 'Discovery'
+    icon: LayoutDashboard
   },
   {
     route: 'STRATEGY_SCANNER',
     label: 'Strategy Scanner',
-    shortLabel: 'Strategy',
     description: 'Six adaptive price-action strategies ranked by confluence',
-    icon: Compass,
-    group: 'Discovery'
+    icon: Compass
   },
   {
     route: 'MTF_ENTRY',
-    label: 'MTF Precision Entry',
-    shortLabel: 'MTF',
-    description: 'Top-down H4 → M1 entry, stop and target precision levels',
-    icon: Layers,
-    group: 'Discovery'
+    label: 'MTF Entry',
+    description: 'Top-down H4 to M1 entry, stop and target precision levels',
+    icon: LineChart
   },
   {
     route: 'PLAIN_INDICES',
     label: 'Plain Indices',
-    shortLabel: 'Plain',
     description: 'Standard Deriv volatility indices',
-    icon: BarChart3,
-    group: 'Markets'
+    icon: BarChart3
   },
   {
     route: 'VOLATILITY_1S',
     label: 'Volatility 1s',
-    shortLabel: '1s',
     description: 'High-frequency one-second volatility indices',
-    icon: Zap,
-    group: 'Markets'
+    icon: Activity
   },
   {
     route: 'LIVE_CHART',
     label: 'Live Chart',
-    shortLabel: 'Chart',
     description: 'Interactive candlestick terminal with signal overlays',
-    icon: LineChart,
-    group: 'Markets'
+    icon: LineChart
   },
   {
     route: 'ANALYSIS',
     label: 'Analysis',
-    shortLabel: 'Analysis',
     description: 'Full multi-timeframe breakdown for the selected instrument',
-    icon: Layers,
-    group: 'Intelligence'
+    icon: LineChart
   },
   {
     route: 'SIGNALS',
     label: 'Signals',
-    shortLabel: 'Signals',
     description: 'Confirmed setups and alert dispatch log',
-    icon: Bell,
-    group: 'Intelligence'
+    icon: Bell
   },
   {
     route: 'HISTORY',
     label: 'History',
-    shortLabel: 'History',
     description: 'Logged signal outcomes and strategy performance',
-    icon: Award,
-    group: 'Intelligence'
+    icon: Activity
   },
   {
     route: 'SETTINGS',
     label: 'Settings',
-    shortLabel: 'Settings',
     description: 'Scanner, scoring, alert and display configuration',
-    icon: Sliders,
-    group: 'System'
+    icon: Sliders
   }
-];
-
-export const NAV_GROUPS: NavGroup[] = ['Discovery', 'Markets', 'Intelligence', 'System'];
-
-/** Mobile bottom bar shows a compact subset to keep tap targets usable. */
-export const MOBILE_ROUTES: Route[] = [
-  'BEST_MARKET',
-  'STRATEGY_SCANNER',
-  'LIVE_CHART',
-  'SIGNALS',
-  'SETTINGS'
 ];
 
 export function navItemFor(route: Route): NavItem {
   return NAV_ITEMS.find((item) => item.route === route) ?? NAV_ITEMS[0];
 }
 
-export { Activity };
+/**
+ * The five top-level destinations. Each owns one or more sub-routes rendered as
+ * compact in-page tabs, so the product keeps a single navigation bar while every
+ * existing view stays reachable. `ANALYSIS` is intentionally absent - it is a
+ * drill-down from the chart, never a top-level destination.
+ */
+export interface NavSection {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  /** Route activated when the section is selected. */
+  primary: Route;
+  /** Sub-routes shown as in-page tabs. A single-entry section shows no tabs. */
+  routes: Route[];
+}
+
+export const NAV_SECTIONS: NavSection[] = [
+  { id: 'overview', label: 'Overview', icon: LayoutDashboard, primary: 'LIVE_CHART', routes: ['LIVE_CHART', 'BEST_MARKET'] },
+  { id: 'scanner', label: 'Scanner', icon: Compass, primary: 'STRATEGY_SCANNER', routes: ['STRATEGY_SCANNER', 'MTF_ENTRY'] },
+  { id: 'markets', label: 'Markets', icon: BarChart3, primary: 'PLAIN_INDICES', routes: ['PLAIN_INDICES', 'VOLATILITY_1S'] },
+  { id: 'activity', label: 'Activity', icon: Bell, primary: 'SIGNALS', routes: ['SIGNALS', 'HISTORY'] },
+  { id: 'settings', label: 'Settings', icon: Sliders, primary: 'SETTINGS', routes: ['SETTINGS'] }
+];
+
+/** Short labels for the in-page sub-route tabs. */
+export const TAB_LABELS: Partial<Record<Route, string>> = {
+  LIVE_CHART: 'Chart',
+  BEST_MARKET: 'Best market',
+  STRATEGY_SCANNER: 'Strategies',
+  MTF_ENTRY: 'MTF entry',
+  PLAIN_INDICES: 'Plain',
+  VOLATILITY_1S: '1-second',
+  SIGNALS: 'Signals',
+  HISTORY: 'History',
+  SETTINGS: 'Settings'
+};
+
+/** The section a route belongs to, or null for drill-down routes (e.g. Analysis). */
+export function sectionForRoute(route: Route): NavSection | null {
+  return NAV_SECTIONS.find((s) => s.routes.includes(route)) ?? null;
+}
+
+/** The top-level nav item that should read as active for a given route. */
+export function activeSectionId(route: Route): string | null {
+  const section = sectionForRoute(route);
+  if (section) return section.id;
+  // Analysis is a drill-down from the chart, so Overview stays highlighted.
+  return route === 'ANALYSIS' ? 'overview' : null;
+}

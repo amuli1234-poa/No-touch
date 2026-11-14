@@ -1,5 +1,5 @@
 import React from 'react';
-import { BadgeCheck, Info, Lock, Send, ShieldCheck, Wallet } from 'lucide-react';
+import { BadgeCheck, ChevronDown, Info, Lock, Send, ShieldCheck, Wallet } from 'lucide-react';
 import type { ActiveSymbol, OpportunitySignal, WhatsAppProviderStatus } from '../../types/scanner';
 import { Card, CardHeader, CardBody } from '../ui/Card';
 import { Badge, StatusDot } from '../ui/Badge';
@@ -37,6 +37,7 @@ export const TradePanel: React.FC<TradePanelProps> = ({
 }) => {
   const auth = useAuth();
   const digits = (activeSymbol?.pipSize ?? 0.01) < 0.01 ? 3 : 2;
+  const [detailOpen, setDetailOpen] = React.useState(false);
 
   const accountLabel =
     auth.status === 'authenticated' ? auth.user.loginId || 'Deriv account' : 'Not connected';
@@ -77,49 +78,66 @@ export const TradePanel: React.FC<TradePanelProps> = ({
         </CardBody>
       </Card>
 
-      {/* Selected market + signal context */}
+      {/* Selected market + signal context — advanced detail, collapsed by default. */}
       <Card className="overflow-hidden p-0">
-        <CardHeader
-          title="Signal context"
-          subtitle={activeSymbol?.displayName || 'No market selected'}
-          icon={<Send className="h-4 w-4" />}
-        />
-        <CardBody className="space-y-3 pt-0">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-fg-5">Selected market</span>
-            <span className="text-[12px] font-semibold text-fg-2">
-              {activeSymbol?.displayName || '—'}
+        <button
+          onClick={() => setDetailOpen((v) => !v)}
+          aria-expanded={detailOpen}
+          className="flex w-full items-center gap-2 px-3.5 py-3 text-left transition-colors hover:bg-surface-raised"
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block text-[12.5px] font-semibold text-fg-1">Signal detail</span>
+            <span className="block truncate text-[10.5px] text-fg-5">
+              {activeSymbol?.displayName || 'No market selected'}
             </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-fg-5">Last price</span>
-            <span className="tabular text-[12px] font-semibold text-fg-1">
-              {activeSymbol?.lastQuote ? formatPrice(activeSymbol.lastQuote, digits) : '—'}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-fg-5">Scanner signal</span>
-            {opportunity ? (
-              <Badge tone={opportunity.entryAndTp.confirmed ? 'success' : 'warning'}>
-                {opportunity.entryAndTp.confirmed ? opportunity.riseFallLabel : 'WAIT'}
-              </Badge>
-            ) : (
-              <Badge tone="neutral">No data</Badge>
-            )}
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-fg-5">Confluence</span>
-            <span className="tabular text-[12px] font-semibold text-fg-2">
-              {opportunity ? `${opportunity.score.total}%` : '—'}
-            </span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] text-fg-5">Strategy</span>
-            <span className="max-w-[60%] truncate text-right text-[12px] font-semibold text-fg-2">
-              {opportunity?.entryAndTp.confirmed ? opportunity.selectedStrategy.label : '—'}
-            </span>
-          </div>
-        </CardBody>
+          </span>
+          {opportunity && (
+            <Badge tone={opportunity.entryAndTp.confirmed ? 'success' : 'warning'}>
+              {opportunity.entryAndTp.confirmed ? opportunity.riseFallLabel : 'WAIT'}
+            </Badge>
+          )}
+          <ChevronDown
+            className={`h-4 w-4 shrink-0 text-fg-5 transition-transform ${detailOpen ? 'rotate-180' : ''}`}
+          />
+        </button>
+        {detailOpen && (
+          <CardBody className="space-y-3 border-t border-line-soft pt-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-fg-5">Selected market</span>
+              <span className="text-[12px] font-semibold text-fg-2">
+                {activeSymbol?.displayName || '—'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-fg-5">Last price</span>
+              <span className="tabular text-[12px] font-semibold text-fg-1">
+                {activeSymbol?.lastQuote ? formatPrice(activeSymbol.lastQuote, digits) : '—'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-fg-5">Scanner signal</span>
+              {opportunity ? (
+                <Badge tone={opportunity.entryAndTp.confirmed ? 'success' : 'warning'}>
+                  {opportunity.entryAndTp.confirmed ? opportunity.riseFallLabel : 'WAIT'}
+                </Badge>
+              ) : (
+                <Badge tone="neutral">No data</Badge>
+              )}
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-fg-5">Confluence</span>
+              <span className="tabular text-[12px] font-semibold text-fg-2">
+                {opportunity ? `${opportunity.score.total}%` : '—'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-fg-5">Strategy</span>
+              <span className="max-w-[60%] truncate text-right text-[12px] font-semibold text-fg-2">
+                {opportunity?.entryAndTp.confirmed ? opportunity.selectedStrategy.label : '—'}
+              </span>
+            </div>
+          </CardBody>
+        )}
       </Card>
 
       {/* Alert automation — the only automation that exists. */}

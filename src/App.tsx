@@ -17,7 +17,7 @@ import { PerformanceDashboard } from './components/views/PerformanceDashboard';
 import { SettingsView } from './components/views/SettingsView';
 import { Card, CardHeader, CardBody, EmptyState } from './components/ui';
 import { SectionTitle } from './components/ui/StatCard';
-import { LineChart, Clock } from 'lucide-react';
+import { LineChart } from 'lucide-react';
 import {
   ActiveSymbol,
   OpportunitySignal,
@@ -67,17 +67,13 @@ export default function App() {
   const [symbols, setSymbols] = useState<ActiveSymbol[]>(() => wsManager.getDiscoveredSymbols());
   const [selectedSymbol, setSelectedSymbol] = useState<string>('R_100');
   const [selectedTimeframe, setSelectedTimeframe] = useState<Timeframe>('5m');
-  const [route, setRoute] = useState<Route>('BEST_MARKET');
-  const [showLanding, setShowLanding] = useState(false);
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [route, setRoute] = useState<Route>('LIVE_CHART');
 
   const [opportunities, setOpportunities] = useState<Map<string, OpportunitySignal>>(new Map());
   const [isScanning, setIsScanning] = useState(false);
   const [lastScanTimestamp, setLastScanTimestamp] = useState<number>(0);
   const [candleRevision, setCandleRevision] = useState(0);
   const [historyRevision, setHistoryRevision] = useState(0);
-  const [latencyMs, setLatencyMs] = useState<number | null>(null);
-  const [missedTicks, setMissedTicks] = useState<number>(0);
 
   const [waStatus, setWaStatus] = useState<WhatsAppProviderStatus>({
     configured: false,
@@ -208,9 +204,6 @@ export default function App() {
           discovered.some((s) => s.symbol === cur) ? cur : discovered[0].symbol
         );
       }
-      const health = wsManager.getHealthMetrics();
-      setLatencyMs(health.latencyMs);
-      setMissedTicks(health.totalMissedTicks);
     }, 1500);
 
     return () => {
@@ -372,43 +365,17 @@ export default function App() {
     []
   );
 
-  if (showLanding) {
-    return (
-      <LandingIntro
-        onEnter={() => setShowLanding(false)}
-        connectionState={connectionState}
-        symbolCount={symbols.length}
-      />
-    );
-  }
-
   return (
     <AppShell
       activeRoute={route}
       onNavigate={setRoute}
-      onNavigateOverview={() => setShowLanding(true)}
       connectionState={connectionState}
-      lastScanTimestamp={lastScanTimestamp}
       isScanning={isScanning}
       onScanAll={scanAllMarkets}
       scanDisabled={symbols.length === 0}
-      latencyMs={latencyMs}
-      missedTicks={missedTicks}
       signalBadge={confirmedCount}
       lastTickAt={activeSymbolInfo?.lastTickEpoch ? activeSymbolInfo.lastTickEpoch * 1000 : null}
-      mobileNavOpen={mobileNavOpen}
-      onOpenMobileNav={() => setMobileNavOpen(true)}
-      onCloseMobileNav={() => setMobileNavOpen(false)}
     >
-      <MarketMetrics
-        plainSymbols={plainSymbols}
-        oneSecSymbols={oneSecSymbols}
-        confirmedCount={confirmedCount}
-        developingCount={oppList.filter((o) => o.setupTier === 'DEVELOPING').length}
-        activeSymbol={activeSymbolInfo}
-        activeOpp={activeOpp}
-      />
-
       {route === 'BEST_MARKET' && (
         <BestMarketView
           symbols={symbols}
@@ -480,7 +447,6 @@ export default function App() {
           activeSymbolInfo={activeSymbolInfo}
           activeOpp={activeOpp}
           connectionState={connectionState}
-          latencyMs={latencyMs}
           waStatus={waStatus}
           alertsAutoSend={settings.whatsappAutoSend}
           onOpenAnalysis={() => setRoute('ANALYSIS')}
@@ -554,102 +520,3 @@ export default function App() {
   );
 }
 
-/* --------------------------------------------------------------------------
-   Market metrics strip — five KPI tiles above every workspace tab
-   -------------------------------------------------------------------------- */
-
-interface MarketMetricsProps {
-  plainSymbols: ActiveSymbol[];
-  oneSecSymbols: ActiveSymbol[];
-  confirmedCount: number;
-  developingCount: number;
-  activeSymbol?: ActiveSymbol;
-  activeOpp?: OpportunitySignal;
-}
-
-const MarketMetrics: React.FC<MarketMetricsProps> = ({
-  plainSymbols,
-  oneSecSymbols,
-  confirmedCount,
-  developingCount,
-  activeSymbol,
-  activeOpp
-}) => {
-  const tiles: { label: string; value: React.ReactNode; tone: string }[] = [
-    {
-      label: 'Plain volatility',
-      value: `${plainSymbols.filter((s) => s.isOpen).length} / ${plainSymbols.length}`,
-      tone: 'text-fg-1'
-    },
-    {
-      label: 'Volatility 1-second',
-      value: `${oneSecSymbols.filter((s) => s.isOpen).length} / ${oneSecSymbols.length}`,
-      tone: 'text-accent-cyan'
-    },
-    { label: 'Confirmed setups', value: confirmedCount, tone: 'text-success' },
-    { label: 'Developing watchlist', value: developingCount, tone: 'text-warning' },
-    {
-      label: 'Selected market',
-      value: activeSymbol?.displayName || '—',
-      tone: 'text-fg-1'
-    }
-  ];
-
-  return (
-    <section className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-      {tiles.map((t) => (
-        <Card key={t.label} className="p-3.5">
-          <span className="block text-[10px] font-semibold uppercase tracking-[0.1em] text-fg-5">
-            {t.label}
-          </span>
-          <span className={`tabular mt-1.5 block truncate text-[16px] font-bold ${t.tone}`}>
-            {t.value}
-          </span>
-          {t.label === 'Selected market' && activeOpp && (
-            <span className="mt-0.5 block text-[10.5px] text-fg-5">
-              {activeOpp.marketRegimeLabel || activeOpp.marketCondition} ·{' '}
-              {activeOpp.score.total}%
-            </span>
-          )}
-        </Card>
-      ))}
-    </section>
-  );
-};
-
-
-/* --------------------------------------------------------------------------
-   Landing intro — in-app overview surface (distinct from the public site)
-   -------------------------------------------------------------------------- */
-
-const LandingIntro: React.FC<{
-  onEnter: () => void;
-  connectionState: 'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING';
-  symbolCount: number;
-}> = ({ onEnter, connectionState, symbolCount }) => (
-  <div className="flex min-h-screen items-center justify-center bg-app px-4">
-    <Card className="w-full max-w-lg p-8 text-center">
-      <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-[14px] bg-gradient-to-br from-accent to-accent-cyan">
-        <LineChart className="h-6 w-6 text-on-accent" />
-      </div>
-      <h1 className="text-[20px] font-bold tracking-tight text-fg-1">WickSentinel</h1>
-      <p className="mt-2 text-[13px] leading-relaxed text-fg-4">
-        Multi-timeframe price-action signal engine for Deriv synthetic indices. H4 → M1 top-down
-        analysis across six adaptive strategies.
-      </p>
-      <div className="mt-5 flex items-center justify-center gap-4 text-[11.5px] text-fg-5">
-        <span className="inline-flex items-center gap-1.5">
-          <Clock className="h-3.5 w-3.5" />
-          {connectionState}
-        </span>
-        <span>{symbolCount} markets</span>
-      </div>
-      <button
-        onClick={onEnter}
-        className="mt-6 inline-flex items-center gap-2 rounded-[10px] border border-accent bg-accent px-4 py-2.5 text-[13px] font-semibold text-on-accent transition-colors hover:bg-accent-strong"
-      >
-        Enter workspace
-      </button>
-    </Card>
-  </div>
-);
