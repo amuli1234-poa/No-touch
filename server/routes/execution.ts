@@ -3,6 +3,7 @@ import express, { Router, type Response } from 'express';
 import type { Store } from '../store/store.js';
 import type { ServerConfig } from '../config.js';
 import { requireSession, type AuthedRequest } from '../lib/session.js';
+import { RateLimiter } from '../services/admin/rateLimit.js';
 import { open } from '../lib/crypto.js';
 import type { ExecutionGateway } from '../execution/gateway.js';
 import { ExecutionError } from '../execution/gateway.js';
@@ -43,6 +44,8 @@ export interface ExecutionRouterDeps {
   runner?: AutoExecutionRunner;
   /** Optional: when present, a stuck intent can be reconciled on demand. */
   monitor?: ContractMonitor;
+  /** Optional per-minute limits, for tests. Defaults are conservative. */
+  limits?: { signalsPerMinute?: number; submitsPerMinute?: number };
 }
 
 /** Unseals the session's Deriv token, or null when absent/expired. */
@@ -67,10 +70,23 @@ function parseFamily(value: unknown): ContractFamily | null {
 export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
   const { store, gateway, market, runner, monitor } = deps;
   const ctx = { cfg: deps.cfg, store };
+  // Per-user limits. These blunt a runaway client or a stuck loop; the risk
+  // engine's execution-frequency rule remains the real trading throttle.
+  const submitLimiter = new RateLimiter(deps.limits?.submitsPerMinute ?? 30, 60_000);
+  const signalLimiter = new RateLimiter(deps.limits?.signalsPerMinute ?? 120, 60_000);
+  const limit = (limiter: RateLimiter, req: AuthedRequest, res: Response): boolean => {
+    const gate = limiter.hit(`${req.user!.id}`);
+    if (!gate.allowed) {
+      res.status(429).json({ error: 'rate_limited', retryAfterSeconds: gate.retryAfterSeconds });
+      return false;
+    }
+    return true;
+  };
   const router = Router();
   const json = express.json({ limit: '32kb' });
 
   router.post('/api/execution/signals', requireSession(ctx), json, async (req: AuthedRequest, res: Response) => {
+    if (!limit(signalLimiter, req, res)) return;
     const body = req.body ?? {};
     const direction = parseDirection(body.direction);
     const contractFamily = parseFamily(body.contractFamily);
@@ -185,6 +201,7 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
     requireSession(ctx),
     json,
     async (req: AuthedRequest, res: Response) => {
+      if (!limit(submitLimiter, req, res)) return;
       const user = req.user!;
       const token = tokenFor(deps, req);
       try {

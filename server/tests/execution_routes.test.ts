@@ -113,6 +113,7 @@ async function withServer(
     token?: string | null;
     /** When set, an automatic runner is wired and these preferences are stored. */
     automatic?: boolean;
+    limits?: { signalsPerMinute?: number; submitsPerMinute?: number };
   } = {}
 ) {
   const express = (await import('express')).default;
@@ -176,7 +177,7 @@ async function withServer(
   const monitor = new ContractMonitor({ store, broker, auditor });
   (gateway as any).onContractOpened = (u: any, c: any, t: string) => monitor.monitor(u, c, t);
   const app = express();
-  app.use(createExecutionRouter({ cfg, store, gateway, market, runner, monitor }));
+  app.use(createExecutionRouter({ cfg, store, gateway, market, runner, monitor, limits: opts.limits }));
   const server = app.listen(0);
   const port = (server.address() as any).port;
   const base = `http://127.0.0.1:${port}`;
@@ -411,4 +412,24 @@ test('POST /reconcile on a non-stuck intent is a no-op returning it', async () =
     assert.equal(res.status, 200);
     assert.equal(res.body.intent.state, 'OPEN');
   });
+});
+
+
+test('a runaway client is rate-limited on signals', async () => {
+  await withServer(
+    async ({ post }) => {
+      let limited = 0;
+      for (let i = 0; i < 5; i++) {
+        const res = await post('/api/execution/signals', {
+          symbol: 'R_100',
+          direction: 'RISE',
+          contractFamily: 'rise_fall',
+          accountId: 'DEMO'
+        });
+        if (res.status === 429) limited += 1;
+      }
+      assert.ok(limited > 0, 'some requests were rate-limited');
+    },
+    { limits: { signalsPerMinute: 2 } }
+  );
 });

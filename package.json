@@ -33,6 +33,8 @@
     "test:exec-routes": "tsx server/tests/execution_routes.test.ts",
     "test:auto": "tsx server/tests/auto_runner.test.ts",
     "test:monitor": "tsx server/tests/contract_monitor.test.ts",
+    "test:security": "tsx server/tests/execution_security.test.ts",
+    "test:forward": "tsx server/tests/forward_test.test.ts",
     "test:balance-display": "tsx src/tests/balance_display.test.ts",
     "db:migrate": "tsx server/store/migrate.ts",
     "admin:bootstrap": "tsx server/admin/bootstrap.ts",

@@ -2,8 +2,8 @@ import type { Store, UserRecord } from '../store/store.js';
 import type { SignalRecord } from './types.js';
 import type { ExecutionGateway, ExecutionResult } from './gateway.js';
 import { ExecutionError } from './gateway.js';
-import type { ContractFamily, DerivContractType, ExecutionPreferencesRecord } from './types.js';
-import { adapterFor } from './adapters/index.js';
+import type { ExecutionPreferencesRecord } from './types.js';
+import { contractTypeFor } from '../services/signals.js';
 import type { ExecutionAuditor } from './audit.js';
 
 /**
@@ -175,10 +175,4 @@ export class AutoExecutionRunner {
     });
     return { outcome, result: null, reason };
   }
-}
-
-/** The contract type a direction maps to in a family. */
-export function contractTypeFor(direction: SignalRecord['direction'], family: ContractFamily): DerivContractType {
-  if (direction === 'NONE') throw new Error('A NONE signal has no contract type.');
-  return adapterFor(family).contractTypes[direction === 'RISE' ? 0 : 1];
 }

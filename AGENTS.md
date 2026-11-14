@@ -599,3 +599,19 @@ has Markdown at `https://developers.deriv.com/llms/<endpoint>.md` (e.g. `buy.md`
   (`reconcileStuckIntents` in `index.ts`) handles intents left by a crash.
 - Routes: `GET /api/execution/ledger`, `POST /api/execution/intents/:id/reconcile`.
 - `test:monitor` covers it. `BrokerAdapter` now requires `getOpenContracts`.
+
+## Security and forward testing (Phase 9)
+
+- `server/routes/execution.ts` rate-limits signals (120/min) and submits (30/min)
+  per user; limits are injectable for tests. The risk engine's frequency rule is
+  still the real trading throttle.
+- `test:security` proves the token never appears in persisted state after a full
+  lifecycle (a filesystem sweep), that `redact` strips secrets at any depth/case,
+  that an uncertain purchase is never retried, that a rejected purchase FAILs
+  cleanly, and that a signal drives exactly one purchase under a double submit.
+- `test:forward` is a deterministic in-process simulation (tick -> signal ->
+  risk -> automatic execution -> settlement -> ledger). It uses the REAL clock
+  (the store stamps `updatedAt` with Date.now()) and an explicit risk profile
+  with `maxExecutionFrequencySeconds: 0`, since the whole run is within a second.
+- Duplication note: `contractTypeFor` lives in `server/services/signals.ts`;
+  do not re-implement it elsewhere.
