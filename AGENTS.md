@@ -363,11 +363,11 @@ at runtime.
 
 ## Pushing to GitHub
 
-The dev-container `GITHUB_TOKEN` and the OpenHands git credential helper both
-resolve to a GitHub **App** installation token with **read-only** access. It can
-read the repo (and reports `push: true` in the API permissions map) but any
-write — `git push`, creating a ref via the API — fails with
-`403 Resource not accessible by integration`. The App installation is missing
-the `contents: write` permission. Do not burn time retrying different
-credential forms; the fix is to grant the App write access, or push from a
-session that has a user PAT with `repo` scope.
+Pushing works from this container. `git push origin <branch>` succeeds (verified
+by pushing `feature/premium-saas-ui` to `amuli1234-poa/No-touch`); the push
+output is short because of the shallow clone, so confirm the result with
+`git ls-remote --heads origin <branch>` rather than relying on the local
+remote-tracking ref. Do not open a pull request unless explicitly asked.
+
+Earlier notes here claimed the token was read-only and that pushes failed with
+`403 Resource not accessible by integration` — that is no longer accurate.
