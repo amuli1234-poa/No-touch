@@ -336,6 +336,26 @@ export class DerivBroker implements BrokerAdapter {
     };
   }
 
+  /**
+   * The account's open contracts, from `portfolio`. Used to reconcile a purchase
+   * whose confirmation was lost: the contract exists on Deriv even though its id
+   * never reached us, so we find it here instead of retrying the buy.
+   */
+  async getOpenContracts(
+    accountId: string,
+    _accountMode: AccountMode,
+    accessToken: string
+  ): Promise<ContractUpdate[]> {
+    const msg = await this.request<any>(
+      accessToken,
+      accountId,
+      { portfolio: 1, req_id: 1 },
+      { uncertainOnTimeout: false, expect: 'portfolio' }
+    );
+    const contracts = Array.isArray(msg.portfolio?.contracts) ? msg.portfolio.contracts : [];
+    return contracts.map((c: any) => mapContract(c));
+  }
+
   async getBalance(accountId: string, _accountMode: AccountMode, accessToken: string): Promise<number> {
     const msg = await this.request<any>(accessToken, accountId, { balance: 1, req_id: 1 }, {
       uncertainOnTimeout: false,

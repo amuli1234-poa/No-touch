@@ -583,3 +583,19 @@ has Markdown at `https://developers.deriv.com/llms/<endpoint>.md` (e.g. `buy.md`
   never clears itself; the customer must turn it back on.
 - Wired in `composition.ts` (bundled as `runner`) and invoked from
   `POST /api/execution/signals` when the user is automatic. `test:auto` covers it.
+
+## Contract monitoring and reconciliation (Phase 8)
+
+- `server/execution/contractMonitor.ts` (`ContractMonitor`) settles contracts and
+  reconciles stuck intents. It only observes and records; it never submits.
+- Settlement is idempotent by the ledger `dedupeKey` (`settlement:<contractId>`)
+  and by a stored-status check, so a replayed lifecycle update cannot double-post.
+  A settlement entry is one per contract; a correction is a new `adjustment`.
+- The gateway calls `onContractOpened` after a purchase succeeds; composition
+  wires it to `monitor.monitor(...)`, which subscribes to the contract lifecycle.
+- Reconciliation resolves UNKNOWN/RECONCILIATION_REQUIRED intents by reading
+  Deriv: `getOpenContracts` (the `portfolio` call) first, then a bounded
+  subscription probe. It NEVER retries a purchase. A boot pass
+  (`reconcileStuckIntents` in `index.ts`) handles intents left by a crash.
+- Routes: `GET /api/execution/ledger`, `POST /api/execution/intents/:id/reconcile`.
+- `test:monitor` covers it. `BrokerAdapter` now requires `getOpenContracts`.

@@ -7,6 +7,7 @@ import type { ExecutionFlags } from '../config/flags.js';
 import { executionPermitted } from '../config/flags.js';
 import type {
   TradeIntentRecord,
+  ContractRecord,
   DerivContractType,
   AccountMode,
   ContractFamily
@@ -98,6 +99,11 @@ export interface GatewayDeps {
   cfg: ServerConfig;
   flags: ExecutionFlags;
   broker: BrokerAdapter;
+  /**
+   * Called after a contract is successfully opened, so the contract monitor can
+   * subscribe to its lifecycle. Optional; a no-op in tests that do not monitor.
+   */
+  onContractOpened?: (user: UserRecord, contract: ContractRecord, accessToken: string) => void;
   /** Balance reader, used by the risk engine. Null when unavailable. */
   balanceProvider?: (user: UserRecord, accountId: string, accessToken: string) => Promise<number | null>;
   /** Risk evaluation, injected so the gateway does not hard-depend on it. */
@@ -127,6 +133,7 @@ export class ExecutionGateway {
   private readonly broker: BrokerAdapter;
   private readonly balanceProvider: GatewayDeps['balanceProvider'];
   private readonly riskEvaluator: GatewayDeps['riskEvaluator'];
+  private readonly onContractOpened: GatewayDeps['onContractOpened'];
   private readonly locks: ExecutionLocks;
   private readonly auditor: ExecutionAuditor;
   private readonly now: () => number;
@@ -138,6 +145,7 @@ export class ExecutionGateway {
     this.broker = deps.broker;
     this.balanceProvider = deps.balanceProvider;
     this.riskEvaluator = deps.riskEvaluator;
+    this.onContractOpened = deps.onContractOpened;
     this.locks = deps.locks ?? new ExecutionLocks();
     this.auditor = deps.auditor ?? new ExecutionAuditor(deps.store, { now: deps.now });
     this.now = deps.now ?? (() => Date.now());
@@ -460,6 +468,13 @@ export class ExecutionGateway {
 
     intent.contractId = buy.contractId;
     await this.transition(intent, 'OPEN', null);
+    // Hand the opened contract to the monitor so its lifecycle is tracked. A
+    // failure here must not undo a purchase that has already happened.
+    try {
+      this.onContractOpened?.(user, this.store.getContract(user.id, String(buy.contractId))!, accessToken);
+    } catch {
+      /* monitoring is best-effort; the contract and ledger rows already exist */
+    }
     await this.auditor.record({
       userId: user.id,
       action: 'execution.purchase',

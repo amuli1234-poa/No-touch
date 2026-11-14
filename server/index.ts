@@ -15,6 +15,7 @@ import { createExecution, type ExecutionBundle } from './execution/composition.j
 import { createAdminApiRouter, adminCors } from './routes/admin/index.js';
 import { Telemetry, telemetryMiddleware } from './services/admin/telemetry.js';
 import { attachSession, requireSession, type SessionContext, type AuthedRequest } from './lib/session.js';
+import { open } from './lib/crypto.js';
 
 /**
  * WickSentinel server: serves the built SPA and provides the OAuth + session
@@ -84,7 +85,16 @@ export function createApp(cfg: ServerConfig, store: Store): AppBundle {
   app.use('/api/telemetry', express.json({ limit: '32kb' }));
   app.use(createTelemetryRouter(ctx));
   app.use(createBalancesRouter(ctx, balances));
-  app.use(createExecutionRouter({ cfg, store, gateway: execution.gateway, market, runner: execution.runner }));
+  app.use(
+    createExecutionRouter({
+      cfg,
+      store,
+      gateway: execution.gateway,
+      market,
+      runner: execution.runner,
+      monitor: execution.monitor
+    })
+  );
 
   // WhatsApp alert dispatch. Status is public (masked); sending requires a session.
   app.use(createWhatsAppRouter());
@@ -123,6 +133,43 @@ export function createApp(cfg: ServerConfig, store: Store): AppBundle {
   return { app, cfg, store, telemetry, market, execution };
 }
 
+/**
+ * Resolves intents stuck in UNKNOWN/RECONCILIATION_REQUIRED. It needs each
+ * owner's Deriv token, which lives in a live session; an intent whose owner has
+ * no active session is left for the operator (or the next login) to resolve.
+ * Never retries a purchase.
+ */
+async function reconcileStuckIntents(
+  cfg: ServerConfig,
+  store: Store,
+  execution: ExecutionBundle
+): Promise<void> {
+  const stuck = store
+    .listUsers()
+    .flatMap((user) => store.listTradeIntents(user.id).filter((i) => i.state === 'UNKNOWN' || i.state === 'RECONCILIATION_REQUIRED').map((i) => ({ user, intent: i })));
+  if (stuck.length === 0) return;
+  console.log(`[server] Reconciling ${stuck.length} stuck intent(s).`);
+  for (const { user, intent } of stuck) {
+    const session = store.listSessionsForUser(user.id).find((s) => !s.revoked && s.expiresAt > Date.now() && s.derivTokenExpiresAt > Date.now());
+    if (!session) {
+      console.warn(`[server] Intent ${intent.id} left stuck: owner has no active session.`);
+      continue;
+    }
+    let token: string | null = null;
+    try {
+      token = open(session.derivTokenSealed, cfg.session.secret);
+    } catch {
+      token = null;
+    }
+    if (!token) continue;
+    try {
+      await execution.monitor.reconcile(user, intent.id, token);
+    } catch (err) {
+      console.warn(`[server] Could not reconcile intent ${intent.id}: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+}
+
 async function main(): Promise<void> {
   const cfg = loadConfig();
   const store = new Store(cfg.dataDir, { engine: cfg.storageEngine });
@@ -139,6 +186,13 @@ async function main(): Promise<void> {
   }
 
   const { app, market, execution } = createApp(cfg, store);
+
+  // Reconcile any intent left UNKNOWN by a previous crash or lost response: ask
+  // Deriv what actually happened rather than retrying a purchase. Best-effort —
+  // a failure here leaves the intent visibly stuck for the operator, not hidden.
+  void reconcileStuckIntents(cfg, store, execution).catch((err) => {
+    console.warn(`[server] Reconciliation pass failed: ${err instanceof Error ? err.message : err}`);
+  });
 
   // Open the shared public market-data connection. A failure here is not fatal:
   // the server still serves the app, and market data reconnects on demand.
@@ -162,6 +216,7 @@ async function main(): Promise<void> {
   const shutdown = (signal: string) => {
     console.log(`[server] ${signal} received, shutting down.`);
     market.close();
+    execution.monitor.close();
     server.close(() => {
       void store.close().finally(() => process.exit(0));
     });

@@ -7,6 +7,7 @@ import { BalanceService } from '../services/balance.js';
 import { effectiveRiskProfile, evaluateRisk } from '../services/risk.js';
 import { ExecutionAuditor } from './audit.js';
 import { AutoExecutionRunner } from './autoRunner.js';
+import { ContractMonitor } from './contractMonitor.js';
 import type { SignalRecord } from './types.js';
 
 /**
@@ -24,6 +25,7 @@ import type { SignalRecord } from './types.js';
 export interface ExecutionBundle {
   gateway: ExecutionGateway;
   runner: AutoExecutionRunner;
+  monitor: ContractMonitor;
   flags: ExecutionFlags;
 }
 
@@ -31,13 +33,18 @@ export function createExecution(cfg: ServerConfig, store: Store): ExecutionBundl
   const flags = loadExecutionFlags();
   const broker = new DerivBroker(cfg);
   const balances = new BalanceService(cfg);
+
   const auditor = new ExecutionAuditor(store);
+  const monitor = new ContractMonitor({ store, broker, auditor });
 
   const gateway = new ExecutionGateway({
     store,
     cfg,
     flags,
     broker,
+    // When a purchase succeeds, hand the contract to the monitor so its
+    // lifecycle is tracked to settlement.
+    onContractOpened: (user, contract, accessToken) => monitor.monitor(user, contract, accessToken),
     balanceProvider: async (user: UserRecord, accountId: string, accessToken: string) => {
       try {
         const read = await balances.read(user, accountId, accessToken);
@@ -69,5 +76,5 @@ export function createExecution(cfg: ServerConfig, store: Store): ExecutionBundl
   });
 
   const runner = new AutoExecutionRunner({ store, gateway, auditor });
-  return { gateway, runner, flags };
+  return { gateway, runner, monitor, flags };
 }

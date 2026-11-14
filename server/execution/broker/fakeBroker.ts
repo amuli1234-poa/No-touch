@@ -30,6 +30,8 @@ export interface FakeBrokerScript {
   buyError?: BrokerError;
   /** balanceAfter reported by a successful buy. */
   balanceAfter?: number;
+  /** Open contracts the fake reports, for reconciliation tests. */
+  openContracts?: ContractUpdate[];
 }
 
 export class FakeBroker implements BrokerAdapter {
@@ -124,6 +126,14 @@ export class FakeBroker implements BrokerAdapter {
 
   async getBalance(): Promise<number> {
     return this.balance;
+  }
+
+  /**
+   * Contracts the fake considers open. A test may seed `script.openContracts`
+   * to simulate "Deriv has this contract even though the buy response was lost".
+   */
+  async getOpenContracts(): Promise<ContractUpdate[]> {
+    return this.script.openContracts ?? [];
   }
 
   close(): void {

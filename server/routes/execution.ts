@@ -7,6 +7,7 @@ import { open } from '../lib/crypto.js';
 import type { ExecutionGateway } from '../execution/gateway.js';
 import { ExecutionError } from '../execution/gateway.js';
 import type { AutoExecutionRunner } from '../execution/autoRunner.js';
+import type { ContractMonitor } from '../execution/contractMonitor.js';
 import type { MarketDataService } from '../services/marketData.js';
 import { createSignal, SignalError } from '../services/signals.js';
 import { adapterFor, AdapterError } from '../execution/adapters/index.js';
@@ -40,6 +41,8 @@ export interface ExecutionRouterDeps {
   market: MarketDataService;
   /** Optional: when present, an automatic user's signal is executed on creation. */
   runner?: AutoExecutionRunner;
+  /** Optional: when present, a stuck intent can be reconciled on demand. */
+  monitor?: ContractMonitor;
 }
 
 /** Unseals the session's Deriv token, or null when absent/expired. */
@@ -62,7 +65,7 @@ function parseFamily(value: unknown): ContractFamily | null {
 }
 
 export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
-  const { store, gateway, market, runner } = deps;
+  const { store, gateway, market, runner, monitor } = deps;
   const ctx = { cfg: deps.cfg, store };
   const router = Router();
   const json = express.json({ limit: '32kb' });
@@ -215,6 +218,40 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
   router.get('/api/execution/contracts', requireSession(ctx), (req: AuthedRequest, res: Response) => {
     res.json({ contracts: store.listContracts(req.user!.id) });
   });
+
+  router.get('/api/execution/ledger', requireSession(ctx), (req: AuthedRequest, res: Response) => {
+    res.json({ entries: store.listLedgerEntries(req.user!.id) });
+  });
+
+  // Reconcile an intent left stuck by a lost purchase confirmation. This asks
+  // Deriv what actually happened; it never retries the purchase.
+  router.post(
+    '/api/execution/intents/:id/reconcile',
+    requireSession(ctx),
+    async (req: AuthedRequest, res: Response) => {
+      if (!monitor) {
+        res.status(501).json({ error: 'reconciliation_unavailable' });
+        return;
+      }
+      const user = req.user!;
+      const token = tokenFor(deps, req);
+      if (!token) {
+        res.status(409).json({ error: 'token_expired' });
+        return;
+      }
+      const intent = store.getTradeIntent(user.id, req.params.id);
+      if (!intent) {
+        res.status(404).json({ error: 'not_found' });
+        return;
+      }
+      try {
+        const reconciled = await monitor.reconcile(user, req.params.id, token);
+        res.json({ intent: reconciled });
+      } catch (err) {
+        res.status(500).json({ error: 'reconcile_failed' });
+      }
+    }
+  );
 
   return router;
 }

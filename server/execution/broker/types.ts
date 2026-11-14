@@ -139,6 +139,17 @@ export interface BrokerAdapter {
   /** Current balance for an account, used by the risk engine. */
   getBalance(accountId: string, accountMode: AccountMode, accessToken: string): Promise<number>;
 
+  /**
+   * The account's currently open contracts. Used to reconcile a purchase whose
+   * confirmation was lost: the contract exists on Deriv even though we never
+   * received its id, so we look it up rather than retry.
+   */
+  getOpenContracts(
+    accountId: string,
+    accountMode: AccountMode,
+    accessToken: string
+  ): Promise<ContractUpdate[]>;
+
   /** Releases all sockets. Called on shutdown. */
   close(): void;
 }

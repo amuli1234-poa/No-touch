@@ -14,6 +14,7 @@ import { FakeBroker } from '../execution/broker/fakeBroker.js';
 import { loadExecutionFlags } from '../config/flags.js';
 import { sign, seal } from '../lib/crypto.js';
 import { AutoExecutionRunner } from '../execution/autoRunner.js';
+import { ContractMonitor } from '../execution/contractMonitor.js';
 import { ExecutionAuditor } from '../execution/audit.js';
 import type { ServerConfig } from '../config.js';
 import type { MinimalWebSocket } from '../lib/balance.js';
@@ -171,8 +172,11 @@ async function withServer(
       updatedAt: Date.now()
     });
   }
+  const auditor = new ExecutionAuditor(store);
+  const monitor = new ContractMonitor({ store, broker, auditor });
+  (gateway as any).onContractOpened = (u: any, c: any, t: string) => monitor.monitor(u, c, t);
   const app = express();
-  app.use(createExecutionRouter({ cfg, store, gateway, market, runner }));
+  app.use(createExecutionRouter({ cfg, store, gateway, market, runner, monitor }));
   const server = app.listen(0);
   const port = (server.address() as any).port;
   const base = `http://127.0.0.1:${port}`;
@@ -357,5 +361,54 @@ test('a manual user\'s signal is NOT auto-executed', async () => {
     assert.equal(res.status, 201);
     assert.equal(res.body.auto, null);
     assert.equal(broker.buys.length, 0);
+  });
+});
+
+
+test('GET /ledger returns the stake entry for an executed contract', async () => {
+  await withServer(async ({ post, get }) => {
+    const sig = await post('/api/execution/signals', {
+      symbol: 'R_100',
+      direction: 'RISE',
+      contractFamily: 'rise_fall',
+      accountId: 'DEMO'
+    });
+    const intent = await post('/api/execution/intents', {
+      signalId: sig.body.signal.id,
+      stake: 2,
+      contractFamily: 'rise_fall',
+      contractType: 'CALL',
+      parameters: { duration: 5, durationUnit: 'm' },
+      idempotencyKey: 'ledger-1'
+    });
+    await post(`/api/execution/intents/${intent.body.intent.id}/submit`);
+    const ledger = await get('/api/execution/ledger');
+    assert.equal(ledger.status, 200);
+    assert.equal(ledger.body.entries.length, 1);
+    assert.equal(ledger.body.entries[0].kind, 'stake');
+    assert.equal(ledger.body.entries[0].amount, -2);
+  });
+});
+
+test('POST /reconcile on a non-stuck intent is a no-op returning it', async () => {
+  await withServer(async ({ post }) => {
+    const sig = await post('/api/execution/signals', {
+      symbol: 'R_100',
+      direction: 'RISE',
+      contractFamily: 'rise_fall',
+      accountId: 'DEMO'
+    });
+    const intent = await post('/api/execution/intents', {
+      signalId: sig.body.signal.id,
+      stake: 1,
+      contractFamily: 'rise_fall',
+      contractType: 'CALL',
+      parameters: { duration: 5, durationUnit: 'm' },
+      idempotencyKey: 'recon-noop'
+    });
+    await post(`/api/execution/intents/${intent.body.intent.id}/submit`);
+    const res = await post(`/api/execution/intents/${intent.body.intent.id}/reconcile`);
+    assert.equal(res.status, 200);
+    assert.equal(res.body.intent.state, 'OPEN');
   });
 });
