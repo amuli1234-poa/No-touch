@@ -8,7 +8,10 @@ import { createAuthRouter } from './routes/auth.js';
 import { createWhatsAppRouter } from './routes/whatsapp.js';
 import { createTelemetryRouter } from './routes/telemetry.js';
 import { createBalancesRouter } from './routes/balances.js';
+import { createExecutionRouter } from './routes/execution.js';
 import { BalanceService } from './services/balance.js';
+import { MarketDataService } from './services/marketData.js';
+import { createExecution, type ExecutionBundle } from './execution/composition.js';
 import { createAdminApiRouter, adminCors } from './routes/admin/index.js';
 import { Telemetry, telemetryMiddleware } from './services/admin/telemetry.js';
 import { attachSession, requireSession, type SessionContext, type AuthedRequest } from './lib/session.js';
@@ -27,6 +30,10 @@ export interface AppBundle {
   cfg: ServerConfig;
   store: Store;
   telemetry: Telemetry;
+  /** Server-side market data; connected at boot, closed on shutdown. */
+  market: MarketDataService;
+  /** The execution layer (gateway + kill switches). */
+  execution: ExecutionBundle;
 }
 
 /** Builds the Express app. Exported separately so tests can drive it directly. */
@@ -36,6 +43,10 @@ export function createApp(cfg: ServerConfig, store: Store): AppBundle {
   // One balance service per process so the auth router and the balance router
   // share the same cache and invalidation (reauthorization clears it).
   const balances = new BalanceService(cfg);
+  // Server-side market data on the public options gateway, plus the execution
+  // layer. Kill switches default off, so nothing trades until explicitly enabled.
+  const market = new MarketDataService(cfg);
+  const execution = createExecution(cfg, store);
   const app = express();
   app.disable('x-powered-by');
 
@@ -73,6 +84,7 @@ export function createApp(cfg: ServerConfig, store: Store): AppBundle {
   app.use('/api/telemetry', express.json({ limit: '32kb' }));
   app.use(createTelemetryRouter(ctx));
   app.use(createBalancesRouter(ctx, balances));
+  app.use(createExecutionRouter({ cfg, store, gateway: execution.gateway, market }));
 
   // WhatsApp alert dispatch. Status is public (masked); sending requires a session.
   app.use(createWhatsAppRouter());
@@ -108,7 +120,7 @@ export function createApp(cfg: ServerConfig, store: Store): AppBundle {
     res.status(404).json({ error: 'not_found' });
   });
 
-  return { app, cfg, store, telemetry };
+  return { app, cfg, store, telemetry, market, execution };
 }
 
 async function main(): Promise<void> {
@@ -126,7 +138,18 @@ async function main(): Promise<void> {
     console.log(`[server] Telemetry retention: pruned ${prunedEvents} events, ${prunedSessions} scanner sessions.`);
   }
 
-  const { app } = createApp(cfg, store);
+  const { app, market, execution } = createApp(cfg, store);
+
+  // Open the shared public market-data connection. A failure here is not fatal:
+  // the server still serves the app, and market data reconnects on demand.
+  market.connect().catch((err) => {
+    console.warn(`[server] Market data unavailable at boot: ${err instanceof Error ? err.message : err}`);
+  });
+  if (execution.flags.allowExecution) {
+    console.log(
+      `[server] Execution ENABLED (demo=${execution.flags.allowDemoExecution}, real=${execution.flags.allowRealExecution}).`
+    );
+  }
 
   const server = app.listen(cfg.port, () => {
     console.log(`[server] WickSentinel listening on :${cfg.port} (${cfg.isProduction ? 'production' : 'development'})`);
@@ -138,6 +161,7 @@ async function main(): Promise<void> {
   // command) is not blocked by a lock this process no longer needs.
   const shutdown = (signal: string) => {
     console.log(`[server] ${signal} received, shutting down.`);
+    market.close();
     server.close(() => {
       void store.close().finally(() => process.exit(0));
     });

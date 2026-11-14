@@ -1,0 +1,149 @@
+import type { DerivContractType, ContractFamily } from '../types.js';
+import { CONTRACT_FAMILY_TYPES } from '../types.js';
+import type { ProposalPayload } from '../broker/types.js';
+
+export type { ProposalPayload };
+
+/**
+ * Contract adapters.
+ *
+ * Each adapter turns a family-agnostic intent into the exact `proposal` payload
+ * Deriv expects, and validates the parameters against what the contract
+ * actually supports. Keeping this per-family means the Rise/Fall rules and the
+ * Multipliers rules cannot contaminate each other.
+ *
+ * The rules below are taken from the live `contracts_for` catalogue and the
+ * official proposal schema, not assumed:
+ *  - Rise/Fall is CALL/PUT, `expiry_type: "daily"`, one barrier.
+ *  - Multipliers is MULTUP/MULTDOWN, `no_expiry`, needs `multiplier`, and its
+ *    `limit_order` supports stop_loss / take_profit.
+ */
+
+export class AdapterError extends Error {
+  readonly code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = 'AdapterError';
+    this.code = code;
+  }
+}
+
+export interface AdapterParameters {
+  duration: number;
+  durationUnit: string;
+  multiplier: number | null;
+  cancellation: string | null;
+  stopLoss: number | null;
+  takeProfit: number | null;
+}
+
+export interface ContractAdapter {
+  readonly family: ContractFamily;
+  readonly contractTypes: readonly DerivContractType[];
+  /** Validates parameters and builds the Deriv proposal payload. */
+  buildProposal(input: {
+    directionContractType: DerivContractType;
+    amount: number;
+    basis: 'stake' | 'payout';
+    currency: string;
+    symbol: string;
+    parameters: AdapterParameters;
+  }): ProposalPayload;
+}
+
+const DURATION_UNITS = ['s', 'm', 'h', 'd', 't'] as const;
+/** Multipliers cancellation options, from the live catalogue. */
+const CANCELLATION_RANGE = ['5m', '10m', '15m', '30m', '60m'];
+
+class RiseFallAdapter implements ContractAdapter {
+  readonly family = 'rise_fall' as const;
+  readonly contractTypes = CONTRACT_FAMILY_TYPES.rise_fall;
+
+  buildProposal(input: {
+    directionContractType: DerivContractType;
+    amount: number;
+    basis: 'stake' | 'payout';
+    currency: string;
+    symbol: string;
+    parameters: AdapterParameters;
+  }): ProposalPayload {
+    const { parameters } = input;
+    if (!this.contractTypes.includes(input.directionContractType)) {
+      throw new AdapterError('wrong_contract_type', `${input.directionContractType} is not a Rise/Fall contract.`);
+    }
+    if (!Number.isFinite(parameters.duration) || parameters.duration <= 0) {
+      throw new AdapterError('invalid_duration', 'Rise/Fall requires a positive duration.');
+    }
+    if (!(DURATION_UNITS as readonly string[]).includes(parameters.durationUnit)) {
+      throw new AdapterError('invalid_duration_unit', `Unsupported duration unit ${parameters.durationUnit}.`);
+    }
+    // Rise/Fall has no multiplier, cancellation or limit order.
+    if (parameters.multiplier !== null) {
+      throw new AdapterError('unsupported_parameter', 'Rise/Fall does not take a multiplier.');
+    }
+    if (parameters.cancellation !== null) {
+      throw new AdapterError('unsupported_parameter', 'Rise/Fall does not take a cancellation.');
+    }
+    if (parameters.stopLoss !== null || parameters.takeProfit !== null) {
+      throw new AdapterError('unsupported_parameter', 'Rise/Fall does not take a limit order.');
+    }
+    return {
+      amount: input.amount,
+      basis: input.basis,
+      contract_type: input.directionContractType,
+      currency: input.currency,
+      underlying_symbol: input.symbol,
+      duration: parameters.duration,
+      duration_unit: parameters.durationUnit
+    };
+  }
+}
+
+class MultipliersAdapter implements ContractAdapter {
+  readonly family = 'multipliers' as const;
+  readonly contractTypes = CONTRACT_FAMILY_TYPES.multipliers;
+
+  buildProposal(input: {
+    directionContractType: DerivContractType;
+    amount: number;
+    basis: 'stake' | 'payout';
+    currency: string;
+    symbol: string;
+    parameters: AdapterParameters;
+  }): ProposalPayload {
+    const { parameters } = input;
+    if (!this.contractTypes.includes(input.directionContractType)) {
+      throw new AdapterError('wrong_contract_type', `${input.directionContractType} is not a Multipliers contract.`);
+    }
+    if (parameters.multiplier === null || !Number.isFinite(parameters.multiplier) || parameters.multiplier <= 0) {
+      throw new AdapterError('invalid_multiplier', 'Multipliers requires a positive multiplier.');
+    }
+    if (parameters.cancellation !== null && !CANCELLATION_RANGE.includes(parameters.cancellation)) {
+      throw new AdapterError('invalid_cancellation', `Unsupported cancellation ${parameters.cancellation}.`);
+    }
+    const payload: ProposalPayload = {
+      amount: input.amount,
+      // Multipliers are staked, not payout-based.
+      basis: 'stake',
+      contract_type: input.directionContractType,
+      currency: input.currency,
+      underlying_symbol: input.symbol,
+      multiplier: parameters.multiplier
+    };
+    if (parameters.cancellation) payload.cancellation = parameters.cancellation;
+    if (parameters.stopLoss !== null || parameters.takeProfit !== null) {
+      payload.limit_order = {
+        ...(parameters.stopLoss !== null ? { stop_loss: parameters.stopLoss } : {}),
+        ...(parameters.takeProfit !== null ? { take_profit: parameters.takeProfit } : {})
+      };
+    }
+    return payload;
+  }
+}
+
+export const RISE_FALL_ADAPTER = new RiseFallAdapter();
+export const MULTIPLIERS_ADAPTER = new MultipliersAdapter();
+
+export function adapterFor(family: ContractFamily): ContractAdapter {
+  return family === 'multipliers' ? MULTIPLIERS_ADAPTER : RISE_FALL_ADAPTER;
+}

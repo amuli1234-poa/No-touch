@@ -544,3 +544,28 @@ has Markdown at `https://developers.deriv.com/llms/<endpoint>.md` (e.g. `buy.md`
   switch **and** its own flag. Never settable at runtime.
 - `npm run test:isolation` covers cross-tenant IDOR, mode mismatch, kill
   switches and record durability. Keep it green.
+
+## Execution layer (Phases 3–6)
+
+- Market data: `server/services/marketData.ts` on the PUBLIC options gateway
+  (`wss://api.derivws.com/trading/v1/options/ws/public`, no auth). The legacy
+  `ws.derivws.com` WS is Cloudflare-blocked from the server (HTTP 520) — never
+  depend on it server-side. Snapshots carry `receivedAt`; use `isSnapshotFresh`.
+- `server/services/signals.ts` creates validated, expiring signals (needs a fresh
+  price); `server/services/strategy.ts` is a pure policy verdict; both never trade.
+- `server/services/risk.ts` is the gate: every rule runs, and it fails closed when
+  the balance is unknown. No martingale exists anywhere.
+- `server/execution/gateway.ts` is the ONLY purchase submitter. It applies, in
+  order: kill switches -> ownership/mode -> approval window -> token -> account
+  lock -> signal single-use -> risk -> proposal -> buy. A purchase that may have
+  reached Deriv but was unconfirmed becomes `UNKNOWN` then
+  `RECONCILIATION_REQUIRED`; never retry it blindly.
+- Brokers: `server/execution/broker/derivBroker.ts` (real, OTP-URL flow, per-call
+  socket) and `fakeBroker.ts` (tests only). Family payloads live in
+  `server/execution/adapters/index.ts`; the broker never knows family rules.
+- Auth is the OTP-URL flow: `POST /trading/v1/options/accounts/{id}/otp` then
+  connect; no `authorize` message. `accessToken` is passed per call and never
+  stored on an intent or written to an audit detail (`redact()` strips secrets).
+- HTTP surface: `server/routes/execution.ts` (signals, intents, submit).
+- Test scripts: `test:market`, `test:signals`, `test:risk`, `test:execution`,
+  `test:broker`, `test:exec-routes`. Keep them green.
