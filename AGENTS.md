@@ -469,3 +469,33 @@ Earlier notes here claimed the token was read-only and that pushes failed with
 - Tests: `npm run test:drawings` and `npm run test:analysis` cover the
   anti-fabrication guarantees (no zone without validation, unavailable engines
   never called, disagreement ⇒ WAIT, invalid coordinates rejected).
+
+## Deriv API reality check (verified 2026-11, read-only)
+
+Verified by probing the live public API from this container — do not re-guess these:
+
+- **The legacy WebSocket is unreachable from the server.** `wss://ws.derivws.com/websockets/v3`
+  and `wss://ws.binaryws.com/websockets/v3` both return **HTTP 520** (Cloudflare)
+  from Node. The browser still streams fine, but **no server-side feature may
+  depend on the legacy WS.** The new options API works: REST
+  `https://api.derivws.com/trading/v1/options/accounts` (401 without auth = reachable)
+  and WS `wss://api.derivws.com/trading/v1/options/ws/public` (opens, real data).
+  Auth: `https://auth.deriv.com` OIDC discovery is reachable (200).
+- **Contract types are not `RISE`/`FALL`/`MULT`.** From live `contracts_for` on
+  `R_100`: Rise/Fall is **`CALL`/`PUT`** (`contract_category: "callput"`,
+  `expiry_type: "daily"`, `barriers: 1`, durations `1d`–`365d`); Multipliers is
+  **`MULTUP`/`MULTDOWN`** (`contract_category: "multiplier"`, `expiry_type:
+  "no_expiry"`, `barriers: 0`, `multiplier_range: [40,100,200,300,400]`,
+  `cancellation_range: ["5m","10m","15m","30m","60m"]`). `R_100` lists `CALL`/`PUT`
+  more than once (different expiry variants), so an adapter must pick the right
+  variant, not the first match.
+- `ticks` returns `{ ask, bid, epoch, quote, symbol, pip_size }`; `active_symbols`
+  returns 95 rows with `underlying_symbol`/`underlying_symbol_name`/`pip_size`.
+
+**Not yet verified** (needs a real Deriv app credential + demo account): the
+authenticated demo/real WS host + auth mechanism, and the exact `proposal` /
+`buy` / `proposal_open_contract` request+response field names. Do not write
+execution code against assumed schemas. See `docs/TRADING_ARCHITECTURE_ASSESSMENT.md`.
+
+Reproduce a probe from the project root with `node_modules/ws` (the `ws` package
+must be imported from inside the repo so Node resolves it).
