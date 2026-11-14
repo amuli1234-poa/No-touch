@@ -128,11 +128,22 @@ no barrier / path-touch logic remains in the app.
   INVALIDATED). Secrets stay server-side.
 - `src/App.tsx` — orchestrator. Owns scanner state, the `scanMarket` pipeline,
   the auto-scan interval, signal resolution on live ticks, and route selection.
-- `src/components/shell/*` — AppShell, Sidebar, Topbar, MobileNav, navigation.
-  `navigation.ts` is the single source of truth for the 10 routes.
+- `src/components/shell/*` — `AppShell.tsx` (frame), `TopNav.tsx` (the single
+  navigation bar) and `navigation.ts`. `navigation.ts` is the single source of
+  truth: it holds the 10 `Route`s and maps them onto the five `NAV_SECTIONS`
+  (Overview, Scanner, Markets, Activity, Settings) that appear in the nav.
+  Extra routes in a section render as in-page tabs; `ANALYSIS` is a chart
+  drill-down and is not a top-level destination. The former `Sidebar`,
+  `Topbar` and `MobileNav` were removed in the minimal-workspace pass — do not
+  reintroduce a second navigation surface.
 - `src/components/views/*` — one view per route (BestMarket, StrategyScanner,
   MtfPrecisionEntry, LiveMarketScannerTable reused for Plain/1s, DerivAdvancedChart,
-  OpportunityCard, Signals, PerformanceDashboard, Settings).
+  OpportunityCard, Signals, PerformanceDashboard, Settings). `ScannerSummary.tsx`
+  is the compact status strip under the chart (state, condition, headline
+  indicators, signal time, tick freshness, confluence score); it replaced the
+  `IndicatorPanel`/`SignalPanel` card grids, which were deleted. The score is
+  the engine's own confluence total and is labelled "score", never
+  "confidence" — do not add a confidence figure the engine does not produce.
 - `src/components/landing/*` — public marketing site (unchanged by the scanner
   work; still carries legacy "No Touch barrier" copy in the hero preview).
 - `src/components/ui/*` — design-system primitives and `format.ts` helpers.
@@ -319,8 +330,7 @@ at runtime.
   default; a stored choice overrides it. Use the `useTheme()` hook;
   `setTheme`/`toggle` write the attribute.
 - `src/components/ui/ThemeToggle.tsx` is the control (`icon` and `switch`
-  variants). It is wired into the landing nav, the workspace topbar and the
-  sidebar footer.
+  variants). It is wired into the landing nav and the workspace top bar.
 - Chart colours cannot be CSS classes, so the palette is mirrored as
   `--chart-*` variables and read at runtime via `readChartColors()` in
   `src/components/chart/chartTheme.ts`. `src/components/chart/TradingChart.tsx`
