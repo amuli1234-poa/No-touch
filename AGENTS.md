@@ -499,3 +499,48 @@ execution code against assumed schemas. See `docs/TRADING_ARCHITECTURE_ASSESSMEN
 
 Reproduce a probe from the project root with `node_modules/ws` (the `ws` package
 must be imported from inside the repo so Node resolves it).
+
+## Deriv authenticated trading spec (RESOLVED — use these, do not guess)
+
+The official spec index is `https://developers.deriv.com/llms.txt`; each endpoint
+has Markdown at `https://developers.deriv.com/llms/<endpoint>.md` (e.g. `buy.md`,
+`proposal.md`, `proposal-open-contract.md`, `authentication.md`). Use it first.
+
+- **Auth = OTP-URL flow, no WS handshake.** `GET /trading/v1/options/accounts`
+  (Bearer) → account ids; `POST /trading/v1/options/accounts/{accountId}/otp`
+  (Bearer) → `{data:{url:"wss://api.derivws.com/trading/v1/options/ws/{demo|real}?otp=..."}}`;
+  connect to that URL and send messages — do NOT send an auth message. The URL is
+  account-scoped, which gives per-account isolation.
+- **Symbol field is `underlying_symbol`** (not `symbol`).
+- **proposal**: `{proposal:1, amount, basis:"stake"|"payout", contract_type,
+  currency, underlying_symbol, duration, duration_unit:"s"|"m"|"h"|"d"|"t",
+  multiplier?, cancellation?, limit_order?:{stop_loss,take_profit}, subscribe:1}`
+  → `proposal.id` (**only a streaming proposal's id is buyable**), `ask_price`,
+  `payout`, `spot`, `date_start`, `longcode`.
+- **buy**: `{buy:<proposal id>, price:<ask_price>}` → `buy:{contract_id,
+  buy_price, balance_after, payout, purchase_time, start_time, transaction_id}`.
+  Scope `trade`.
+- **proposal_open_contract**: `{proposal_open_contract:1, contract_id, subscribe:1}`
+  → `status:"open"|"sold"|"won"|"lost"|"cancelled"`, `profit`,
+  `entry_spot`/`exit_spot`, `date_start`/`date_expiry`/`date_settlement`,
+  `buy_price`, `payout`, `is_valid_to_sell`/`is_valid_to_cancel`.
+- **No refresh token** — on `401`, send the user through OAuth again.
+- **Contract types**: Rise/Fall `CALL`/`PUT`; Multipliers `MULTUP`/`MULTDOWN`
+  (+`multiplier`, `cancellation`, `limit_order`).
+
+## Trading domain (Phase 2 — isolation foundation)
+
+- New server modules: `server/execution/types.ts` (durable records),
+  `server/execution/accountGuard.ts` (ownership + mode enforcement),
+  `server/config/flags.ts` (kill switches). `server/execution/` will grow
+  `gateway.ts` (the only purchase submitter), `stateMachine.ts`, `intentStore.ts`,
+  `locks.ts`, `adapters/`, `broker/` in later phases.
+- Trading collections live in `server/store/backend.ts` (`COLLECTIONS` +
+  `COLLECTION_SPECS`); the Store loads them and exposes tenant-scoped accessors
+  (`getSignal(userId, id)` returns null on owner mismatch). Add a collection in
+  both places or the SQLite migration will miss it.
+- Kill switches: `ALLOW_EXECUTION`, `ALLOW_DEMO_EXECUTION`, `ALLOW_REAL_EXECUTION`
+  — all default false; parsed strictly (`=== 'true'`). REAL needs the master
+  switch **and** its own flag. Never settable at runtime.
+- `npm run test:isolation` covers cross-tenant IDOR, mode mismatch, kill
+  switches and record durability. Keep it green.

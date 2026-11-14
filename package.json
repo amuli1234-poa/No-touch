@@ -24,6 +24,7 @@
     "test:migrate": "tsx server/tests/migration.test.ts",
     "test:telemetry": "tsx server/tests/telemetry.test.ts",
     "test:balance": "tsx server/tests/balance.test.ts",
+    "test:isolation": "tsx server/tests/isolation.test.ts",
     "test:balance-display": "tsx src/tests/balance_display.test.ts",
     "db:migrate": "tsx server/store/migrate.ts",
     "admin:bootstrap": "tsx server/admin/bootstrap.ts",

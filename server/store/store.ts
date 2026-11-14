@@ -17,6 +17,17 @@ import type {
   ActivityEventRecord,
   ScannerSessionRecord
 } from '../activity/types.js';
+import type {
+  ExecutionPreferencesRecord,
+  RiskProfileRecord,
+  SignalRecord,
+  TradeIntentRecord,
+  ExecutionAttemptRecord,
+  ContractRecord,
+  LedgerEntryRecord,
+  NotificationRecord,
+  ExecutionAuditRecord
+} from '../execution/types.js';
 import { JsonBackend } from './json_backend.js';
 import { SqliteBackend, sqliteFileExists } from './sqlite_backend.js';
 import type { StorageBackend, StoredRecord } from './backend.js';
@@ -122,6 +133,16 @@ interface Database {
   activityEvents: ActivityEventRecord[];
   scannerSessions: Record<string, ScannerSessionRecord>;
   platformConfig: PlatformConfigRecord;
+  /* --------------------- additive: trading domain ----------------------- */
+  executionPreferences: Record<string, ExecutionPreferencesRecord>;
+  riskProfiles: Record<string, RiskProfileRecord>;
+  signals: Record<string, SignalRecord>;
+  tradeIntents: Record<string, TradeIntentRecord>;
+  executionAttempts: Record<string, ExecutionAttemptRecord>;
+  contracts: Record<string, ContractRecord>;
+  ledgerEntries: Record<string, LedgerEntryRecord>;
+  notifications: Record<string, NotificationRecord>;
+  executionAudit: ExecutionAuditRecord[];
 }
 
 const EMPTY: Database = {
@@ -140,7 +161,16 @@ const EMPTY: Database = {
   adminNotes: {},
   activityEvents: [],
   scannerSessions: {},
-  platformConfig: { maintenanceMode: false, registrationOpen: true, supportEmail: null, updatedBy: null, updatedAt: 0 }
+  platformConfig: { maintenanceMode: false, registrationOpen: true, supportEmail: null, updatedBy: null, updatedAt: 0 },
+  executionPreferences: {},
+  riskProfiles: {},
+  signals: {},
+  tradeIntents: {},
+  executionAttempts: {},
+  contracts: {},
+  ledgerEntries: {},
+  notifications: {},
+  executionAudit: []
 };
 
 /**
@@ -194,7 +224,16 @@ export class Store {
         featureFlags: (await this.backend.loadKeyed('featureFlags')) as unknown as Database['featureFlags'],
         adminNotes: (await this.backend.loadKeyed('adminNotes')) as unknown as Database['adminNotes'],
         activityEvents: (await this.backend.loadAppend('activityEvents')) as unknown as Database['activityEvents'],
-        scannerSessions: (await this.backend.loadKeyed('scannerSessions')) as unknown as Database['scannerSessions']
+        scannerSessions: (await this.backend.loadKeyed('scannerSessions')) as unknown as Database['scannerSessions'],
+        executionPreferences: (await this.backend.loadKeyed('executionPreferences')) as unknown as Database['executionPreferences'],
+        riskProfiles: (await this.backend.loadKeyed('riskProfiles')) as unknown as Database['riskProfiles'],
+        signals: (await this.backend.loadKeyed('signals')) as unknown as Database['signals'],
+        tradeIntents: (await this.backend.loadKeyed('tradeIntents')) as unknown as Database['tradeIntents'],
+        executionAttempts: (await this.backend.loadKeyed('executionAttempts')) as unknown as Database['executionAttempts'],
+        contracts: (await this.backend.loadKeyed('contracts')) as unknown as Database['contracts'],
+        ledgerEntries: (await this.backend.loadKeyed('ledgerEntries')) as unknown as Database['ledgerEntries'],
+        notifications: (await this.backend.loadKeyed('notifications')) as unknown as Database['notifications'],
+        executionAudit: (await this.backend.loadAppend('executionAudit')) as unknown as Database['executionAudit']
       };
       const platformConfig = await this.backend.loadSingleton('platformConfig');
       this.db.platformConfig = { ...EMPTY.platformConfig, ...((platformConfig ?? {}) as Partial<PlatformConfigRecord>) };
@@ -699,5 +738,194 @@ export class Store {
       }
     }
     return removed;
+  }
+
+  /* ====================================================================== */
+  /*  Trading domain (additive). Every accessor is scoped by userId.        */
+  /*                                                                        */
+  /*  Isolation rule: a record is only ever returned to the user it belongs */
+  /*  to. `get*` helpers take the owning userId and return null on a        */
+  /*  mismatch, so a caller cannot read another tenant's row by guessing an */
+  /*  id. Nothing here executes a trade; these are pure persistence.        */
+  /* ====================================================================== */
+
+  /* --------------------- execution preferences -------------------------- */
+
+  async putExecutionPreferences(prefs: ExecutionPreferencesRecord): Promise<void> {
+    this.ensureLoaded();
+    prefs.updatedAt = Date.now();
+    this.db.executionPreferences[prefs.userId] = prefs;
+    await this.backend.putKeyed('executionPreferences', prefs.userId, prefs as unknown as StoredRecord);
+  }
+
+  getExecutionPreferences(userId: string): ExecutionPreferencesRecord | null {
+    this.ensureLoaded();
+    return this.db.executionPreferences[userId] ?? null;
+  }
+
+  /* --------------------------- risk profiles ---------------------------- */
+
+  async putRiskProfile(profile: RiskProfileRecord): Promise<void> {
+    this.ensureLoaded();
+    profile.updatedAt = Date.now();
+    this.db.riskProfiles[profile.userId] = profile;
+    await this.backend.putKeyed('riskProfiles', profile.userId, profile as unknown as StoredRecord);
+  }
+
+  getRiskProfile(userId: string): RiskProfileRecord | null {
+    this.ensureLoaded();
+    return this.db.riskProfiles[userId] ?? null;
+  }
+
+  /* ------------------------------ signals ------------------------------- */
+
+  async putSignal(signal: SignalRecord): Promise<void> {
+    this.ensureLoaded();
+    this.db.signals[signal.id] = signal;
+    await this.backend.putKeyed('signals', signal.id, signal as unknown as StoredRecord);
+  }
+
+  /** Returns the signal only when it belongs to `userId`. */
+  getSignal(userId: string, id: string): SignalRecord | null {
+    this.ensureLoaded();
+    const s = this.db.signals[id];
+    return s && s.userId === userId ? s : null;
+  }
+
+  listSignals(userId: string): SignalRecord[] {
+    this.ensureLoaded();
+    return Object.values(this.db.signals).filter((s) => s.userId === userId);
+  }
+
+  /* ---------------------------- trade intents --------------------------- */
+
+  async putTradeIntent(intent: TradeIntentRecord): Promise<void> {
+    this.ensureLoaded();
+    intent.updatedAt = Date.now();
+    this.db.tradeIntents[intent.id] = intent;
+    await this.backend.putKeyed('tradeIntents', intent.id, intent as unknown as StoredRecord);
+  }
+
+  /** Returns the intent only when it belongs to `userId`. */
+  getTradeIntent(userId: string, id: string): TradeIntentRecord | null {
+    this.ensureLoaded();
+    const i = this.db.tradeIntents[id];
+    return i && i.userId === userId ? i : null;
+  }
+
+  listTradeIntents(userId: string): TradeIntentRecord[] {
+    this.ensureLoaded();
+    return Object.values(this.db.tradeIntents).filter((i) => i.userId === userId);
+  }
+
+  /** Finds an intent by idempotency key for a user, so a duplicate is a no-op. */
+  findTradeIntentByIdempotencyKey(userId: string, key: string): TradeIntentRecord | null {
+    this.ensureLoaded();
+    return (
+      Object.values(this.db.tradeIntents).find((i) => i.userId === userId && i.idempotencyKey === key) ?? null
+    );
+  }
+
+  /* -------------------------- execution attempts ------------------------ */
+
+  async putExecutionAttempt(attempt: ExecutionAttemptRecord): Promise<void> {
+    this.ensureLoaded();
+    this.db.executionAttempts[attempt.id] = attempt;
+    await this.backend.putKeyed('executionAttempts', attempt.id, attempt as unknown as StoredRecord);
+  }
+
+  listExecutionAttempts(userId: string, intentId: string): ExecutionAttemptRecord[] {
+    this.ensureLoaded();
+    return Object.values(this.db.executionAttempts)
+      .filter((a) => a.userId === userId && a.intentId === intentId)
+      .sort((a, b) => a.attemptNumber - b.attemptNumber);
+  }
+
+  /* ------------------------------ contracts ----------------------------- */
+
+  async putContract(contract: ContractRecord): Promise<void> {
+    this.ensureLoaded();
+    contract.updatedAt = Date.now();
+    this.db.contracts[contract.id] = contract;
+    await this.backend.putKeyed('contracts', contract.id, contract as unknown as StoredRecord);
+  }
+
+  /** Returns the contract only when it belongs to `userId`. */
+  getContract(userId: string, id: string): ContractRecord | null {
+    this.ensureLoaded();
+    const c = this.db.contracts[id];
+    return c && c.userId === userId ? c : null;
+  }
+
+  listContracts(userId: string): ContractRecord[] {
+    this.ensureLoaded();
+    return Object.values(this.db.contracts).filter((c) => c.userId === userId);
+  }
+
+  /** Open contracts for a user on one account, used for exposure limits. */
+  listOpenContracts(userId: string, accountId: string): ContractRecord[] {
+    this.ensureLoaded();
+    return Object.values(this.db.contracts).filter(
+      (c) => c.userId === userId && c.accountId === accountId && c.status === 'open'
+    );
+  }
+
+  /* -------------------------------- ledger ------------------------------ */
+
+  /**
+   * Appends a ledger entry, refusing a duplicate by `dedupeKey`. Returns false
+   * when the entry already exists, so a replayed settlement cannot double-post.
+   */
+  async putLedgerEntry(entry: LedgerEntryRecord): Promise<boolean> {
+    this.ensureLoaded();
+    const existing = Object.values(this.db.ledgerEntries).find(
+      (e) => e.userId === entry.userId && e.dedupeKey === entry.dedupeKey
+    );
+    if (existing) return false;
+    this.db.ledgerEntries[entry.id] = entry;
+    await this.backend.putKeyed('ledgerEntries', entry.id, entry as unknown as StoredRecord);
+    return true;
+  }
+
+  listLedgerEntries(userId: string): LedgerEntryRecord[] {
+    this.ensureLoaded();
+    return Object.values(this.db.ledgerEntries)
+      .filter((e) => e.userId === userId)
+      .sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  /* ---------------------------- notifications --------------------------- */
+
+  async putNotification(notification: NotificationRecord): Promise<void> {
+    this.ensureLoaded();
+    this.db.notifications[notification.id] = notification;
+    await this.backend.putKeyed('notifications', notification.id, notification as unknown as StoredRecord);
+  }
+
+  listNotifications(userId: string): NotificationRecord[] {
+    this.ensureLoaded();
+    return Object.values(this.db.notifications)
+      .filter((n) => n.userId === userId)
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  /** Returns the notification only when it belongs to `userId`. */
+  getNotification(userId: string, id: string): NotificationRecord | null {
+    this.ensureLoaded();
+    const n = this.db.notifications[id];
+    return n && n.userId === userId ? n : null;
+  }
+
+  /* -------------------------- execution audit --------------------------- */
+
+  async appendExecutionAudit(record: ExecutionAuditRecord): Promise<void> {
+    this.ensureLoaded();
+    this.db.executionAudit.push(record);
+    await this.backend.appendRecord('executionAudit', record as unknown as StoredRecord);
+  }
+
+  listExecutionAudit(): ExecutionAuditRecord[] {
+    this.ensureLoaded();
+    return this.db.executionAudit;
   }
 }

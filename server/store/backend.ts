@@ -28,7 +28,17 @@ export const COLLECTIONS = [
   'featureFlags',
   'adminNotes',
   'activityEvents',
-  'scannerSessions'
+  'scannerSessions',
+  /* ---------------------- trading domain (Phase 2) ---------------------- */
+  'executionPreferences',
+  'riskProfiles',
+  'signals',
+  'tradeIntents',
+  'executionAttempts',
+  'contracts',
+  'ledgerEntries',
+  'notifications',
+  'executionAudit'
 ] as const;
 
 export type CollectionName = (typeof COLLECTIONS)[number];
@@ -70,7 +80,21 @@ export const COLLECTION_SPECS: readonly CollectionSpec[] = [
   // Append-only: every reported event is kept in order for time-series queries.
   { name: 'activityEvents', kind: 'append' },
   // Keyed: one row per running scanner, updated in place by heartbeats.
-  { name: 'scannerSessions', kind: 'keyed', keyField: 'id', indexFields: ['userId'] }
+  { name: 'scannerSessions', kind: 'keyed', keyField: 'id', indexFields: ['userId'] },
+  /* ---------------------- trading domain (Phase 2) ---------------------- */
+  // One preferences row and one risk profile per user (keyed by userId).
+  { name: 'executionPreferences', kind: 'keyed', keyField: 'userId' },
+  { name: 'riskProfiles', kind: 'keyed', keyField: 'userId' },
+  // Everything else is keyed by its own id and indexed by the owning user, so
+  // tenant-scoped lookups never scan another customer's rows.
+  { name: 'signals', kind: 'keyed', keyField: 'id', indexFields: ['userId'] },
+  { name: 'tradeIntents', kind: 'keyed', keyField: 'id', indexFields: ['userId'] },
+  { name: 'executionAttempts', kind: 'keyed', keyField: 'id', indexFields: ['userId', 'intentId'] },
+  { name: 'contracts', kind: 'keyed', keyField: 'id', indexFields: ['userId'] },
+  { name: 'ledgerEntries', kind: 'keyed', keyField: 'id', indexFields: ['userId', 'dedupeKey'] },
+  { name: 'notifications', kind: 'keyed', keyField: 'id', indexFields: ['userId'] },
+  // Append-only audit trail; never pruned.
+  { name: 'executionAudit', kind: 'append' }
 ];
 
 export interface StorageBackend {

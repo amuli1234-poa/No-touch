@@ -128,29 +128,53 @@ Also verified live: `active_symbols` returns 95 symbols with
 `underlying_symbol` / `underlying_symbol_name` / `pip_size`; `ticks` returns
 `{ ask, bid, epoch, quote, symbol, pip_size }`.
 
-### Open items still requiring an authenticated demo account (blocking before Phase 6)
+### 2c. RESOLVED — authenticated trading spec (from the official llms spec, 2026-11)
 
-I have **not** verified these, because doing so requires a real Deriv app
-credential and a demo account, which I do not have and will not fabricate. They
-must be confirmed against a live demo account before any execution code is
-written:
+Deriv publishes a machine-readable spec index at
+`https://developers.deriv.com/llms.txt` with per-endpoint Markdown
+(`https://developers.deriv.com/llms/<endpoint>.md`). This resolved every open
+item. The authoritative facts:
 
-1. **Authenticated trading WS host + auth mechanism** — the exact
-   `.../ws/demo` and `.../ws/real` paths and how the OAuth access token (or a
-   per-account token from the accounts endpoint) authorises a specific account.
-2. **`proposal` request/response schema** on the new API — field names for
-   `contract_type`, `duration`/`duration_unit` (CALL/PUT), `multiplier` +
-   barriers (MULTUP/MULTDOWN), `amount`, `basis`, `currency`, and the returned
-   proposal `id` / `spot` / `payout`.
-3. **`buy` request/response schema** — `buy: <proposal id>` + `price`, and the
-   returned `contract_id` / `buy_price` / `balance_after` / `transaction_id`.
-4. **`proposal_open_contract`** settlement fields (status, profit, exit spot).
-5. **Multipliers `limit_order`** stop-loss / take-profit fields on the proposal.
+**Auth model (no WS handshake).** Authentication happens *before* connect via an
+OTP URL:
+1. `GET /trading/v1/options/accounts` with `Authorization: Bearer <oauth_token>`
+   → account ids.
+2. `POST /trading/v1/options/accounts/{accountId}/otp` (same Bearer header)
+   → `{ "data": { "url": "wss://api.derivws.com/trading/v1/options/ws/demo?otp=..." } }`.
+3. Connect to that URL and send messages. **Do not send an auth message.**
+   The URL is already scoped to the account, which is exactly the per-account
+   isolation the brief requires.
 
-**This is the correct place to stop and get input.** Verifying items 1–5 needs
-your Deriv application (app id + the registered redirect URI) and a **demo**
-account to test against. I will not guess these schemas — guessing a purchase
-payload is exactly the failure mode the brief forbids.
+**proposal** (public pricing needs no auth; buying needs the OTP socket):
+`{ proposal: 1, amount, basis: "stake"|"payout", contract_type, currency,
+underlying_symbol, duration, duration_unit: "s"|"m"|"h"|"d"|"t", multiplier?,
+cancellation?, limit_order?: { stop_loss, take_profit }, subscribe: 1, req_id }`
+→ `proposal.id` (per-connection id; **only a streaming proposal's id can be
+bought**), `ask_price`, `payout`, `spot`, `date_start`, `longcode`.
+
+**buy** (scope `trade`): `{ buy: <proposal id>, price: <ask_price>, req_id }`
+→ `buy: { contract_id, buy_price, balance_after, payout, purchase_time,
+start_time, transaction_id, longcode, shortcode }`.
+
+**proposal_open_contract** (scope `trade`):
+`{ proposal_open_contract: 1, contract_id, subscribe: 1 }`
+→ `status: "open"|"sold"|"won"|"lost"|"cancelled"`, `profit`, `profit_percentage`,
+`entry_spot`, `exit_spot`, `date_start`, `date_expiry`, `date_settlement`,
+`buy_price`, `payout`, `is_valid_to_sell`, `is_valid_to_cancel`, `sell_price`.
+
+**Contract parameters:** Rise/Fall = `CALL`/`PUT`; Multipliers = `MULTUP`/
+`MULTDOWN` with `multiplier`, `cancellation`, and `limit_order`
+(`stop_loss`/`take_profit`). The symbol field is **`underlying_symbol`**.
+
+**Token lifetime:** no refresh token exists; when a call returns `401` the user
+must be sent through OAuth again. Tokens are per-account-scoped via the OTP call.
+
+### Still unverified without a live demo account
+
+Only the *live execution* itself: an actual OTP issuance, proposal, and DEMO
+purchase against a real account. The schemas above are authoritative, so the
+code can be written correctly; a real DEMO purchase (the Phase 6 gate) still
+requires your demo account to sign in with.
 
 ---
 
