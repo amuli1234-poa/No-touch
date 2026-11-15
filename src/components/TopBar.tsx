@@ -1,5 +1,6 @@
 import { Moon, ScanSearch, Settings as SettingsIcon, Sun } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
+import { AccountBalanceChip } from './AccountBalanceChip';
 import { ConnectionBadge } from './ConnectionBadge';
 import { SIGNAL_STATUS_STYLE } from '../utils/signalStatus';
 
@@ -46,6 +47,8 @@ export function TopBar() {
         <div className="hidden sm:block">
           <ConnectionBadge status={ws.connectionStatus} onReconnect={ws.reconnect} />
         </div>
+
+        <AccountBalanceChip />
 
         <button
           type="button"

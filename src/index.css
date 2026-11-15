@@ -15,10 +15,13 @@
    ========================================================================== */
 
 @theme {
-  --font-sans: Inter, 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
-    Roboto, sans-serif;
-  --font-display: 'Plus Jakarta Sans', Inter, system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Fonts follow reatech360.com: Plus Jakarta Sans is the primary UI face with
+     system-font fallbacks; JetBrains Mono backs all figures. */
+  --font-sans: 'Plus Jakarta Sans', Inter, -apple-system, BlinkMacSystemFont, 'SF Pro Display',
+    'Segoe UI', Roboto, ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Plus Jakarta Sans', Inter, -apple-system, BlinkMacSystemFont, 'SF Pro Display',
+    system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   /* ---- Surfaces ---------------------------------------------------------- */
   --color-app: #080d16;

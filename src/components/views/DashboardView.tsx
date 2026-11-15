@@ -16,6 +16,7 @@ import { useWorkspace } from '../../context/WorkspaceContext';
 import { ManagedSignalsPanel } from '../ManagedSignalsPanel';
 import { SignalFeedList } from '../SignalFeed';
 import { Card, SectionCard, StatTile, StatusPill } from '../ui/primitives';
+import { AccountsOverview } from '../dashboard/AccountsOverview';
 import { AiLiveStatus } from '../dashboard/AiLiveStatus';
 import { BestSignalPanel } from '../dashboard/BestSignalPanel';
 import { LiveFeedDiagnostics } from '../dashboard/LiveFeedDiagnostics';
@@ -121,6 +122,8 @@ export function DashboardView() {
       </Card>
 
       <AiLiveStatus />
+
+      <AccountsOverview />
 
       <LiveFeedDiagnostics />
 

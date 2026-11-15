@@ -654,3 +654,22 @@ has Markdown at `https://developers.deriv.com/llms/<endpoint>.md` (e.g. `buy.md`
 - Do NOT enable REAL, do NOT add a setter to `server/config/flags.ts`, and do
   not document `ALLOW_REAL_EXECUTION` as settable. Enabling it is a separate,
   explicit release act requiring the preconditions in the review doc.
+
+## Dashboard accounts and balances (new dashboard)
+
+- The new dashboard's account surface is `src/components/AccountBalanceChip.tsx`
+  (workspace header) and `src/components/dashboard/AccountsOverview.tsx` (a
+  dashboard card). Both read `src/lib/balances.ts` only — never Deriv directly.
+- DEMO and REAL are always listed separately (`splitByMode`); they are never
+  merged. A failed read renders as an em dash, never `0.00`, and a group total is
+  withheld (`totalBalance` returns null) unless every known balance shares one
+  currency. Balances are informational and never authorise a trade.
+- Balance lifecycle lives in `src/App.tsx`: `refreshBalances()` on first
+  authenticated mount, `onReconnect()` when the market feed recovers, and
+  `resetBalances()` on sign-out (also inside `logout()` in `src/lib/auth.ts`).
+  The session is an HttpOnly cookie, so the browser never holds the Deriv token.
+- The workspace defaults to the LIGHT (daylight) palette — the professional
+  blue/slate look aligned with reatech360.com. Fonts: Plus Jakarta Sans (UI) and
+  JetBrains Mono (figures), both loaded in `index.html` and declared in
+  `src/index.css` `@theme`.
+- `src/lib/balances.test.ts` (node:test) pins the display rules. Run `npm test`.

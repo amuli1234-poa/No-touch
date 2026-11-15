@@ -69,7 +69,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     showTestedZones: false,
   },
   compactChart: false,
-  theme: 'dark',
+  // Default to the daylight palette so the workspace opens in the professional
+  // blue/slate look (matching reatech360.com); users can still toggle to dark.
+  theme: 'light',
   accentMode: 'auto',
   soundEnabled: true,
   soundVolume: 70,

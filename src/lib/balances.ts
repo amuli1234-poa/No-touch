@@ -177,6 +177,38 @@ export function pickAccount(
   return accounts.find((a) => a.mode === mode) ?? null;
 }
 
+/** Splits accounts into DEMO and REAL, order preserved. Modes are never merged. */
+export function splitByMode(accounts: AccountBalance[]): {
+  demo: AccountBalance[];
+  real: AccountBalance[];
+} {
+  return {
+    demo: accounts.filter((a) => a.mode === 'demo'),
+    real: accounts.filter((a) => a.mode === 'real')
+  };
+}
+
+/**
+ * Sum of the known balances in a set, or null when a total would be fabricated.
+ *
+ * A total is only produced when at least one balance is known AND every known
+ * balance shares one currency — adding across currencies would invent a figure.
+ * Accounts whose read failed (null balance) never contribute.
+ */
+export function totalBalance(
+  accounts: AccountBalance[]
+): { total: number; currency: string | null } | null {
+  const known = accounts.filter(
+    (a) => a.balance !== null && (a.state === 'ok' || a.state === 'stale')
+  );
+  if (known.length === 0) return null;
+  if (new Set(known.map((a) => a.currency ?? '')).size > 1) return null;
+  return {
+    total: known.reduce((sum, a) => sum + (a.balance ?? 0), 0),
+    currency: known[0].currency
+  };
+}
+
 export const BALANCE_STATE_LABEL: Record<BalanceState, string> = {
   ok: 'Live',
   stale: 'Stale',

@@ -55,6 +55,8 @@ import { useAiJournal } from './hooks/useAiJournal';
 import { useAlertManager } from './hooks/useAlertManager';
 import { useStrategyLab } from './hooks/useStrategyLab';
 import { useSystemHealth } from './hooks/useSystemHealth';
+import { onReconnect, refreshBalances, resetBalances } from './lib/balances';
+import { useAuth } from './lib/auth';
 import { useVolatilityScanner } from './hooks/useVolatilityScanner';
 import type { SignalSnapshot } from './types/analysis';
 import type { AiSignal } from './types/aiModule';
@@ -325,6 +327,35 @@ export default function App() {
     },
     [selectMarket, selectTimeframe, selectSection]
   );
+
+  // Account balances (DEMO + REAL, kept separate). Loaded once the session is
+  // authenticated, revalidated whenever the market feed recovers (a fresh
+  // connection is a natural point to confirm the Deriv authorization still
+  // holds), and cleared on sign-out so one user's figures never linger.
+  const auth = useAuth();
+  const balancesLoadedRef = useRef(false);
+  useEffect(() => {
+    if (auth.status === 'authenticated') {
+      if (!balancesLoadedRef.current) {
+        balancesLoadedRef.current = true;
+        void refreshBalances();
+      }
+    } else if (auth.status === 'anonymous') {
+      balancesLoadedRef.current = false;
+      resetBalances();
+    }
+  }, [auth.status]);
+
+  const prevConnectionRef = useRef(connectionStatus);
+  useEffect(() => {
+    const recovered =
+      connectionStatus === 'connected' &&
+      (prevConnectionRef.current === 'reconnecting' ||
+        prevConnectionRef.current === 'error' ||
+        prevConnectionRef.current === 'disconnected');
+    prevConnectionRef.current = connectionStatus;
+    if (recovered && auth.status === 'authenticated') onReconnect();
+  }, [connectionStatus, auth.status]);
 
   const [historyRecords, setHistoryRecords] = useState(performanceRecords);
   useEffect(() => {
