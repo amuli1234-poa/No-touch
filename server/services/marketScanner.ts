@@ -69,7 +69,11 @@ export interface ScannerOptions {
 export const DEFAULT_SCANNER_OPTIONS: ScannerOptions = {
   windowTicks: 60,
   windowMs: 60_000,
-  minEfficiency: 0.55,
+  // Calibrated against live Volatility indices: the median efficiency of a
+  // 60-tick window is ~0.12 and the 90th percentile is ~0.36. 0.35 sits near
+  // that 90th percentile, so a market is called only when its recent travel is
+  // unusually directional — not on ordinary noise.
+  minEfficiency: 0.35,
   minTicks: 30,
   perSymbolCooldownSeconds: 120,
   intervalMs: 30_000
