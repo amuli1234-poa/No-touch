@@ -9,7 +9,7 @@ import { useRoute } from './lib/router';
 
 const TITLES: Record<string, string> = {
   '/': 'WickSentinel — See Beyond the Candles. Understand the Market.',
-  '/app': 'WickSentinel Scanner — Market Intelligence',
+  '/app': 'WickSentinel — Market Intelligence',
   '/login': 'Log in — WickSentinel',
   '/get-started': 'Create your account — WickSentinel',
   '/signin-error': 'Sign in failed — WickSentinel',

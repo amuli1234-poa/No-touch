@@ -35,7 +35,6 @@ import {
 } from '../types/trendline';
 import { formatPrice } from '../utils/derivParser';
 import { ModuleChartSlot } from './chart/ModuleChartSlot';
-import { ConnectionBadge } from './ConnectionBadge';
 import type { TrendlineChartOverlay } from './chart/TrendlineChartPrimitive';
 import { Card, MeterBar, SectionCard, StatTile, StatusPill } from './ui/primitives';
 
@@ -394,7 +393,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
   const dark = ws.settings.theme === 'dark';
 
   return (
-    <div className="flex flex-col gap-3 p-3 sm:p-5 max-w-[1400px] w-full mx-auto">
+    <div className="flex flex-col gap-3 p-3 @sm:p-5 max-w-[1400px] w-full mx-auto">
       {/* Header */}
       <Card className="p-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -410,8 +409,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <ConnectionBadge status={ws.connectionStatus} onReconnect={ws.reconnect} />
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           <button
             type="button"
             onClick={() => setShowSettings((v) => !v)}
@@ -492,7 +490,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
           title="Trendline Models & Filters"
           subtitle="Enable entry models, set the score gate and restrict direction"
         >
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 @sm:grid-cols-2 gap-2">
             {TRENDLINE_MODEL_IDS.map((id) => {
               const Icon = MODEL_ICON[id];
               const enabled = scanner.settings.enabledModels[id];
@@ -629,7 +627,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
       )}
 
       {/* Main grid: chart + structure / scanner results */}
-      <div className="grid grid-cols-1 xl:grid-cols-[1.6fr_1fr] gap-3">
+      <div className="grid grid-cols-1 @3xl:grid-cols-[1.6fr_1fr] gap-3">
         {/* Chart column */}
         <div className="flex flex-col gap-3 min-w-0">
           <ModuleChartSlot trendlineOverlay={trendlineOverlay} />

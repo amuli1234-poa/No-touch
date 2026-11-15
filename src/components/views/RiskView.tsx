@@ -71,7 +71,7 @@ export function RiskView() {
   );
 
   return (
-    <div className="flex flex-col gap-3 p-3 sm:p-5 max-w-[1400px] w-full mx-auto">
+    <div className="flex flex-col gap-3 p-3 @sm:p-5 max-w-[1400px] w-full mx-auto">
       <header className="flex items-center gap-2">
         <span className="w-8 h-8 rounded-lg bg-accent/12 text-accent border border-accent/25 flex items-center justify-center">
           <ShieldCheck className="w-4 h-4" aria-hidden="true" />
@@ -128,7 +128,7 @@ export function RiskView() {
           subtitle={`Source: ${setup.source} · ${ws.timeframe} · ${setup.tier} tier`}
           icon={<ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />}
         >
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+          <div className="grid grid-cols-2 @md:grid-cols-3 @2xl:grid-cols-6 gap-2">
             <StatTile label="Entry" value={formatPrice(setup.entry, ws.precision)} />
             <StatTile
               label="Stop"
@@ -148,7 +148,7 @@ export function RiskView() {
               valueClass={plan.riskRewardRatio >= 1.5 ? 'text-[#089981]' : 'text-[#d97706]'}
             />
           </div>
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="mt-3 grid grid-cols-1 @sm:grid-cols-2 gap-2">
             <StatTile label="Notional exposure" value={`$${plan.notional.toLocaleString()}`} />
             <StatTile label="Stop distance" value={plan.stopDistance} />
           </div>
@@ -182,7 +182,7 @@ export function RiskView() {
         subtitle="Applied to every plan, on every market"
         icon={<ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />}
       >
-        <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <ul className="grid grid-cols-1 @sm:grid-cols-2 gap-2">
           {RISK_RULES.map((r) => (
             <li key={r.id} className="rounded-lg border border-line bg-panel px-3 py-2">
               <div className="flex items-center gap-2">

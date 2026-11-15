@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ScanSearch } from 'lucide-react';
 
 const STEPS = [
-  { id: 'logo', label: 'DERIV AI SCANNER' },
+  { id: 'logo', label: 'WICKSENTINEL' },
   { id: 'scanning', label: 'ANALYSING THE MARKETS' },
 ] as const;
 
@@ -50,7 +50,7 @@ export function OpeningAnimation({ onComplete }: OpeningAnimationProps) {
       }`}
       role="status"
       aria-live="polite"
-      aria-label="Deriv AI Scanner is starting"
+      aria-label="WickSentinel is starting"
     >
       <div className="relative flex flex-col items-center gap-6 px-6">
         <div className="relative">
@@ -62,7 +62,7 @@ export function OpeningAnimation({ onComplete }: OpeningAnimationProps) {
 
         <div className="flex flex-col items-center gap-2 text-center">
           <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-ink">
-            DERIV AI SCANNER
+            WICK<span className="text-accent">SENTINEL</span>
           </h1>
           <p className="text-[11px] sm:text-xs font-semibold uppercase tracking-[0.3em] text-accent">
             {current.label}

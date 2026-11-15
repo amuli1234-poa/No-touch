@@ -878,7 +878,7 @@ export default function App() {
                   </section>
 
                   <aside
-                    className={`shrink-0 border-l border-line bg-app min-h-0 overflow-hidden transition-[width] duration-200 ${
+                    className={`@container shrink-0 border-l border-line bg-app min-h-0 overflow-hidden transition-[width] duration-200 ${
                       panelOpen ? 'w-full xl:w-[420px]' : 'hidden xl:block xl:w-[420px]'
                     }`}
                   >

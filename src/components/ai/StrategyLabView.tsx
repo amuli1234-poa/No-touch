@@ -286,7 +286,7 @@ export function StrategyLabView({ lab }: StrategyLabViewProps) {
         subtitle="Backtest, validation and live monitoring over real Deriv history."
         icon={<Gauge className="w-4 h-4" aria-hidden="true" />}
         right={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {lab.progress.status === 'RUNNING' ? (
               <button
                 type="button"
@@ -474,11 +474,11 @@ export function StrategyLabView({ lab }: StrategyLabViewProps) {
         subtitle="Out-of-sample measurements from the no-look-ahead replay. Click a row for full detail."
         icon={<TrendingUp className="w-4 h-4" aria-hidden="true" />}
         right={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <select
               value={ratingFilter}
               onChange={(e) => setRatingFilter(e.target.value as never)}
-              className="bg-elevated border border-line rounded-md px-2 py-1 text-[11px] text-ink"
+              className="max-w-full bg-elevated border border-line rounded-md px-2 py-1 text-[11px] text-ink"
               aria-label="Filter by rating"
             >
               <option value="ALL">All ratings</option>
@@ -491,7 +491,7 @@ export function StrategyLabView({ lab }: StrategyLabViewProps) {
             <select
               value={modelFilter}
               onChange={(e) => setModelFilter(e.target.value)}
-              className="bg-elevated border border-line rounded-md px-2 py-1 text-[11px] text-ink"
+              className="max-w-full bg-elevated border border-line rounded-md px-2 py-1 text-[11px] text-ink"
               aria-label="Filter by model"
             >
               <option value="ALL">All models</option>

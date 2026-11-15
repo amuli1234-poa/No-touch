@@ -328,7 +328,7 @@ function StatusBanner({ analysis }: { analysis: DsInstrumentAnalysis }) {
 
 function TimeframeReads({ analysis }: { analysis: DsInstrumentAnalysis }) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+    <div className="grid grid-cols-1 @md:grid-cols-3 gap-2">
       {analysis.timeframes.map((tf) => (
         <div key={tf.timeframe} className="rounded-lg border border-line bg-panel px-3 py-2">
           <div className="flex items-center justify-between gap-2">
@@ -360,14 +360,14 @@ function ZoneDetail({ zone, precision, onClose }: { zone: DsZone; precision: num
         </button>
       }
     >
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 @lg:grid-cols-4 gap-2">
         <StatTile label="Proximal" value={formatPrice(zone.proximalPrice, precision)} />
         <StatTile label="Distal" value={formatPrice(zone.distalPrice, precision)} />
         <StatTile label="Displacement" value={`${zone.displacementAtr.toFixed(1)}× ATR`} />
         <StatTile label="Touches" value={String(zone.touches)} />
       </div>
 
-      <div className="mt-3 grid grid-cols-1 sm:grid-cols-5 gap-2">
+      <div className="mt-3 grid grid-cols-1 @lg:grid-cols-5 gap-2">
         <StatTile label="Formation" value={`${zone.score.formationQuality}/30`} />
         <StatTile label="Displacement" value={`${zone.score.displacement}/20`} />
         <StatTile label="Freshness" value={`${zone.score.freshness}/20`} />
@@ -451,7 +451,7 @@ export function DemandSupplyAIView({ scanner }: DemandSupplyAIViewProps) {
   const dark = ws.settings.theme === 'dark';
 
   return (
-    <div className="flex flex-col gap-3 p-3 sm:p-5 max-w-[1400px] w-full mx-auto">
+    <div className="flex flex-col gap-3 p-3 @sm:p-5 max-w-[1400px] w-full mx-auto">
       {/* Header */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-2">
@@ -521,7 +521,7 @@ export function DemandSupplyAIView({ scanner }: DemandSupplyAIViewProps) {
           subtitle="Toggle the six demand & supply entry models and set the publication gate"
           icon={<Activity className="w-3.5 h-3.5" aria-hidden="true" />}
         >
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 @sm:grid-cols-2 gap-2">
             {DS_MODEL_IDS.map((id) => {
               const Icon = MODEL_ICON[id];
               const enabled = scanner.settings.enabledModels[id];
@@ -546,7 +546,7 @@ export function DemandSupplyAIView({ scanner }: DemandSupplyAIViewProps) {
             })}
           </div>
 
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="mt-4 grid grid-cols-1 @sm:grid-cols-2 gap-3">
             <div>
               <label className="text-[11px] font-semibold text-muted">Direction</label>
               <div className="mt-1 flex gap-1.5">
@@ -620,7 +620,7 @@ export function DemandSupplyAIView({ scanner }: DemandSupplyAIViewProps) {
       )}
 
       {/* Main grid: chart + panels */}
-      <div className="grid grid-cols-1 xl:grid-cols-[1.6fr_1fr] gap-3">
+      <div className="grid grid-cols-1 @3xl:grid-cols-[1.6fr_1fr] gap-3">
         {/* Chart column */}
         <div className="flex flex-col gap-3 min-w-0">
           <ModuleChartSlot dsOverlay={dsOverlay} onDsZoneSelect={setSelectedZone} />

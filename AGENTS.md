@@ -655,6 +655,33 @@ has Markdown at `https://developers.deriv.com/llms/<endpoint>.md` (e.g. `buy.md`
   not document `ALLOW_REAL_EXECUTION` as settable. Enabling it is a separate,
   explicit release act requiring the preconditions in the review doc.
 
+## Panel layout: container queries, not viewport breakpoints
+
+The right-hand intelligence panel is a fixed-width column (`xl:w-[420px]`) inside the
+workspace, so the views it hosts must react to the PANEL's width, not the window's.
+The panel `<aside>` in `src/App.tsx` carries `@container`; every view rendered inside it
+(`AiModuleView`, `LiveScannerView`, `PerformanceView`, `TrendlineScannerView`,
+`DemandSupplyAIView`, `VolatilityScannerView`, `RiskView`, `ChartAnalyserView` →
+`AnalysisPanel`) uses container-query variants (`@sm:` `@md:` `@lg:` `@xl:` `@2xl:` `@3xl:`)
+instead of viewport ones (`sm:` `md:` `lg:` `xl:`).
+
+Using viewport breakpoints there is the bug: at a ≥1280px window the `xl:`/`lg:` grids
+fire while the panel is only ~420px wide, cramming 3–6 columns into the panel and
+overlapping text. If you add a multi-column grid to a panel view, reach for `@…:`.
+
+Full-width sections (dashboard, health, settings, training, history, alerts, strategylab)
+render in `<main>` and correctly keep viewport breakpoints. `SectionCard`'s header wraps
+(`flex-wrap`) so a wide `right` action cluster drops below the title instead of overflowing.
+
+## Branding
+
+The product name is **WickSentinel** everywhere. `src/components/brand/WickSentinelBrand.tsx`
+exports `BRAND` and the `WickSentinelMark` SVG for the public site. In-app surfaces spell it
+out with the accent split — `Wick<span className="text-accent">Sentinel</span>` — in
+`TopBar.tsx`, `nav/Navigation.tsx` (sidebar header) and `OpeningAnimation.tsx`. Document
+titles live in the `TITLES` map in `src/Root.tsx` and in `index.html`. There is no
+"DERIV AI SCANNER" / "Deriv AI" left; grep before reintroducing a name.
+
 ## Dashboard accounts and balances (new dashboard)
 
 - The new dashboard's account surface is `src/components/AccountBalanceChip.tsx`

@@ -236,7 +236,7 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
   const dark = ws.settings.theme === 'dark';
 
   return (
-    <div className="flex flex-col gap-3 p-3 sm:p-5 max-w-[1400px] w-full mx-auto">
+    <div className="flex flex-col gap-3 p-3 @sm:p-5 max-w-[1400px] w-full mx-auto">
       {/* Header */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-2">
@@ -299,7 +299,7 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
           subtitle={meta.settingsSubtitle}
           icon={<Activity className="w-3.5 h-3.5" aria-hidden="true" />}
         >
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 @sm:grid-cols-2 gap-3">
             <div>
               <div className="text-[11px] font-semibold text-muted mb-1">
                 Minimum score gate: <span className="font-mono text-ink">{scanner.settings.minScore}</span>
@@ -380,7 +380,7 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
       )}
 
       {/* Main grid */}
-      <div className="grid grid-cols-1 xl:grid-cols-[1.6fr_1fr] gap-3">
+      <div className="grid grid-cols-1 @3xl:grid-cols-[1.6fr_1fr] gap-3">
         <div className="flex flex-col gap-3 min-w-0">
           <ModuleChartSlot aiOverlay={overlay} onAiZoneSelect={setSelectedZone} />
 
@@ -400,7 +400,7 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
                 </button>
               }
             >
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 @md:grid-cols-3 gap-2">
                 <StatTile label="Upper" value={formatPrice(selectedZone.upperPrice, precision)} />
                 <StatTile label="Lower" value={formatPrice(selectedZone.lowerPrice, precision)} />
                 <StatTile label="Quality" value={`${Math.round(selectedZone.quality)}/100`} />
@@ -426,7 +426,7 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
                 </div>
               </Card>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 @md:grid-cols-3 gap-2">
                 {chartAnalysis.timeframes.map((tf) => (
                   <div key={tf.timeframe} className="rounded-lg border border-line bg-panel px-3 py-2">
                     <div className="flex items-center justify-between gap-2">

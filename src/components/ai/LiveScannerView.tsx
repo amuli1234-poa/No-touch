@@ -90,7 +90,7 @@ export function LiveScannerView({ scanner }: LiveScannerViewProps) {
   const dark = ws.settings.theme === 'dark';
 
   return (
-    <div className="flex flex-col gap-3 p-3 sm:p-5 max-w-[1500px] w-full mx-auto">
+    <div className="flex flex-col gap-3 p-3 @sm:p-5 max-w-[1500px] w-full mx-auto">
       {/* Header + controls */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="w-8 h-8 rounded-lg bg-accent/15 text-accent border border-accent/30 flex items-center justify-center">
@@ -156,7 +156,7 @@ export function LiveScannerView({ scanner }: LiveScannerViewProps) {
       {/* Controls */}
       {showSettings && (
         <SectionCard title="Scanner Controls" subtitle="Filters feed the live ranking engine" icon={<Radar className="w-3.5 h-3.5" aria-hidden="true" />}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 @sm:grid-cols-2 @xl:grid-cols-4 gap-3">
             <div>
               <div className="text-[11px] font-semibold text-muted mb-1">
                 Minimum quality: <span className="font-mono text-ink">{minQuality}</span>
@@ -236,7 +236,7 @@ export function LiveScannerView({ scanner }: LiveScannerViewProps) {
         </SectionCard>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_1.1fr] gap-3">
+      <div className="grid grid-cols-1 @3xl:grid-cols-[1fr_1.1fr] gap-3">
         {/* Ranking panel */}
         <SectionCard
           title="Top Opportunities"
@@ -315,7 +315,7 @@ export function LiveScannerView({ scanner }: LiveScannerViewProps) {
 
               <SectionCard title="Opportunity Detail" subtitle={selectedAnalysis.statusExplanation}>
                 {selectedAnalysis.signal ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 @md:grid-cols-3 gap-2">
                     <StatTile
                       label="Entry zone"
                       value={`${formatPrice(selectedAnalysis.signal.entryZoneLow, selectedAnalysis.precision)}–${formatPrice(

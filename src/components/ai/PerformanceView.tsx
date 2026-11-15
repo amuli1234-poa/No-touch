@@ -76,7 +76,7 @@ export function PerformanceView({ journal }: PerformanceViewProps) {
   };
 
   return (
-    <div className="flex flex-col gap-3 p-3 sm:p-5 max-w-[1400px] w-full mx-auto">
+    <div className="flex flex-col gap-3 p-3 @sm:p-5 max-w-[1400px] w-full mx-auto">
       <div className="flex flex-wrap items-center gap-2">
         <span className="w-8 h-8 rounded-lg bg-accent/15 text-accent border border-accent/30 flex items-center justify-center">
           <GraduationCap className="w-4 h-4" aria-hidden="true" />
@@ -117,7 +117,7 @@ export function PerformanceView({ journal }: PerformanceViewProps) {
 
       {showFilters && (
         <SectionCard title="Filters" subtitle="All performance views respect these filters" icon={<Filter className="w-3.5 h-3.5" aria-hidden="true" />}>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 @md:grid-cols-3 @xl:grid-cols-5 gap-3">
             {(['symbol', 'module', 'model', 'direction', 'condition'] as const).map((field) => {
               const options = Array.from(new Set(journal.records.map((r) => String(r[field === 'model' ? 'modelId' : field]))));
               return (
@@ -150,7 +150,7 @@ export function PerformanceView({ journal }: PerformanceViewProps) {
       )}
 
       {/* Summary */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
+      <div className="grid grid-cols-2 @lg:grid-cols-4 @2xl:grid-cols-6 gap-2">
         <StatTile label="Total signals" value={s.total} />
         <StatTile label="Settled" value={s.settled} />
         <StatTile label="Pending" value={s.pending} />
@@ -165,7 +165,7 @@ export function PerformanceView({ journal }: PerformanceViewProps) {
         <StatTile label="Max loss streak" value={s.maxConsecutiveLosses} valueClass="text-bear" />
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 @lg:grid-cols-4 gap-2">
         <StatTile label="TP1 rate" value={fmtPct(s.tp1Rate)} hint={`n=${s.total}`} />
         <StatTile label="TP2 rate" value={fmtPct(s.tp2Rate)} />
         <StatTile label="TP3 rate" value={fmtPct(s.tp3Rate)} />
@@ -196,7 +196,7 @@ export function PerformanceView({ journal }: PerformanceViewProps) {
       )}
 
       {/* Segmented performance */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-3">
         <SectionCard title="By AI Module" subtitle="Independent module reliability" icon={<BarChart3 className="w-3.5 h-3.5" aria-hidden="true" />}>
           <SegmentTable rows={journal.byModule} emptyLabel="No recorded signals yet." />
         </SectionCard>

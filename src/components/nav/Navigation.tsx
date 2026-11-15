@@ -147,12 +147,16 @@ export function Sidebar({ active, onSelect, statusBadge, badges }: SidebarProps)
           <ScanSearch className="w-4 h-4" />
         </div>
         <div className="min-w-0">
-          <div className="text-[15px] font-bold tracking-tight text-ink leading-none">Deriv AI</div>
-          <div className="text-[11px] font-medium text-muted leading-none mt-0.5">Scanner</div>
+          <div className="text-[15px] font-bold tracking-tight text-ink leading-none">
+            Wick<span className="text-accent">Sentinel</span>
+          </div>
+          <div className="text-[11px] font-medium text-muted leading-none mt-0.5">
+            Market Intelligence
+          </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto py-2 px-2 space-y-3">
+      <div className="flex-1 min-h-0 overflow-y-auto py-2 px-2 space-y-3">
         {SECTION_GROUPS.map((group) => (
           <div key={group.label}>
             <div className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-faint">

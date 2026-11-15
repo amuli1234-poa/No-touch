@@ -18,7 +18,7 @@ export function TopBar() {
         </div>
         <div className="min-w-0">
           <h1 className="text-sm font-extrabold tracking-tight text-ink leading-none">
-            DERIV AI SCANNER
+            Wick<span className="text-accent">Sentinel</span>
           </h1>
           <div className="flex items-center gap-2 mt-0.5 min-w-0">
             <span className="text-[11px] font-medium text-muted truncate">
