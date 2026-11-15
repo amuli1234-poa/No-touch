@@ -1,617 +1,957 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { DerivWebSocketManager } from './services/DerivWebSocketManager';
-import { IndexedDbStorage } from './services/IndexedDbStorage';
-import { WhatsAppService } from './services/WhatsAppService';
-import { telemetry } from './services/TelemetryService';
-import { refreshBalances, onReconnect } from './lib/balances';
-import { OpportunityScoringEngine } from './engines/OpportunityScoringEngine';
-import { AppShell } from './components/shell/AppShell';
-import { Route } from './components/shell/navigation';
-import { DrawingStore } from './features/drawing-management/DrawingStore';
-import { useDrawings } from './features/drawing-management/useDrawings';
-import { DeterministicAnalysisEngine } from './features/analysis/engines/deterministicEngine';
-import { createDeclaredAiEngines } from './features/analysis/engines/unavailableEngines';
-import { useAnalysisRunner } from './features/analysis/useAnalysisRunner';
-import type { AnalysisResult } from './features/analysis/types';
-import { BestMarketView } from './components/views/BestMarketView';
-import { StrategyScannerView } from './components/views/StrategyScannerView';
-import { MtfPrecisionEntryView } from './components/views/MtfPrecisionEntryView';
-import { LiveMarketScannerTable } from './components/views/LiveMarketScannerTable';
-import { TradingWorkspace } from './components/chart/TradingWorkspace';
-import { OpportunityCard } from './components/views/OpportunityCard';
-import { SignalsView } from './components/views/SignalsView';
-import { PerformanceDashboard } from './components/views/PerformanceDashboard';
-import { SettingsView } from './components/views/SettingsView';
-import { Card, CardHeader, CardBody, EmptyState } from './components/ui';
-import { SectionTitle } from './components/ui/StatCard';
-import { LineChart } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Radar } from 'lucide-react';
+import { reconcileEngines } from './analysis/coAnalysis';
+import { createModelPerformanceRecord } from './analysis/modelPerformance';
+import { ChartAnalyserView } from './components/ChartAnalyserView';
+import { ConnectionBadge } from './components/ConnectionBadge';
+import { SingleChartCanvas } from './components/chart/SingleChartCanvas';
+import { FloatingScanner } from './components/FloatingScanner';
+import { ModuleOverlayProvider } from './context/ModuleOverlayContext';
+import type { ModuleChartOverlay } from './types/chartOverlay';
 import {
-  ActiveSymbol,
-  OpportunitySignal,
-  ScannerSettings,
-  SignalHistoryEntry,
-  Timeframe,
-  WhatsAppProviderStatus,
-  WhatsAppSignalRecord
-} from './types/scanner';
+  MobileMenuSheet,
+  MobileNav,
+  Sidebar,
+  type AppSection,
+} from './components/nav/Navigation';
+import { OpeningAnimation } from './components/OpeningAnimation';
+import { TopBar } from './components/TopBar';
+import { DashboardView } from './components/views/DashboardView';
+import { SettingsView } from './components/views/SettingsView';
+import { TradeHistoryView } from './components/views/TradeHistoryView';
+import { TrainingView } from './components/views/TrainingView';
+import { TrendlineScannerView } from './components/TrendlineScannerView';
+import { DemandSupplyAIView } from './components/DemandSupplyAIView';
+import { AiTabView } from './components/ai/moduleViews';
+import { AlertsView } from './components/ai/AlertsView';
+import { StrategyLabView } from './components/ai/StrategyLabView';
+import { SystemHealthView } from './components/views/SystemHealthView';
+import { RiskView } from './components/views/RiskView';
+import { VolatilityScannerView } from './components/VolatilityScannerView';
+import {
+  WorkspaceProvider,
+  type NavSection,
+  type WorkspaceValue,
+} from './context/WorkspaceContext';
+import { useAppSettings } from './hooks/useAppSettings';
+import { useDerivChartData } from './hooks/useDerivChartData';
+import { usePriceActionAnalysis } from './hooks/usePriceActionAnalysis';
+import { useSignalManager } from './hooks/useSignalManager';
+import { useTheme, useSystemStatus } from './hooks/useTheme';
+import { useTrainingEngine } from './hooks/useTrainingEngine';
+import { useTrendlineScanner } from './hooks/useTrendlineScanner';
+import { useDemandSupplyScanner } from './hooks/useDemandSupplyScanner';
+import { AI_MODULE_DEFINITIONS, useAiModules } from './hooks/useAiModules';
+import {
+  observationsFromAiModules,
+  observationsFromAnomalies,
+  observationsFromDemandSupply,
+  observationsFromHealthTest,
+  observationsFromRecommendations,
+  observationsFromRegimeChanges,
+  observationsFromTrendline,
+} from './analysis/alertSources';
+import { useAiJournal } from './hooks/useAiJournal';
+import { useAlertManager } from './hooks/useAlertManager';
+import { useStrategyLab } from './hooks/useStrategyLab';
+import { useSystemHealth } from './hooks/useSystemHealth';
+import { useVolatilityScanner } from './hooks/useVolatilityScanner';
+import type { SignalSnapshot } from './types/analysis';
+import type { AiSignal } from './types/aiModule';
+import type { TimeframeKey } from './types/market';
+import type { SignalFeedItem } from './types/signals';
+import { classifyMarketFamily } from './utils/derivParser';
+import {
+  setVoiceEnabled,
+  showSignalNotification,
+  speakSignal,
+} from './utils/notify';
+import { analyserSignalItem, buildSignalFeed, scannerSignalItem, trendlineSignalItem } from './utils/signalFeed';
+import { deriveSignalLifecycle } from './utils/signalStatus';
+import { playSignalChime, primeAudio, setSoundEnabled, setSoundVolume } from './utils/sound';
+import { SignalToastStack, type SignalToast } from './components/SignalToasts';
 
-const SETTINGS_KEY = 'wicksentinel_settings_v1';
+const VALID_SECTIONS: AppSection[] = [
+  'dashboard',
+  'analyser',
+  'scanner',
+  'trendlines',
+  'demandsupply',
+  'boschoch',
+  'technical',
+  'smc',
+  'liquidity',
+  'fvg',
+  'orderblock',
+  'momentum',
+  'regime',
+  'confluence',
+  'live',
+  'performance',
+  'risk',
+  'alerts',
+  'strategylab',
+  'health',
+  'training',
+  'history',
+  'settings',
+];
 
-const DEFAULT_SETTINGS: ScannerSettings = {
-  appId: 1089,
-  minScoreThreshold: 75,
-  fvgMinDisplacement: 0.00025,
-  autoRefreshIntervalSec: 10,
-  soundAlerts: true,
-  whatsappAutoSend: false,
-  whatsappNotifyUpdates: true,
-  showSecondaryIndicators: true
+const LEGACY_HASH: Record<string, AppSection> = {
+  analysis: 'analyser',
+  signal: 'analyser',
+  chart: 'analyser',
+  live: 'analyser',
 };
 
+function sectionFromHash(): AppSection {
+  const raw = window.location.hash.replace(/^#\/?/, '').split('?')[0];
+  if (LEGACY_HASH[raw]) return LEGACY_HASH[raw];
+  return (VALID_SECTIONS as string[]).includes(raw) ? (raw as AppSection) : 'dashboard';
+}
+
 export default function App() {
-  const [settings, setSettings] = useState<ScannerSettings>(() => {
+  const [section, setSection] = useState<AppSection>(() => sectionFromHash());
+  const [showOpening, setShowOpening] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [floatingScannerOpen, setFloatingScannerOpen] = useState(() => {
     try {
-      const saved = localStorage.getItem(SETTINGS_KEY);
-      if (!saved) return DEFAULT_SETTINGS;
-      const parsed = JSON.parse(saved) as Partial<ScannerSettings>;
-      return {
-        ...DEFAULT_SETTINGS,
-        ...parsed,
-        minScoreThreshold: Math.max(75, parsed.minScoreThreshold ?? 75)
-      };
+      return localStorage.getItem('lucky_floating_scanner') === 'open';
     } catch {
-      return DEFAULT_SETTINGS;
+      return false;
     }
   });
+  const [moduleOverlay, setModuleOverlay] = useState<ModuleChartOverlay | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
 
-  const [wsManager] = useState(() => new DerivWebSocketManager(settings.appId));
-  const [storage] = useState(() => new IndexedDbStorage());
-  const [waService] = useState(() => new WhatsAppService());
-
-  // Drawing layer: metadata lives in the store, independent of chart rendering.
-  const [drawingStore] = useState(() => new DrawingStore());
-  const drawings = useDrawings(drawingStore);
-
-  const [connectionState, setConnectionState] = useState<
-    'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING'
-  >('RECONNECTING');
-  const [symbols, setSymbols] = useState<ActiveSymbol[]>(() => wsManager.getDiscoveredSymbols());
-  const [selectedSymbol, setSelectedSymbol] = useState<string>('R_100');
-  const [selectedTimeframe, setSelectedTimeframe] = useState<Timeframe>('5m');
-  const [route, setRoute] = useState<Route>('LIVE_CHART');
-
-  const [opportunities, setOpportunities] = useState<Map<string, OpportunitySignal>>(new Map());
-  const [isScanning, setIsScanning] = useState(false);
-  const [lastScanTimestamp, setLastScanTimestamp] = useState<number>(0);
-  const [candleRevision, setCandleRevision] = useState(0);
-  const [historyRevision, setHistoryRevision] = useState(0);
-
-  const [waStatus, setWaStatus] = useState<WhatsAppProviderStatus>({
-    configured: false,
-    provider: null,
-    recipientMasked: null,
-    missingFields: ['Checking server configuration...']
-  });
-  const [waLogs, setWaLogs] = useState<WhatsAppSignalRecord[]>([]);
-
-  const activeTrackedSignalsRef = useRef<Map<string, SignalHistoryEntry>>(new Map());
-
-  const playChime = useCallback(() => {
-    if (!settings.soundAlerts) return;
+  useEffect(() => {
     try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(587.33, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15);
-      gain.gain.setValueAtTime(0.12, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.45);
+      localStorage.setItem('lucky_floating_scanner', floatingScannerOpen ? 'open' : 'closed');
     } catch {
-      // audio blocked by the browser
+      // ignore storage errors
     }
-  }, [settings.soundAlerts]);
+  }, [floatingScannerOpen]);
 
-  const refreshWaStatus = useCallback(async () => {
-    const status = await waService.getStatus();
-    setWaStatus(status);
-  }, [waService]);
-
-  const handleUpdateSettings = (next: ScannerSettings) => {
-    const normalized: ScannerSettings = {
-      ...next,
-      minScoreThreshold: Math.max(75, next.minScoreThreshold)
-    };
-    setSettings(normalized);
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(normalized));
-    telemetry.settingsChanged();
-    if (normalized.appId !== settings.appId) {
-      wsManager.updateAppId(normalized.appId);
-    }
-  };
-
-  const dispatchWhatsAppAlert = useCallback(
-    async (opp: OpportunitySignal, eventType: 'NEW_SIGNAL' | 'MATERIAL_UPDATE' | 'INVALIDATED') => {
-      const record = await waService.sendSignal(opp, eventType);
-      setWaLogs((prev) => [record, ...prev].slice(0, 100));
-      await storage.saveWhatsAppLog(record).catch(() => {});
-    },
-    [waService, storage]
-  );
-
-  // Initialize storage, WhatsApp status and the WebSocket event streams.
+  // A module overlay belongs to the module that published it — clear it on navigation.
   useEffect(() => {
-    storage.init().then(async () => {
-      const [logs, hist] = await Promise.all([
-        storage.getWhatsAppLogs().catch(() => []),
-        storage.getSignalHistory().catch(() => [])
-      ]);
-      setWaLogs(logs);
-      for (const item of hist) {
-        if (item.outcomeStatus === 'ACTIVE') {
-          activeTrackedSignalsRef.current.set(item.symbol, item);
-        }
-      }
-    });
+    setModuleOverlay(null);
+  }, [section]);
 
-    refreshWaStatus();
-
-    // Client telemetry: start the batched sender for this page load.
-    telemetry.start();
-
-    // Load the customer's account balances (DEMO + REAL kept separate).
-    void refreshBalances();
-
-    const connHandler = (state: 'CONNECTED' | 'DISCONNECTED' | 'RECONNECTING') => {
-      setConnectionState(state);
-      // Revalidate balances when the feed reconnects: a fresh connection is a
-      // natural point to confirm the account authorization still holds.
-      if (state === 'CONNECTED') onReconnect();
-    };
-    wsManager.onConnectionChange(connHandler);
-
-    const tickHandler = (symbol: string, tick: { epoch: number; quote: number }) => {
-      setSymbols((prev) =>
-        prev.map((s) =>
-          s.symbol === symbol
-            ? { ...s, lastQuote: tick.quote, lastTickEpoch: tick.epoch, isStale: false }
-            : s
-        )
-      );
-
-      // Resolve tracked signals on live price: target hit vs structural invalidation.
-      const activeSig = activeTrackedSignalsRef.current.get(symbol);
-      if (activeSig && activeSig.takeProfit && activeSig.invalidationLevel) {
-        let resolved: 'TP_HIT' | 'INVALIDATED' | null = null;
-        if (activeSig.direction === 'BULLISH') {
-          if (tick.quote >= activeSig.takeProfit) resolved = 'TP_HIT';
-          else if (tick.quote <= activeSig.invalidationLevel) resolved = 'INVALIDATED';
-        } else if (activeSig.direction === 'BEARISH') {
-          if (tick.quote <= activeSig.takeProfit) resolved = 'TP_HIT';
-          else if (tick.quote >= activeSig.invalidationLevel) resolved = 'INVALIDATED';
-        }
-        if (resolved) {
-          const updated: SignalHistoryEntry = {
-            ...activeSig,
-            outcomeStatus: resolved,
-            resolvedEpoch: tick.epoch,
-            resolvedPrice: tick.quote
-          };
-          activeTrackedSignalsRef.current.delete(symbol);
-          storage
-            .saveSignalHistory(updated)
-            .then(() => setHistoryRevision((r) => r + 1))
-            .catch(() => {});
-        }
-      }
-    };
-    wsManager.onTick(tickHandler);
-
-    const healthTimer = setInterval(() => {
-      const discovered = wsManager.getDiscoveredSymbols();
-      if (discovered.length > 0) {
-        setSymbols(discovered);
-        setSelectedSymbol((cur) =>
-          discovered.some((s) => s.symbol === cur) ? cur : discovered[0].symbol
-        );
-      }
-    }, 1500);
-
-    return () => {
-      clearInterval(healthTimer);
-      wsManager.offTick(tickHandler);
-      wsManager.offConnectionChange(connHandler);
-      wsManager.destroy();
-      telemetry.stop();
-    };
-  }, [wsManager, storage, refreshWaStatus]);
-
-  // Top-down H4 → H1 → M15 → M5 → M1 analysis for a single symbol.
-  const scanMarket = useCallback(
-    async (symbol: string) => {
-      const symStore = wsManager.candles.get(symbol);
-      if (!symStore) return;
-
-      const symInfo = wsManager.activeSymbols.get(symbol);
-      if (!symInfo) return;
-
-      const c4h = symStore.get('4h') || [];
-      const c1h = symStore.get('1h') || [];
-      const c15m = symStore.get('15m') || [];
-      const c5m = symStore.get('5m') || [];
-      const c1m = symStore.get('1m') || [];
-
-      const opportunity = OpportunityScoringEngine.analyzeTopDown({
-        symbolInfo: symInfo,
-        c4h,
-        c1h,
-        c15m,
-        c5m,
-        c1m,
-        minScoreThreshold: settings.minScoreThreshold,
-        fvgMinDisplacement: settings.fvgMinDisplacement
-      });
-
-      if (!opportunity) return;
-
-      setOpportunities((prev) => {
-        const next = new Map(prev);
-        const old = next.get(symbol);
-        if (
-          opportunity.setupTier === 'HIGH_QUALITY' &&
-          (!old || old.setupTier !== 'HIGH_QUALITY')
-        ) {
-          playChime();
-          telemetry.signal(opportunity.symbol, selectedTimeframe, opportunity.score.total);
-          const histEntry: SignalHistoryEntry = {
-            id: opportunity.id,
-            symbol: opportunity.symbol,
-            displayName: opportunity.displayName,
-            is1s: opportunity.is1s,
-            detectedEpoch: opportunity.detectedEpoch,
-            direction: opportunity.direction,
-            riseFallLabel: opportunity.riseFallLabel,
-            selectedStrategy: opportunity.selectedStrategy.label,
-            confluenceScore: opportunity.score.total,
-            setupTier: opportunity.setupTier,
-            marketCondition: opportunity.marketCondition,
-            entryPrice: opportunity.entryAndTp.entryPrice,
-            takeProfit: opportunity.entryAndTp.takeProfit,
-            invalidationLevel: opportunity.entryAndTp.invalidationLevel,
-            outcomeStatus: 'ACTIVE',
-            explanation: opportunity.explanation
-          };
-          activeTrackedSignalsRef.current.set(symbol, histEntry);
-          storage
-            .saveSignalHistory(histEntry)
-            .then(() => setHistoryRevision((r) => r + 1))
-            .catch(() => {});
-        }
-        next.set(symbol, opportunity);
-        return next;
-      });
-
-      if (settings.whatsappAutoSend && waStatus.configured) {
-        const event = waService.evaluateDispatchEvent(
-          opportunity,
-          settings.minScoreThreshold,
-          settings.whatsappNotifyUpdates
-        );
-        if (event) {
-          await dispatchWhatsAppAlert(opportunity, event);
-        }
-      }
-    },
-    [
-      wsManager,
-      settings.minScoreThreshold,
-      settings.fvgMinDisplacement,
-      settings.whatsappAutoSend,
-      settings.whatsappNotifyUpdates,
-      waStatus.configured,
-      waService,
-      storage,
-      playChime,
-      dispatchWhatsAppAlert,
-      selectedTimeframe
-    ]
-  );
-
-  const scanAllMarkets = useCallback(async () => {
-    if (isScanning || symbols.length === 0) return;
-    setIsScanning(true);
-    setLastScanTimestamp(Date.now());
-    const openSymbols = symbols.filter((s) => s.isOpen);
-    telemetry.setScanning(true, openSymbols.map((s) => s.symbol), [selectedTimeframe]);
-    try {
-      await Promise.allSettled(openSymbols.map((s) => scanMarket(s.symbol)));
-    } finally {
-      setIsScanning(false);
-      telemetry.setScanning(false, openSymbols.map((s) => s.symbol), [selectedTimeframe]);
+  const selectSection = useCallback((next: AppSection) => {
+    setSection(next);
+    if (sectionFromHash() !== next) {
+      window.location.hash = `#/${next}`;
     }
-  }, [symbols, isScanning, scanMarket, selectedTimeframe]);
+  }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      scanAllMarkets();
-    }, settings.autoRefreshIntervalSec * 1000);
-    return () => clearInterval(interval);
-  }, [settings.autoRefreshIntervalSec, scanAllMarkets]);
+    const onHashChange = () => setSection(sectionFromHash());
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  // Unlock audio on the first user gesture so later chimes are permitted.
+  useEffect(() => {
+    const unlock = () => primeAudio();
+    window.addEventListener('pointerdown', unlock, { once: true });
+    return () => window.removeEventListener('pointerdown', unlock);
+  }, []);
+
+  const {
+    settings,
+    setDirectionPreference,
+    setMinQuality,
+    toggleOverlay,
+    setCompactChart,
+    setTheme,
+    toggleTheme,
+    setAccentMode,
+    setSoundEnabled: setSoundEnabledSetting,
+    setSoundVolume: setSoundVolumeSetting,
+    setNotificationsEnabled,
+    setVoiceEnabled,
+    resetSettings,
+  } = useAppSettings();
+
+  useTheme(settings.theme);
 
   useEffect(() => {
-    const candleHandler = (symbol: string, tf: Timeframe, _c: any, isClosed: boolean) => {
-      if (symbol === selectedSymbol && tf === selectedTimeframe) {
-        setCandleRevision((r) => r + 1);
-      }
-      if ((tf === '1m' || tf === '5m') && isClosed) {
-        scanMarket(symbol);
-      }
-    };
-    wsManager.onCandle(candleHandler);
-    return () => wsManager.offCandle(candleHandler);
-  }, [wsManager, scanMarket, selectedSymbol, selectedTimeframe]);
+    setSoundEnabled(settings.soundEnabled);
+  }, [settings.soundEnabled]);
 
-  const activeCandles = useMemo(() => {
-    const symMap = wsManager.candles.get(selectedSymbol);
-    if (!symMap) return [];
-    return [...(symMap.get(selectedTimeframe) || [])];
-  }, [wsManager, selectedSymbol, selectedTimeframe, candleRevision]);
+  useEffect(() => {
+    setSoundVolume(settings.soundVolume / 100);
+  }, [settings.soundVolume]);
 
-  const activeSymbolInfo = symbols.find((s) => s.symbol === selectedSymbol);
-  const activeOpp = opportunities.get(selectedSymbol);
+  useEffect(() => {
+    setVoiceEnabled(settings.voiceEnabled);
+  }, [settings.voiceEnabled]);
 
-  // Timeframes with a non-empty buffer for the selected symbol. The toolbar
-  // only marks a timeframe active when its data actually arrived.
-  const availableTimeframes = useMemo<ReadonlySet<Timeframe>>(() => {
-    const symMap = wsManager.candles.get(selectedSymbol);
-    const set = new Set<Timeframe>();
-    if (symMap) {
-      for (const [tf, list] of symMap.entries()) {
-        if (list.length > 0) set.add(tf);
-      }
-    }
-    return set;
-    // candleRevision re-reads the mutated buffer.
-  }, [wsManager, selectedSymbol, candleRevision]);
+  // Snapshot of a scanner signal being reproduced on the chart (set when a scanner
+  // signal is opened; cleared when the user navigates to a different instrument).
+  const [pendingSnapshot, setPendingSnapshot] = useState<SignalSnapshot | null>(null);
+  const clearPendingSnapshot = useCallback(() => setPendingSnapshot(null), []);
 
-  // Analysis engines: the real deterministic pipeline plus the declared
-  // (currently unavailable) AI engines.
-  const engines = useMemo(
-    () => [
-      new DeterministicAnalysisEngine({
-        candlesFor: (symbol) => {
-          const symMap = wsManager.candles.get(symbol);
-          return {
-            '1m': symMap?.get('1m'),
-            '5m': symMap?.get('5m'),
-            '15m': symMap?.get('15m'),
-            '1h': symMap?.get('1h'),
-            '4h': symMap?.get('4h')
-          };
-        },
-        symbolInfoFor: (symbol) => wsManager.activeSymbols.get(symbol),
-        minScoreThreshold: settings.minScoreThreshold,
-        fvgMinDisplacement: settings.fvgMinDisplacement
-      }),
-      ...createDeclaredAiEngines()
-    ],
-    [wsManager, settings.minScoreThreshold, settings.fvgMinDisplacement]
-  );
+  const {
+    markets,
+    marketsLoading,
+    selectedSymbol,
+    selectedMarket,
+    timeframe,
+    granularitySec,
+    connectionStatus,
+    connectionError,
+    diagnostics,
+    lastTickAt,
+    feedStale,
+    dataset,
+    candles,
+    liveTick,
+    loadState,
+    dataError,
+    isLoadingOlder,
+    selectMarket,
+    selectTimeframe,
+    reconnect,
+    loadOlderCandles,
+    fetchCandlesSnapshot,
+    derivService,
+  } = useDerivChartData();
 
-  // Create a drawing only from a validated zone, anchored to the real chart
-  // time/price coordinates the engine published.
-  const handleAnalysisResult = useCallback(
-    (result: AnalysisResult) => {
-      if (result.status !== 'COMPLETED' || !result.zone) return;
-      const zone = result.zone;
-      const lastEpoch = result.snapshot.lastCandleEpochMs / 1000;
-      const startEpoch = zone.startEpoch ?? lastEpoch - 60 * 60;
-      const endEpoch = zone.endEpoch ?? lastEpoch;
-      drawingStore.addFromZone({
-        symbol: result.symbol,
-        direction: zone.direction,
-        timeframe: result.timeframe,
-        startEpoch,
-        endEpoch,
-        upperPrice: zone.upperPrice,
-        lowerPrice: zone.lowerPrice,
-        sourceAnalysisId: result.id,
-        reason: zone.reason
-      });
-    },
-    [drawingStore]
-  );
+  const {
+    isScanning,
+    scanProgress,
+    progressMessage,
+    monitorSummary,
+    scanSummary,
+    timeframe: scannerTimeframe,
+    include1Sec,
+    autoRefresh,
+    lastScannedAt,
+    performanceRecords,
+    setTimeframe: setScannerTimeframe,
+    setInclude1Sec,
+    setAutoRefresh,
+    scanMarkets,
+    cancelScan,
+    refreshValidationSettlement,
+  } = useVolatilityScanner({
+    derivService,
+    markets,
+  });
 
-  const runner = useAnalysisRunner({
-    engines,
+  const training = useTrainingEngine({ derivService, markets });
+
+  const trendlineScanner = useTrendlineScanner({
+    derivService,
+    markets,
+  });
+
+  const demandSupplyScanner = useDemandSupplyScanner({
+    derivService,
+    markets,
+  });
+
+  const aiModules = useAiModules({ derivService, markets });
+  const aiJournal = useAiJournal();
+  const alertManager = useAlertManager();
+  const strategyLab = useStrategyLab({ derivService, markets });
+
+  const marketName = selectedMarket?.displayName ?? selectedSymbol;
+  const precision = selectedMarket?.precision ?? 2;
+  const marketFamily =
+    selectedMarket?.family ?? classifyMarketFamily(selectedSymbol, '', marketName);
+
+  const {
+    controlMode,
+    runState,
+    report,
+    isAnalyzing,
+    analysisError,
+    startAnalysis,
+    pauseAnalysis,
+    resumeAnalysis,
+    stopAnalysis,
+  } = usePriceActionAnalysis({
     symbol: selectedSymbol,
-    displayName: activeSymbolInfo?.displayName ?? selectedSymbol,
-    timeframe: selectedTimeframe,
-    candles: activeCandles,
-    connectionState,
-    isStale: activeSymbolInfo?.isStale,
-    onResult: handleAnalysisResult
+    marketName,
+    marketFamily,
+    activeTimeframe: timeframe,
+    precision,
+    candles,
+    liveTick,
+    loadState,
+    connectionStatus,
+    feedStale,
+    pendingSnapshot,
+    fetchCandlesSnapshot,
   });
 
-  const plainSymbols = useMemo(() => symbols.filter((s) => !s.is1s), [symbols]);
-  const oneSecSymbols = useMemo(() => symbols.filter((s) => s.is1s), [symbols]);
-  const oppList = useMemo(() => Array.from(opportunities.values()), [opportunities]);
-  const confirmedCount = useMemo(
-    () => oppList.filter((o) => o.setupTier === 'HIGH_QUALITY' && o.entryAndTp.confirmed).length,
-    [oppList]
+  // Auto-run analysis when opening the Chart Analyser with a ready market.
+  const autoRunTriggeredRef = useRef(false);
+  useEffect(() => {
+    const wantsAutoRun = section === 'analyser';
+    if (
+      wantsAutoRun &&
+      connectionStatus === 'connected' &&
+      loadState === 'ready' &&
+      candles.length >= 26 &&
+      !autoRunTriggeredRef.current &&
+      !isAnalyzing
+    ) {
+      autoRunTriggeredRef.current = true;
+      startAnalysis();
+    }
+  }, [section, connectionStatus, loadState, candles.length, isAnalyzing, startAnalysis]);
+
+  const openChart = useCallback(
+    (symbol: string, tf: TimeframeKey, snapshot?: SignalSnapshot | null) => {
+      autoRunTriggeredRef.current = false;
+      setPendingSnapshot(snapshot ?? null);
+      selectMarket(symbol);
+      selectTimeframe(tf);
+      selectSection('analyser');
+    },
+    [selectMarket, selectTimeframe, selectSection]
   );
 
-  const handleSelectSymbol = useCallback(
-    (sym: string, targetTab?: 'LIVE_CHART' | 'ANALYSIS') => {
-      setSelectedSymbol(sym);
-      if (targetTab) setRoute(targetTab);
+  const openAnalyser = useCallback(
+    (symbol: string, tf: TimeframeKey, snapshot?: SignalSnapshot | null) => {
+      autoRunTriggeredRef.current = false;
+      setPendingSnapshot(snapshot ?? null);
+      selectMarket(symbol);
+      selectTimeframe(tf);
+      selectSection('analyser');
+    },
+    [selectMarket, selectTimeframe, selectSection]
+  );
+
+  const [historyRecords, setHistoryRecords] = useState(performanceRecords);
+  useEffect(() => {
+    setHistoryRecords(performanceRecords);
+  }, [performanceRecords]);
+
+  // Record a confirmed Chart Analyser signal into trade history. This is the only
+  // place analyser setups are recorded.
+  const recordAnalyserSignal = useCallback<WorkspaceValue['recordAnalyserSignal']>(
+    ({ direction, entryPrice }) => {
+      const sig = report?.overlays.signal;
+      if (!sig) return;
+      const record = createModelPerformanceRecord({
+        id: `${sig.id}-manual-${Date.now()}`,
+        symbol: selectedSymbol,
+        displayName: marketName,
+        marketFamily,
+        precision,
+        direction,
+        model: sig.model,
+        modelLabel: sig.modelLabel,
+        condition: sig.condition,
+        analysisTimeframe: timeframe,
+        quality: sig.quality,
+        entryPrice,
+        entryZone: null,
+        invalidationPrice: sig.invalidationPrice,
+        invalidationCondition: sig.invalidationCondition,
+        target1: sig.takeProfit1,
+        target2: sig.takeProfit2,
+        stopLoss: sig.stopLoss,
+        riskRewardRatio: sig.riskRewardRatio,
+        confirmationExplanation: sig.confirmationExplanation,
+        bosChochEvidence: sig.bosChochEvidence,
+        supportResistance: [],
+        momentumEvidence: sig.momentumEvidence,
+        reasons: sig.reasons,
+        invalidations: sig.invalidations,
+        availableSpaceAtr: sig.availableSpaceAtr,
+        availableSpaceLabel: sig.availableSpaceLabel,
+        indicators: report.indicators,
+        state: 'ACTIVE',
+        instrumentLabel: 'Chart Analyser',
+        explanation: sig.explanation ?? sig.confirmationExplanation,
+        createdAt: Date.now(),
+        confirmedBarTime: sig.entryCandleTime,
+        lastUpdated: Date.now(),
+      });
+      setHistoryRecords((prev) => [record, ...prev].slice(0, 400));
+    },
+    [report, selectedSymbol, marketName, marketFamily, timeframe]
+  );
+
+  const recordValidatedSignal = useCallback<WorkspaceValue['recordValidatedSignal']>(
+    (item: SignalFeedItem) => {
+      if (!item.model || item.entryPrice === null) return;
+      const record = createModelPerformanceRecord({
+        id: `${item.id}-validated-${Date.now()}`,
+        symbol: item.symbol,
+        displayName: item.displayName,
+        marketFamily: item.marketFamily,
+        precision: 2,
+        direction: item.direction,
+        model: item.model,
+        modelLabel: item.modelLabel ?? 'Confirmed Setup',
+        condition: item.condition,
+        analysisTimeframe: item.timeframe,
+        quality:
+          item.quality ?? {
+            structure: 0,
+            levelZone: 0,
+            entryConfirmation: 0,
+            momentum: 0,
+            multiTimeframe: 0,
+            availableSpace: 0,
+            total: item.confidence,
+            tier: 'HIGH_QUALITY',
+            publishable: true,
+          },
+        entryPrice: item.entryPrice,
+        entryZone: null,
+        invalidationPrice: item.stopLoss ?? item.entryPrice,
+        invalidationCondition: 'Recorded from validated dual-engine signal.',
+        target1: item.takeProfit1,
+        target2: item.takeProfit2,
+        stopLoss: item.stopLoss ?? item.entryPrice,
+        riskRewardRatio: item.riskRewardRatio ?? 0,
+        confirmationExplanation: item.coAnalysis?.notes.join(' ') ?? 'Shared-validation signal.',
+        bosChochEvidence: [],
+        supportResistance: [],
+        momentumEvidence: [],
+        reasons: item.coAnalysis?.notes ?? [],
+        invalidations: [],
+        availableSpaceAtr: 0,
+        availableSpaceLabel: 'N/A',
+        indicators: {
+          ema20: null,
+          ema50: null,
+          rsi14: null,
+          macdLine: null,
+          macdSignal: null,
+          macdHistogram: null,
+          adx14: null,
+          trendConfirm: 'NEUTRAL',
+          momentumConfirm: 'NEUTRAL',
+          strengthConfirm: false,
+          notes: [],
+        },
+        state: 'ACTIVE',
+        instrumentLabel: item.marketFamily,
+        explanation: item.coAnalysis?.notes.join(' ') ?? 'Shared-validation signal.',
+        createdAt: Date.now(),
+        confirmedBarTime: Date.now(),
+        lastUpdated: Date.now(),
+      });
+      setHistoryRecords((prev) => [record, ...prev].slice(0, 400));
     },
     []
   );
 
+  const playSignalSound = useCallback<WorkspaceValue['playSignalSound']>(
+    (kind = 'validated') => {
+      primeAudio();
+      playSignalChime(kind);
+    },
+    []
+  );
+
+  // Dual-engine co-analysis for the currently selected instrument.
+  const coAnalysis = useMemo(
+    () =>
+      reconcileEngines({
+        symbol: selectedSymbol,
+        timeframe,
+        scanner: scanSummary?.winner ?? null,
+        analyser: report,
+      }),
+    [selectedSymbol, timeframe, scanSummary, report]
+  );
+
+  // Merge both engines into one clickable feed and remember it for the session.
+  // The dedicated Trendline Scanner contributes its own confirmed signals too.
+  const trendlineFeed = useMemo(
+    () =>
+      (trendlineScanner.summary?.opportunities ?? [])
+        .map((sig) => trendlineSignalItem(sig))
+        .filter((item): item is SignalFeedItem => item !== null),
+    [trendlineScanner.summary]
+  );
+
+  const liveFeed = useMemo(
+    () =>
+      buildSignalFeed([
+        scannerSignalItem(scanSummary?.winner ?? null, coAnalysis),
+        analyserSignalItem(report, coAnalysis),
+        ...trendlineFeed,
+      ]),
+    [scanSummary, report, coAnalysis, trendlineFeed]
+  );
+
+  const playedKeysRef = useRef<Set<string>>(new Set());
+  const settleBucketRef = useRef<number>(-1);
+  const [feedStore, setFeedStore] = useState<SignalFeedItem[]>([]);
+  const [toasts, setToasts] = useState<SignalToast[]>([]);
+
+  const {
+    managedSignals,
+    openSignals: openManagedSignals,
+    getManaged: getManagedSignal,
+  } = useSignalManager({
+    feed: feedStore,
+    candles,
+    currentSymbol: selectedSymbol,
+    precision,
+  });
+
+  const dismissToast = useCallback((toastId: string) => {
+    setToasts((prev) => prev.filter((t) => t.toastId !== toastId));
+  }, []);
+
+  const { notificationsEnabled, voiceEnabled } = settings;
+
+  useEffect(() => {
+    if (liveFeed.length === 0) return;
+    const fresh: SignalFeedItem[] = [];
+    for (const item of liveFeed) {
+      const key = `${item.symbol}|${item.timeframe}|${item.direction}`;
+      if (!playedKeysRef.current.has(key)) {
+        playedKeysRef.current.add(key);
+        fresh.push(item);
+      }
+    }
+    setFeedStore((prev) => {
+      const map = new Map(prev.map((i) => [`${i.symbol}|${i.timeframe}|${i.direction}`, i]));
+      for (const item of liveFeed) {
+        map.set(`${item.symbol}|${item.timeframe}|${item.direction}`, item);
+      }
+      return Array.from(map.values())
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(0, 20);
+    });
+    for (const item of fresh) {
+      playSignalChime(
+        item.source === 'CO-ANALYSIS'
+          ? 'validated'
+          : item.source === 'SCANNER'
+            ? 'scanner'
+            : item.source === 'TRENDLINE'
+              ? 'analyser'
+              : 'analyser'
+      );
+      if (notificationsEnabled) {
+        setToasts((prev) =>
+          [{ ...item, toastId: `${item.id}-${Date.now()}` }, ...prev].slice(0, 3)
+        );
+        showSignalNotification(item);
+      }
+      if (voiceEnabled) speakSignal(item);
+    }
+  }, [liveFeed, notificationsEnabled, voiceEnabled]);
+
+  // Trade Performance & Learning AI — journal every module's published signals and re-verify
+  // outcomes against fresh candles (id-keyed, so re-scans never duplicate records).
+  const aiJournalRef = useRef(aiJournal);
+  aiJournalRef.current = aiJournal;
+  const publishedSignature = useMemo(
+    () =>
+      Object.entries(aiModules)
+        .flatMap(([id, scanner]) =>
+          scanner.analyses.filter((a) => a.signal !== null).map((a) => `${id}:${a.signal?.id ?? ''}`)
+        )
+        .join('|'),
+    [aiModules]
+  );
+
+  useEffect(() => {
+    const entries: { module: string; signal: AiSignal }[] = [];
+    for (const [id, scanner] of Object.entries(aiModules)) {
+      for (const analysis of scanner.analyses) {
+        if (analysis.signal) entries.push({ module: id, signal: analysis.signal });
+      }
+    }
+    if (entries.length > 0) aiJournalRef.current.ingest(entries);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [publishedSignature]);
+
+  useEffect(() => {
+    if (candles.length === 0) return;
+    const bucket = Math.floor(Date.now() / 30_000);
+    if (settleBucketRef.current === bucket) return;
+    settleBucketRef.current = bucket;
+    const map = new Map<string, typeof candles>();
+    map.set(selectedSymbol, candles);
+    aiJournalRef.current.settle(map);
+  }, [candles, selectedSymbol]);
+
+  // AI ALERTS & NOTIFICATION MANAGER — collect published events from every module and the
+  // independent journal. The alert layer only classifies, de-duplicates and communicates.
+  const alertManagerRef = useRef(alertManager);
+  alertManagerRef.current = alertManager;
+  const alertSignature = useMemo(
+    () =>
+      [
+        ...Object.entries(aiModules).flatMap(([id, scanner]) =>
+          scanner.analyses.filter((a) => a.signal).map((a) => `${id}:${a.signal?.id}`)
+        ),
+        ...trendlineScanner.analyses.filter((a) => a.signal).map((a) => `trendlines:${a.signal?.id}`),
+        ...demandSupplyScanner.analyses
+          .filter((a) => a.signal)
+          .map((a) => `demandsupply:${a.signal?.id}`),
+        ...aiJournal.records.filter((r) => r.outcome !== 'PENDING').map((r) => `j:${r.id}:${r.outcome}`),
+      ].join('|'),
+    [aiModules, trendlineScanner.analyses, demandSupplyScanner.analyses, aiJournal.records]
+  );
+
+  useEffect(() => {
+    const manager = alertManagerRef.current;
+    const labels: Record<string, string> = {};
+    for (const def of AI_MODULE_DEFINITIONS) labels[def.id] = def.label;
+    manager.ingestObservations([
+      ...observationsFromAiModules(aiModules, labels),
+      ...observationsFromTrendline('Trendline AI', trendlineScanner.analyses),
+      ...observationsFromDemandSupply('Demand & Supply AI', demandSupplyScanner.analyses),
+    ]);
+    manager.ingestJournal(aiJournal.records);
+    manager.ingestObservations(
+      observationsFromAnomalies(strategyLab.anomalyReports, strategyLab.sensitivity)
+    );
+    manager.ingestObservations(observationsFromRegimeChanges(strategyLab.regimeChanges));
+    manager.ingestObservations(
+      observationsFromRecommendations(strategyLab.report?.recommendations ?? [])
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    alertSignature,
+    strategyLab.anomalyReports,
+    strategyLab.regimeChanges,
+    strategyLab.report,
+  ]);
+
+  // SYSTEM HEALTH & DIAGNOSTICS — collects real runtime evidence and runs the live
+  // integration test. Results are also pushed into the alert manager as system alerts.
+  const aiModulesActive = useMemo(() => {
+    let n = 0;
+    for (const scanner of Object.values(aiModules)) {
+      if (scanner.summary || scanner.analyses.length > 0) n += 1;
+    }
+    if (trendlineScanner.analyses.length > 0) n += 1;
+    if (demandSupplyScanner.analyses.length > 0) n += 1;
+    return n;
+  }, [aiModules, trendlineScanner.analyses, demandSupplyScanner.analyses]);
+
+  const health = useSystemHealth({
+    derivService,
+    markets,
+    marketsLoading,
+    selectedSymbol,
+    connectionStatus,
+    diagnostics,
+    lastTickAt,
+    feedStale,
+    candleCount: candles.length,
+    loadState,
+    dataError,
+    candles,
+    isAnalyzing,
+    report,
+    analysisError,
+    scannerRanAt: lastScannedAt,
+    scannerRows: monitorSummary?.readings.length ?? 0,
+    floatingScannerOpen,
+    aiModulesActive,
+    aiModulesTotal: AI_MODULE_DEFINITIONS.length + 2,
+    alertCount: alertManager.alerts.length,
+    backtestEvaluations: strategyLab.report?.evaluations.length ?? 0,
+    performanceRecords: historyRecords.length,
+    anomalyReports: strategyLab.anomalyReports.length,
+    onIntegrationResult: (result) => {
+      alertManagerRef.current.ingestObservations(observationsFromHealthTest(result));
+    },
+  });
+
+  const canRunAnalysis =
+    connectionStatus === 'connected' && loadState === 'ready' && candles.length >= 26;
+  const livePrice = candles.length > 0 ? candles[candles.length - 1].close : null;
+  const lifecycle = useMemo(
+    () =>
+      deriveSignalLifecycle(report, {
+        minQuality: settings.minQuality,
+        directionPreference: settings.directionPreference,
+      }),
+    [report, settings.minQuality, settings.directionPreference]
+  );
+
+  // The interface accent tracks the live system status (green bullish, red bearish,
+  // blue analysis, purple training, amber developing) unless pinned in Settings.
+  const systemStatus = useSystemStatus({
+    lifecycle,
+    report,
+    isAnalyzing,
+    isScanning,
+    trainingRunning: training.progress.status === 'RUNNING',
+    accentMode: settings.accentMode,
+    theme: settings.theme,
+  });
+  void systemStatus;
+
+  const workspaceValue: WorkspaceValue = {
+    markets,
+    marketsLoading,
+    selectedSymbol,
+    selectedMarket,
+    marketName,
+    marketFamily,
+    timeframe,
+    granularitySec,
+    precision,
+    connectionStatus,
+    connectionError,
+    diagnostics,
+    lastTickAt,
+    feedStale,
+    dataset,
+    candles,
+    liveTick,
+    loadState,
+    dataError,
+    isLoadingOlder,
+    livePrice,
+    controlMode,
+    runState,
+    report,
+    isAnalyzing,
+    analysisError,
+    canRunAnalysis,
+    lifecycle,
+    isScanning,
+    scanProgress,
+    progressMessage,
+    monitorSummary,
+    scannerSummary: scanSummary,
+    analyserTimeframe: scannerTimeframe,
+    setAnalyserTimeframe: setScannerTimeframe,
+    include1Sec,
+    autoRefresh,
+    lastScannedAt,
+    performanceRecords: historyRecords,
+    coAnalysis,
+    signalFeed: feedStore,
+    playSignalSound,
+    pendingSnapshot,
+    clearPendingSnapshot,
+    settings,
+    selectMarket,
+    selectTimeframe,
+    reconnect: () => {
+      void reconnect();
+    },
+    loadOlderCandles: () => {
+      void loadOlderCandles();
+    },
+    startAnalysis,
+    pauseAnalysis,
+    resumeAnalysis,
+    stopAnalysis,
+    setDirectionPreference,
+    setMinQuality,
+    toggleOverlay,
+    setCompactChart,
+    setTheme,
+    toggleTheme,
+    setAccentMode,
+    setSoundEnabled: setSoundEnabledSetting,
+    setSoundVolume: setSoundVolumeSetting,
+    setNotificationsEnabled,
+    setVoiceEnabled,
+    resetSettings,
+    setScannerTimeframe,
+    setInclude1Sec,
+    setAutoRefresh,
+    scanMarkets: () => {
+      void scanMarkets();
+    },
+    cancelScan,
+    refreshValidationSettlement: () => {
+      void refreshValidationSettlement();
+    },
+    recordAnalyserSignal,
+    recordValidatedSignal,
+    openChart,
+    openAnalyser,
+    navigate: (target: NavSection) => {
+      autoRunTriggeredRef.current = false;
+      selectSection(target);
+    },
+    training,
+    managedSignals,
+    openManagedSignals,
+    getManagedSignal,
+    trendlineScanner,
+    demandSupplyScanner,
+  };
+
+  // Exactly ONE chart in the whole app. Chart-centric modules render the shared canvas plus an
+  // intelligence panel beside it; data-heavy workspaces (dashboard, health, lab, history,
+  // alerts, settings) keep their original full-width layout.
+  const FULL_WIDTH_SECTIONS: AppSection[] = [
+    'dashboard',
+    'health',
+    'settings',
+    'training',
+    'history',
+    'alerts',
+    'strategylab',
+  ];
+  const isFullWidth = FULL_WIDTH_SECTIONS.includes(section);
+
   return (
-    <AppShell
-      activeRoute={route}
-      onNavigate={setRoute}
-      connectionState={connectionState}
-      isScanning={isScanning}
-      onScanAll={scanAllMarkets}
-      scanDisabled={symbols.length === 0}
-      signalBadge={confirmedCount}
-      lastTickAt={activeSymbolInfo?.lastTickEpoch ? activeSymbolInfo.lastTickEpoch * 1000 : null}
-    >
-      {route === 'BEST_MARKET' && (
-        <BestMarketView
-          symbols={symbols}
-          opportunities={opportunities}
-          selectedSymbol={selectedSymbol}
-          onSelectSymbol={(sym, goTo) => handleSelectSymbol(sym, goTo)}
-        />
-      )}
+    <WorkspaceProvider value={workspaceValue}>
+      <ModuleOverlayProvider value={{ overlay: moduleOverlay, setOverlay: setModuleOverlay }}>
+        {showOpening && <OpeningAnimation onComplete={() => setShowOpening(false)} />}
 
-      {route === 'STRATEGY_SCANNER' && (
-        <StrategyScannerView
-          symbols={symbols}
-          opportunities={opportunities}
-          selectedSymbol={selectedSymbol}
-          isScanning={isScanning}
-          storage={storage}
-          historyRevision={historyRevision}
-          onScanAll={scanAllMarkets}
-          onSelectSymbol={(sym, goTo) => handleSelectSymbol(sym, goTo)}
-          onSendWhatsApp={(opp) => dispatchWhatsAppAlert(opp, 'NEW_SIGNAL')}
-        />
-      )}
+        {settings.notificationsEnabled && (
+          <SignalToastStack toasts={toasts} onDismiss={dismissToast} onOpen={openChart} />
+        )}
 
-      {route === 'MTF_ENTRY' && (
-        <MtfPrecisionEntryView
-          symbols={symbols}
-          opportunities={opportunities}
-          selectedSymbol={selectedSymbol}
-          onSelectSymbol={(sym, goTo) => handleSelectSymbol(sym, goTo)}
-          wsManager={wsManager}
-        />
-      )}
-
-      {route === 'PLAIN_INDICES' && (
-        <LiveMarketScannerTable
-          title="Plain Volatility Indices"
-          subtitle="Standard Deriv volatility indices only (Jump, Step, Boom & Crash excluded)."
-          symbols={plainSymbols}
-          opportunities={opportunities}
-          selectedSymbol={selectedSymbol}
-          onSelectSymbol={(sym, openChart) =>
-            handleSelectSymbol(sym, openChart ? 'LIVE_CHART' : undefined)
-          }
-        />
-      )}
-
-      {route === 'VOLATILITY_1S' && (
-        <LiveMarketScannerTable
-          title="Volatility 1-Second Indices"
-          subtitle="High-frequency one-second Deriv volatility indices analysed separately from standard markets."
-          symbols={oneSecSymbols}
-          opportunities={opportunities}
-          selectedSymbol={selectedSymbol}
-          onSelectSymbol={(sym, openChart) =>
-            handleSelectSymbol(sym, openChart ? 'LIVE_CHART' : undefined)
-          }
-        />
-      )}
-
-      {route === 'LIVE_CHART' && (
-        <TradingWorkspace
-          symbols={symbols}
-          opportunities={opportunities}
-          selectedSymbol={selectedSymbol}
-          onSelectSymbol={setSelectedSymbol}
-          selectedTimeframe={selectedTimeframe}
-          onSelectTimeframe={setSelectedTimeframe}
-          candles={activeCandles}
-          availableTimeframes={availableTimeframes}
-          activeSymbolInfo={activeSymbolInfo}
-          activeOpp={activeOpp}
-          connectionState={connectionState}
-          waStatus={waStatus}
-          alertsAutoSend={settings.whatsappAutoSend}
-          onOpenAnalysis={() => setRoute('ANALYSIS')}
-          drawings={drawings}
-          onToggleDrawings={() => drawingStore.setVisible(!drawings.visible)}
-          onClearDrawings={() => drawingStore.clear()}
-          runner={runner}
-        />
-      )}
-
-      {route === 'ANALYSIS' && (
-        <div className="space-y-4">
-          <SectionTitle
-            eyebrow="Instrument analysis"
-            title={activeSymbolInfo?.displayName || selectedSymbol}
-            description="Top-down H4 → H1 → M15 → M5 → M1 strategy breakdown"
-            actions={
-              <div className="flex items-center gap-2">
-                <select
-                  value={selectedSymbol}
-                  onChange={(e) => setSelectedSymbol(e.target.value)}
-                  className="h-9 rounded-[10px] border border-line bg-surface-deepest px-3 text-[13px] text-fg-1 focus:border-accent focus:outline-none"
-                >
-                  {symbols.map((s) => (
-                    <option key={s.symbol} value={s.symbol}>
-                      {s.displayName} ({s.is1s ? '1s' : 'Plain'})
-                    </option>
-                  ))}
-                </select>
-              </div>
+        <div className="flex h-dvh w-full bg-app text-ink overflow-hidden">
+          <Sidebar
+            active={section}
+            onSelect={selectSection}
+            badges={{ alerts: alertManager.unreadCount }}
+            statusBadge={
+              <ConnectionBadge status={connectionStatus} onReconnect={() => void reconnect()} />
             }
           />
-          {activeOpp ? (
-            <OpportunityCard
-              opp={activeOpp}
-              onOpenChart={(sym) => handleSelectSymbol(sym, 'LIVE_CHART')}
-              onSendWhatsApp={(opp) => dispatchWhatsAppAlert(opp, 'NEW_SIGNAL')}
+
+          <div className="flex flex-col flex-1 min-w-0">
+            <TopBar />
+
+            <div className="flex flex-1 min-h-0 min-w-0">
+              {isFullWidth ? (
+                <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
+                  <div key={section} className="animate-view-enter flex flex-col min-h-full">
+                    {section === 'dashboard' && <DashboardView />}
+                    {section === 'health' && <SystemHealthView health={health} />}
+                    {section === 'settings' && <SettingsView />}
+                    {section === 'training' && <TrainingView />}
+                    {section === 'history' && <TradeHistoryView />}
+                    {section === 'alerts' && <AlertsView manager={alertManager} />}
+                    {section === 'strategylab' && <StrategyLabView lab={strategyLab} />}
+                  </div>
+                </main>
+              ) : (
+                <>
+                  <section className="flex flex-col flex-1 min-w-0 min-h-0">
+                    <SingleChartCanvas
+                      moduleOverlay={moduleOverlay}
+                      panelToggle={{ open: panelOpen, onToggle: () => setPanelOpen((v) => !v) }}
+                    />
+                  </section>
+
+                  <aside
+                    className={`shrink-0 border-l border-line bg-app min-h-0 overflow-hidden transition-[width] duration-200 ${
+                      panelOpen ? 'w-full xl:w-[420px]' : 'hidden xl:block xl:w-[420px]'
+                    }`}
+                  >
+                    <div className="h-full min-h-0 overflow-hidden flex flex-col">
+                      {section === 'analyser' && <ChartAnalyserView />}
+                      {section === 'scanner' && (
+                        <div className="h-full overflow-y-auto">
+                          <VolatilityScannerView
+                            isScanning={isScanning}
+                            scanProgress={scanProgress}
+                            progressMessage={progressMessage}
+                            monitorSummary={monitorSummary}
+                            scannerSummary={scanSummary}
+                            timeframe={scannerTimeframe}
+                            include1Sec={include1Sec}
+                            autoRefresh={autoRefresh}
+                            lastScannedAt={lastScannedAt}
+                            onTimeframeChange={setScannerTimeframe}
+                            onToggle1Sec={setInclude1Sec}
+                            onToggleAutoRefresh={setAutoRefresh}
+                            onScanNow={() => void scanMarkets()}
+                            onCancelScan={cancelScan}
+                            onOpenAnalyser={openAnalyser}
+                            onOpenChartOnly={openChart}
+                          />
+                        </div>
+                      )}
+                      {section === 'trendlines' && (
+                        <div className="h-full overflow-y-auto">
+                          <TrendlineScannerView scanner={trendlineScanner} />
+                        </div>
+                      )}
+                      {section === 'demandsupply' && (
+                        <div className="h-full overflow-y-auto">
+                          <DemandSupplyAIView scanner={demandSupplyScanner} />
+                        </div>
+                      )}
+                      {(section === 'boschoch' ||
+                        section === 'technical' ||
+                        section === 'smc' ||
+                        section === 'liquidity' ||
+                        section === 'fvg' ||
+                        section === 'orderblock' ||
+                        section === 'momentum' ||
+                        section === 'regime' ||
+                        section === 'confluence' ||
+                        section === 'live' ||
+                        section === 'performance') && (
+                        <div className="h-full overflow-y-auto">
+                          <AiTabView id={section} scanners={aiModules} journal={aiJournal} />
+                        </div>
+                      )}
+                      {section === 'risk' && (
+                        <div className="h-full overflow-y-auto">
+                          <RiskView />
+                        </div>
+                      )}
+                    </div>
+                  </aside>
+                </>
+              )}
+            </div>
+
+            <MobileNav
+              active={section}
+              onSelect={selectSection}
+              badges={{ alerts: alertManager.unreadCount }}
+              onOpenMenu={() => setMobileMenuOpen(true)}
             />
-          ) : (
-            <Card>
-              <EmptyState
-                icon={<LineChart className="h-5 w-5" />}
-                title="Gathering multi-timeframe history"
-                description={`Building H4 → M1 candle buffers for ${selectedSymbol}. Analysis appears once enough history has streamed in.`}
-              />
-            </Card>
-          )}
+          </div>
         </div>
-      )}
 
-      {route === 'SIGNALS' && (
-        <SignalsView
-          opportunities={oppList}
-          waStatus={waStatus}
-          waLogs={waLogs}
-          waService={waService}
-          onRefreshStatus={refreshWaStatus}
-          onManualDispatch={(opp) => dispatchWhatsAppAlert(opp, 'NEW_SIGNAL')}
-          onOpenChart={(sym) => handleSelectSymbol(sym, 'LIVE_CHART')}
+        {mobileMenuOpen && (
+          <MobileMenuSheet
+            active={section}
+            onSelect={selectSection}
+            onClose={() => setMobileMenuOpen(false)}
+          />
+        )}
+
+        <FloatingScanner
+          open={floatingScannerOpen}
+          onClose={() => setFloatingScannerOpen(false)}
+          monitorSummary={monitorSummary}
+          markets={markets}
+          timeframe={scannerTimeframe}
+          livePrice={livePrice}
+          selectedSymbol={selectedSymbol}
+          onOpenMarket={openChart}
+          onOpenAnalyser={openAnalyser}
         />
-      )}
 
-      {route === 'HISTORY' && <PerformanceDashboard storage={storage} />}
-
-      {route === 'SETTINGS' && (
-        <SettingsView
-          settings={settings}
-          onUpdateSettings={handleUpdateSettings}
-          onReconnectWs={() => wsManager.reconnect()}
-          waStatus={waStatus}
-          onRefreshWaStatus={refreshWaStatus}
-        />
-      )}
-    </AppShell>
+        {!isFullWidth && !floatingScannerOpen && (
+          <button
+            type="button"
+            onClick={() => setFloatingScannerOpen(true)}
+            data-testid="open-floating-scanner"
+            className="fixed bottom-20 right-4 lg:bottom-6 z-20 inline-flex items-center gap-1.5 h-10 px-3.5 rounded-full bg-accent text-white text-[12px] font-semibold shadow-lg hover:bg-accent-soft active:scale-[0.98] transition-all duration-150 cursor-pointer"
+          >
+            <Radar className="w-4 h-4" aria-hidden="true" />
+            Scanner
+          </button>
+        )}
+      </ModuleOverlayProvider>
+    </WorkspaceProvider>
   );
 }
-

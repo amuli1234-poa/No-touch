@@ -1,216 +1,133 @@
 @import "tailwindcss";
 
 /* ==========================================================================
-   DERIV NO TOUCH SCANNER V4.0 PRO — Design System
-   Dark-first, enterprise fintech SaaS. Tokens are the single source of truth.
+   WickSentinel — unified design system.
+
+   Two surfaces share one token set:
+     * the public site (landing, auth, legal) — blue-led brand palette;
+     * the trading workspace (dashboard) — its own terminal palette.
+
+   Both read the same `--color-*` custom properties, so a token only has one
+   definition. Where the two palettes used the same name with different values
+   (app, surface, line, accent), the public-site value wins: the workspace
+   overrides `--color-accent`/`--color-accent-soft` at runtime from live system
+   status (see `src/theme/accents.ts`), so its accent is never the default.
    ========================================================================== */
 
-:root {
-  color-scheme: dark;
+@theme {
+  --font-sans: Inter, 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
+    Roboto, sans-serif;
+  --font-display: 'Plus Jakarta Sans', Inter, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  /* ------------------------------------------------------------------
-     Core palette — inspired by reatech360.com.
-     The reference product is built on a near-black navy (#060b16) with a
-     single confident blue (#0068B5) and a light blue (#60A5FA) for accent
-     text. The same scale is used here so both products feel like one
-     family, while the scanner keeps its own semantic roles.
+  /* ---- Surfaces ---------------------------------------------------------- */
+  --color-app: #080d16;
+  --color-nav: #0d1424;
+  --color-surface: #101827;
+  --color-surface-raised: #141e2e;
+  --color-surface-elevated: #16202f;
+  --color-surface-deep: #0b1220;
+  --color-surface-deepest: #0b1220;
+  --color-surface-inset: #0b1220;
+  --color-panel: #162033;
+  --color-elevated: #1b2740;
 
-     Dark is the default. The light theme is a parallel token set under
-     `[data-theme='light']` below; components reference the semantic
-     variables, never the raw palette, so switching the attribute on
-     <html> re-skins the whole product.
-     ------------------------------------------------------------------ */
+  /* ---- Structure --------------------------------------------------------- */
+  --color-line: #202c3d;
+  --color-line-soft: #1a2438;
+  --color-line-strong: #2c3a4f;
 
-  /* Surfaces — institutional dark navy/charcoal scale. */
-  --app-bg: #080d16;
-  --surface: #101827;
-  --surface-raised: #141e2e;
-  --surface-elevated: #16202f;
-  --surface-glass: rgba(16, 24, 39, 0.72);
-  --surface-deep: #0b1220;
-  --surface-deepest: #0b1220;
-  --surface-inset: #0b1220;
+  /* ---- Accent ------------------------------------------------------------ */
+  --color-accent: #2878d0;
+  --color-accent-strong: #3a8fe0;
+  --color-accent-soft: #6fb2ea;
+  --color-accent-cyan: #4aa3e8;
+  --color-on-accent: #ffffff;
+  --color-teal: #2dd4bf;
+  --color-violet: #a78bfa;
 
-  /* Accents — one confident blue for interactive chrome. */
-  --accent: #2878d0;
-  --accent-strong: #3a8fe0;
-  --accent-soft: #6fb2ea;
-  --accent-cyan: #4aa3e8;
-  --on-accent: #ffffff;
+  /* ---- Semantic status --------------------------------------------------- */
+  --color-success: #25b887;
+  --color-warning: #d9a441;
+  --color-danger: #d64c58;
+  --color-bull: #22c55e;
+  --color-bear: #ef4444;
+  --color-warn: #f59e0b;
+  --color-rise: #2878d0;
+  --color-fall: #d64c58;
+  --color-neutral-signal: #a0aab8;
+  --color-live: #25b887;
 
-  /* Semantic status — tuned for legibility as text on dark surfaces. */
-  --success: #25b887;
-  --warning: #d9a441;
-  --danger: #d64c58;
-
-  /* Directional language. Blue and red are semantics, not predictions. */
-  --rise: #2878d0;
-  --fall: #d64c58;
-  --neutral-signal: #a0aab8;
-  --live: #25b887;
-
-  /* Text */
-  --text-primary: #e6edf5;
-  --text-secondary: #8492a6;
-  --text-muted: #59677a;
-
-  /* Structure */
-  --border: #202c3d;
-  --border-soft: #182233;
-  --border-strong: #2c3a4f;
-  --ring: rgba(40, 120, 208, 0.45);
-
-  /* Text tiers used by Tailwind utilities. */
-  --fg-1: #e6edf5;
-  --fg-2: #d3dce8;
-  --fg-3: #b4c0d0;
-  --fg-4: #8492a6;
-  --fg-5: #6e7c90;
-  --fg-6: #59677a;
-  --fg-7: #4a5768;
-
-  /* Data-viz tints that need to differ between themes. */
-  --tint-sky: #7dd3fc;
-  --tint-teal: #2fd4a8;
-  --tint-amber: #f5b451;
-
-
-  /* Radii — matches the reference's 10 / 12 / 16 / 20 scale */
-  --radius-sm: 8px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 18px;
-
-  /* Elevation */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 8px 24px -12px rgba(0, 0, 0, 0.7);
-  --shadow-lg: 0 24px 60px -24px rgba(0, 0, 0, 0.8);
-  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 4px 16px rgba(0, 0, 0, 0.2),
-    0 20px 60px -24px rgba(0, 0, 0, 0.55);
-  --shadow-modal: 0 40px 100px -40px rgba(0, 0, 0, 0.9);
-  --shadow-control: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --shadow-accent: 0 4px 14px -4px rgba(40, 120, 208, 0.65);
-  --shadow-accent-lg: 0 10px 30px -12px rgba(40, 120, 208, 0.85);
-
-  /* Chart surfaces + series colours (read at runtime by the chart engine,
-     which needs concrete colour strings rather than classes). */
-  --chart-bg: #0b1220;
-  --chart-grid: #16202f;
-  --chart-border: #202c3d;
-  --chart-text: #8492a6;
-  --chart-crosshair: #4aa3e8;
-  --chart-crosshair-label: #1b4a72;
-  --chart-up: #25b887;
-  --chart-down: #d64c58;
-  --chart-spot: #4aa3e8;
-  --chart-sweep: #d9a441;
-  --chart-structural: #2878d0;
-  --chart-barrier: #d64c58;
-  --chart-swing: #d9a441;
-  --chart-adaptive: #2878d0;
-  --chart-fvg: #6fb2ea;
-  --chart-fvg-mid: #a9cdf0;
-  --chart-zone-support: #25b887;
-  --chart-zone-resistance: #d64c58;
-  --chart-zone-support-fill: rgba(37, 184, 135, 0.11);
-  --chart-zone-resistance-fill: rgba(214, 76, 88, 0.11);
-  --chart-flip-support: #25b887;
-  --chart-flip-resistance: #d64c58;
-  --chart-flip-support-fill: rgba(37, 184, 135, 0.14);
-  --chart-flip-resistance-fill: rgba(214, 76, 88, 0.14);
-  --chart-trend-bull: rgba(37, 184, 135, 0.82);
-  --chart-trend-bear: rgba(214, 76, 88, 0.82);
-  --chart-trend-neutral: rgba(160, 170, 184, 0.72);
-  --chart-protected-high: #d9a441;
-  --chart-protected-low: #4aa3e8;
-  --chart-pattern-neckline: rgba(111, 178, 234, 0.85);
-  --chart-pattern-boundary: rgba(160, 170, 184, 0.82);
-  --chart-pattern-pole: rgba(74, 163, 232, 0.72);
-  --chart-breakout: #4aa3e8;
-
-  /* Layout */
-  --nav-width: 244px;
-  --nav-width-collapsed: 68px;
-  --topbar-height: 60px;
-
-  /* ------------------------------------------------------------------
-     WickSentinel public brand palette (marketing site only).
-     Aligned to the same blue-led system as the workspace.
-     ------------------------------------------------------------------ */
-  --ws-navy: #060b16;
-  --ws-charcoal: #0d1420;
-  --ws-charcoal-raised: #121b2b;
-  --ws-violet: #0068B5;
-  --ws-violet-soft: #60A5FA;
-  --ws-cyan: #38BDF8;
-  --ws-white: #FFFFFF;
-  --ws-muted: #8A97AE;
-  --ws-hairline: rgba(138, 151, 174, 0.16);
+  /* ---- Text tiers -------------------------------------------------------- */
+  --color-ink: #e6edf7;
+  --color-muted: #93a4bd;
+  --color-faint: #64748b;
+  --color-fg-1: #e6edf5;
+  --color-fg-2: #d3dce8;
+  --color-fg-3: #b4c0d0;
+  --color-fg-4: #8492a6;
+  --color-fg-5: #6e7c90;
+  --color-fg-6: #59677a;
+  --color-fg-7: #4a5768;
+  --color-tint-sky: #7dd3fc;
+  --color-tint-teal: #2fd4a8;
+  --color-tint-amber: #f5b451;
 }
 
 /* ==========================================================================
-   LIGHT THEME
-   Same semantic slots, daylight values. Every component reads the semantic
-   variables above, so only this block changes between themes.
+   LIGHT THEME — overrides every token so the whole product re-skins.
    ========================================================================== */
 
 [data-theme='light'] {
-  color-scheme: light;
+  --color-app: #f6f8fc;
+  --color-nav: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-raised: #f1f5f9;
+  --color-surface-elevated: #ffffff;
+  --color-surface-deep: #f8fafc;
+  --color-surface-deepest: #eef2f7;
+  --color-surface-inset: #f8fafc;
+  --color-panel: #f8fafc;
+  --color-elevated: #edf1f5;
 
-  /* Surfaces */
-  --app-bg: #f6f8fc;
-  --surface: #ffffff;
-  --surface-raised: #f1f5f9;
-  --surface-elevated: #ffffff;
-  --surface-glass: rgba(255, 255, 255, 0.78);
-  --surface-deep: #f8fafc;
-  --surface-deepest: #eef2f7;
-  --surface-inset: #f8fafc;
+  --color-line: #dbe3ee;
+  --color-line-soft: #e6ecf4;
+  --color-line-strong: #c3cede;
 
-  /* Accents — the blue stays, but leans a touch darker for contrast on white */
-  --accent: #0068B5;
-  --accent-strong: #0057a0;
-  --accent-soft: #1D6FC0;
-  --accent-cyan: #0284C7;
+  --color-accent: #0068b5;
+  --color-accent-strong: #0057a0;
+  --color-accent-soft: #1d6fc0;
+  --color-accent-cyan: #0284c7;
+  --color-on-accent: #ffffff;
+  --color-teal: #089981;
+  --color-violet: #7c3aed;
 
-  /* Semantic */
-  --success: #15803D;
-  --warning: #B45309;
-  --danger: #DC2626;
+  --color-success: #15803d;
+  --color-warning: #b45309;
+  --color-danger: #dc2626;
+  --color-bull: #089981;
+  --color-bear: #f23645;
+  --color-warn: #f59e0b;
+  --color-rise: #1d6fc0;
+  --color-fall: #c0392b;
+  --color-neutral-signal: #64748b;
+  --color-live: #15803d;
 
-  /* Directional language — darkened for contrast on light surfaces. */
-  --rise: #1D6FC0;
-  --fall: #C0392B;
-  --neutral-signal: #64748B;
-  --live: #15803D;
+  --color-ink: #202938;
+  --color-muted: #687386;
+  --color-faint: #8b95a7;
+  --color-fg-1: #0a1628;
+  --color-fg-2: #1e293b;
+  --color-fg-3: #334155;
+  --color-fg-4: #475569;
+  --color-fg-5: #55637a;
+  --color-fg-6: #5b6a80;
+  --color-fg-7: #6b7a91;
+  --color-tint-sky: #0369a1;
+  --color-tint-teal: #0f766e;
+  --color-tint-amber: #b45309;
 
-  /* Text */
-  --text-primary: #0a1628;
-  --text-secondary: #475569;
-  --text-muted: #64748B;
-
-  /* Structure */
-  --border: #dbe3ee;
-  --border-soft: #e6ecf4;
-  --border-strong: #c3cede;
-  --ring: rgba(0, 104, 181, 0.4);
-
-  /* Text tiers — slate scale read from the top in light mode. */
-  --fg-1: #0a1628;
-  --fg-2: #1e293b;
-  --fg-3: #334155;
-  --fg-4: #475569;
-  --fg-5: #55637a;
-  --fg-6: #5b6a80;
-  --fg-7: #6b7a91;
-
-  /* Data-viz tints darkened for legibility on light surfaces. */
-  --tint-sky: #0369a1;
-  --tint-teal: #0f766e;
-  --tint-amber: #b45309;
-
-
-  /* Elevation — softer, blue-tinted in daylight. */
+  /* Non-colour tokens (shadows, brand hairlines) in daylight. */
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.08);
   --shadow-md: 0 8px 24px -14px rgba(15, 23, 42, 0.22);
   --shadow-lg: 0 24px 60px -28px rgba(15, 23, 42, 0.28);
@@ -221,128 +138,100 @@
   --shadow-accent: 0 4px 14px -4px rgba(0, 104, 181, 0.4);
   --shadow-accent-lg: 0 10px 30px -12px rgba(0, 104, 181, 0.45);
 
-  /* Chart surfaces + series colours */
-  --chart-bg: #ffffff;
-  --chart-grid: #eef2f7;
-  --chart-border: #e6ecf4;
-  --chart-text: #475569;
-  --chart-crosshair: #0284c7;
-  --chart-crosshair-label: #0369a1;
-  --chart-up: #15803d;
-  --chart-down: #dc2626;
-  --chart-spot: #0284c7;
-  --chart-sweep: #b45309;
-  --chart-structural: #0068b5;
-  --chart-barrier: #dc2626;
-  --chart-swing: #b45309;
-  --chart-adaptive: #0369a1;
-  --chart-fvg: #2563eb;
-  --chart-fvg-mid: #3b82f6;
-  --chart-zone-support: #15803d;
-  --chart-zone-resistance: #dc2626;
-  --chart-zone-support-fill: rgba(21, 128, 61, 0.12);
-  --chart-zone-resistance-fill: rgba(220, 38, 38, 0.12);
-  --chart-flip-support: #0d9488;
-  --chart-flip-resistance: #e11d48;
-  --chart-flip-support-fill: rgba(13, 148, 136, 0.13);
-  --chart-flip-resistance-fill: rgba(225, 29, 72, 0.13);
-  --chart-trend-bull: rgba(13, 148, 136, 0.9);
-  --chart-trend-bear: rgba(217, 119, 6, 0.9);
-  --chart-trend-neutral: rgba(100, 116, 139, 0.8);
-  --chart-protected-high: #b45309;
-  --chart-protected-low: #0284c7;
-  --chart-pattern-neckline: rgba(219, 39, 119, 0.9);
-  --chart-pattern-boundary: rgba(147, 51, 234, 0.85);
-  --chart-pattern-pole: rgba(2, 132, 199, 0.8);
-  --chart-breakout: #0284c7;
-
-  /* Marketing palette in daylight. */
   --ws-navy: #f6f8fc;
   --ws-charcoal: #ffffff;
   --ws-charcoal-raised: #f1f5f9;
-  --ws-violet: #0068B5;
-  --ws-violet-soft: #1D6FC0;
-  --ws-cyan: #0284C7;
+  --ws-violet: #0068b5;
+  --ws-violet-soft: #1d6fc0;
+  --ws-cyan: #0284c7;
   --ws-white: #0a1628;
-  --ws-muted: #64748B;
+  --ws-muted: #64748b;
   --ws-hairline: rgba(15, 23, 42, 0.1);
+
+  color-scheme: light;
 }
 
 /* ==========================================================================
-   Tailwind v4 theme bridge
-   Maps semantic variables onto utility class names so markup can say
-   `bg-surface`, `text-fg-4`, `border-line` … instead of hardcoding hex.
-   `inline` keeps the var() reference so the values track the active theme.
+   Non-colour tokens (dark defaults). Kept outside `@theme` because they are
+   consumed via `var(...)` in markup, not through generated utilities.
    ========================================================================== */
 
-@theme inline {
-  --color-app: var(--app-bg);
-  --color-surface: var(--surface);
-  --color-surface-raised: var(--surface-raised);
-  --color-surface-elevated: var(--surface-elevated);
-  --color-surface-deep: var(--surface-deep);
-  --color-surface-deepest: var(--surface-deepest);
-  --color-surface-inset: var(--surface-inset);
+:root {
+  color-scheme: dark;
 
-  --color-line: var(--border);
-  --color-line-soft: var(--border-soft);
-  --color-line-strong: var(--border-strong);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 24px -12px rgba(0, 0, 0, 0.7);
+  --shadow-lg: 0 24px 60px -24px rgba(0, 0, 0, 0.8);
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 4px 16px rgba(0, 0, 0, 0.2),
+    0 20px 60px -24px rgba(0, 0, 0, 0.55);
+  --shadow-modal: 0 40px 100px -40px rgba(0, 0, 0, 0.9);
+  --shadow-control: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-accent: 0 4px 14px -4px rgba(40, 120, 208, 0.65);
+  --shadow-accent-lg: 0 10px 30px -12px rgba(40, 120, 208, 0.85);
 
-  --color-accent: var(--accent);
-  --color-accent-strong: var(--accent-strong);
-  --color-accent-soft: var(--accent-soft);
-  --color-accent-cyan: var(--accent-cyan);
-  --color-on-accent: var(--on-accent);
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
 
-  --color-success: var(--success);
-  --color-warning: var(--warning);
-  --color-danger: var(--danger);
+  --nav-width: 244px;
+  --nav-width-collapsed: 68px;
+  --topbar-height: 60px;
 
-  --color-rise: var(--rise);
-  --color-fall: var(--fall);
-  --color-neutral-signal: var(--neutral-signal);
-  --color-live: var(--live);
+  /* Public-site brand palette (marketing surfaces only). */
+  --ws-navy: #060b16;
+  --ws-charcoal: #0d1420;
+  --ws-charcoal-raised: #121b2b;
+  --ws-violet: #0068b5;
+  --ws-violet-soft: #60a5fa;
+  --ws-cyan: #38bdf8;
+  --ws-white: #ffffff;
+  --ws-muted: #8a97ae;
+  --ws-hairline: rgba(138, 151, 174, 0.16);
 
-  --color-fg-1: var(--fg-1);
-  --color-fg-2: var(--fg-2);
-  --color-fg-3: var(--fg-3);
-  --color-fg-4: var(--fg-4);
-  --color-fg-5: var(--fg-5);
-  --color-fg-6: var(--fg-6);
-  --color-fg-7: var(--fg-7);
+  /* Live "system status" accent. Overridden at runtime by useSystemStatus so
+     the whole workspace shifts hue with the market/AI state. */
+  --accent-rgb: 56 189 248;
+  --accent-glow: rgba(56, 189, 248, 0.35);
+  --accent-soft-rgb: 14 165 233;
+}
 
-  --color-tint-sky: var(--tint-sky);
-  --color-tint-teal: var(--tint-teal);
-  --color-tint-amber: var(--tint-amber);
-
-  --font-sans: Inter, 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-  --font-display: 'Plus Jakarta Sans', Inter, system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+[data-theme='light'] {
+  --accent-glow: rgba(2, 132, 199, 0.28);
 }
 
 @layer base {
   * {
-    border-color: var(--border);
+    border-color: var(--color-line);
   }
 
   html {
     -webkit-text-size-adjust: 100%;
   }
 
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
   body {
     min-width: 320px;
-    background: var(--app-bg);
-    color: var(--text-primary);
-    font-family: Inter, 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    background-color: var(--color-app);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
     font-feature-settings: 'ss01' on, 'cv01' on;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    transition: background-color 260ms ease, color 260ms ease;
   }
 
   code,
   pre,
   .font-mono {
-    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+    font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }
 
@@ -368,13 +257,13 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 a:focus-visible {
-  outline: 2px solid var(--accent-cyan);
+  outline: 2px solid var(--color-accent-cyan);
   outline-offset: 2px;
 }
 
 ::selection {
-  background: rgba(0, 104, 181, 0.3);
-  color: var(--text-primary);
+  background: color-mix(in oklab, var(--color-accent) 30%, transparent);
+  color: var(--color-ink);
 }
 
 /* ---- Scrollbars ---------------------------------------------------------- */
@@ -386,49 +275,120 @@ a:focus-visible {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 4px;
-  border: 2px solid transparent;
-  background-clip: content-box;
+  background: var(--color-line-strong);
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--fg-5);
-  background-clip: content-box;
+  background: var(--color-fg-5);
 }
 
-/* ---- Utilities ----------------------------------------------------------- */
-.surface-grid {
-  background-image:
-    linear-gradient(color-mix(in srgb, var(--border) 35%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--border) 35%, transparent) 1px, transparent 1px);
-  background-size: 48px 48px;
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line) transparent;
 }
 
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-.no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
+/* =========================================================================
+   ANIMATION LIBRARY
+   ========================================================================= */
 
-@keyframes shimmer {
-  100% {
+@keyframes radar-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
     transform: translateX(100%);
   }
 }
-.skeleton {
-  position: relative;
-  overflow: hidden;
-  background: var(--surface-raised);
+
+@keyframes radar-pulse {
+  0% {
+    opacity: 0.3;
+    transform: scale(0.85);
+  }
+  70% {
+    opacity: 0;
+    transform: scale(1.7);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.7);
+  }
 }
-.skeleton::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
-  animation: shimmer 1.6s infinite;
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes gradient-drift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes glow-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes live-ping {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.7;
+  }
+  70% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+@keyframes marker-drop {
+  0% {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.86);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(2px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes slide-up-fade {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes fade-in {
@@ -441,8 +401,78 @@ a:focus-visible {
     transform: translateY(0);
   }
 }
-.animate-fade-in {
-  animation: fade-in 0.22s ease-out both;
+
+@keyframes sheet-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes view-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes shimmer-line {
+  from {
+    background-position: -180% 0;
+  }
+  to {
+    background-position: 180% 0;
+  }
+}
+
+@keyframes tp-flash {
+  0% {
+    background-color: color-mix(in oklab, var(--color-accent) 34%, transparent);
+    box-shadow: 0 0 0 0 var(--accent-glow);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
+
+@keyframes value-tick {
+  0% {
+    opacity: 0.35;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes bounce-subtle {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
 }
 
 @keyframes pulse-ring {
@@ -456,8 +486,120 @@ a:focus-visible {
     box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
   }
 }
+
+/* =========================================================================
+   ANIMATION + UTILITY CLASSES
+   ========================================================================= */
+
+.animate-toast-in {
+  animation: toast-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.animate-radar-sweep {
+  animation: radar-sweep 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+.animate-radar-pulse {
+  animation: radar-pulse 1.8s ease-out infinite;
+}
+.animate-live-ping {
+  animation: live-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+.animate-marker-drop {
+  animation: marker-drop 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.animate-slide-up {
+  animation: slide-up-fade 340ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.animate-view-enter {
+  animation: view-enter 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.animate-tp-flash {
+  animation: tp-flash 1.1s ease-out 1;
+}
+.animate-value-tick {
+  animation: value-tick 320ms ease-out both;
+}
+.animate-spin-slow {
+  animation: spin-slow 2.6s linear infinite;
+}
+.animate-bounce-subtle {
+  animation: bounce-subtle 2.4s ease-in-out infinite;
+}
+.animate-glow-breathe {
+  animation: glow-breathe 3.4s ease-in-out infinite;
+}
+.animate-fade-in {
+  animation: fade-in 0.22s ease-out both;
+}
+
 .pulse-live {
   animation: pulse-ring 2.2s infinite;
+}
+
+.surface-grid {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--color-line) 35%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--color-line) 35%, transparent) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-surface-raised);
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+  animation: shimmer 1.6s infinite;
+}
+
+/* Animated gradient surface. Set --grad-a/--grad-b inline to retint. */
+.gradient-surface {
+  background-image: linear-gradient(
+    120deg,
+    var(--grad-a, color-mix(in oklab, var(--color-accent) 14%, transparent)),
+    var(--grad-b, transparent) 42%,
+    color-mix(in oklab, var(--color-violet) 12%, transparent)
+  );
+  background-size: 220% 220%;
+  animation: gradient-drift 14s ease infinite;
+}
+
+/* Glow ring that tracks the live accent colour. */
+.glow-accent {
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-accent) 30%, transparent),
+    0 0 22px -6px var(--accent-glow);
+}
+
+.text-glow {
+  text-shadow: 0 0 18px var(--accent-glow);
+}
+
+.shimmer-line {
+  background-image: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--color-accent) 55%, transparent),
+    transparent
+  );
+  background-size: 180% 100%;
+  animation: shimmer-line 1.6s linear infinite;
+}
+
+/* Smooth cross-screen transition for the main view container. */
+.view-transition {
+  transition: opacity 220ms ease, transform 220ms ease;
 }
 
 /* ==========================================================================
@@ -469,34 +611,34 @@ a:focus-visible {
    ========================================================================== */
 
 .ws-hero-band {
-  --app-bg: #060b16;
-  --surface: #0d1420;
-  --surface-raised: #121b2b;
-  --surface-elevated: #162133;
-  --surface-deep: #0a1018;
-  --surface-deepest: #0b1220;
-  --border: #1e2b40;
-  --border-soft: #162133;
-  --border-strong: #2f4258;
-  --fg-1: #f1f5f9;
-  --fg-2: #e2e8f0;
-  --fg-3: #cbd5e1;
-  --fg-4: #94a3b8;
-  --fg-5: #a8b5c9;
-  --fg-6: #94a3b8;
-  --fg-7: #7b8aa3;
-  --accent-soft: #60A5FA;
-  --tint-sky: #7dd3fc;
-  --tint-teal: #2fd4a8;
-  --tint-amber: #f5b451;
-  --success: #4ADE80;
-  --warning: #FBBF24;
-  --danger: #F87171;
+  --color-app: #060b16;
+  --color-surface: #0d1420;
+  --color-surface-raised: #121b2b;
+  --color-surface-elevated: #162133;
+  --color-surface-deep: #0a1018;
+  --color-surface-deepest: #0b1220;
+  --color-line: #1e2b40;
+  --color-line-soft: #162133;
+  --color-line-strong: #2f4258;
+  --color-fg-1: #f1f5f9;
+  --color-fg-2: #e2e8f0;
+  --color-fg-3: #cbd5e1;
+  --color-fg-4: #94a3b8;
+  --color-fg-5: #a8b5c9;
+  --color-fg-6: #94a3b8;
+  --color-fg-7: #7b8aa3;
+  --color-accent-soft: #60a5fa;
+  --color-tint-sky: #7dd3fc;
+  --color-tint-teal: #2fd4a8;
+  --color-tint-amber: #f5b451;
+  --color-success: #4ade80;
+  --color-warning: #fbbf24;
+  --color-danger: #f87171;
   --ws-hairline: rgba(138, 151, 174, 0.16);
 }
 
 /* ==========================================================================
-   WickSentinel landing hero — photographic background
+   Landing hero — photographic background
    The photograph (Pexels 38892300) is a very dark night scene, so the scrim
    stays light and keeps the subject visible while guaranteeing text contrast.
    The hero is intentionally theme-independent: it keeps its dark scrim and
@@ -522,11 +664,6 @@ a:focus-visible {
   inset: 0;
 }
 
-/* The photograph itself. `cover` never stretches; position keeps the lit
-   structures centred and biased slightly below the top of the frame.
-   The source file is severely underexposed (median luminance ≈ 8/255), so a
-   brightness/contrast lift reveals the subject; the overlays below then bring
-   it back toward the brand palette and guarantee text contrast. */
 .ws-hero-bg__image {
   background-image: url('https://images.pexels.com/photos/38892300/pexels-photo-38892300.jpeg?auto=compress&cs=tinysrgb&w=1920');
   background-size: cover;
@@ -535,7 +672,6 @@ a:focus-visible {
   filter: brightness(3) contrast(1.45) saturate(1.25);
 }
 
-/* Navy wash — pulls the lifted photograph toward #080D1A. */
 .ws-hero-bg__navy {
   background: linear-gradient(
     180deg,
@@ -545,8 +681,6 @@ a:focus-visible {
   );
 }
 
-/* Directional scrim — deepens the left column (headline) and eases off to the
-   right so the photograph stays visible around the scanner preview. */
 .ws-hero-bg__scrim {
   background: linear-gradient(
     100deg,
@@ -557,7 +691,6 @@ a:focus-visible {
   );
 }
 
-/* Brand tint — violet top-left, cyan right, amber warmth where the photo is warm. */
 .ws-hero-bg__tint {
   background:
     radial-gradient(60% 70% at 12% 18%, rgba(0, 104, 181, 0.26) 0%, rgba(0, 104, 181, 0) 60%),
@@ -565,8 +698,6 @@ a:focus-visible {
     radial-gradient(70% 60% at 50% 100%, rgba(6, 11, 22, 0.7) 0%, rgba(6, 11, 22, 0) 70%);
 }
 
-/* Top scrim — the nav is transparent until scrolled, so darken the top band to
-   keep the link text legible over the brighter parts of the photograph. */
 .ws-hero-bg__top {
   background: linear-gradient(
     180deg,
@@ -578,19 +709,14 @@ a:focus-visible {
   bottom: auto;
 }
 
-/* Blends the bottom edge into the page background so the hero is not a slab. */
 .ws-hero-bg__fade {
   background: linear-gradient(180deg, rgba(6, 11, 22, 0) 55%, #060b16 100%);
 }
 
-/* In light mode the hero keeps its dark photo band, but the very bottom of
-   the fade hands off to the light page background so the seam is invisible. */
 [data-theme='light'] .ws-hero-bg__fade {
-  background: linear-gradient(180deg, rgba(6, 11, 22, 0) 62%, var(--app-bg) 100%);
+  background: linear-gradient(180deg, rgba(6, 11, 22, 0) 62%, var(--color-app) 100%);
 }
 
-/* Below lg the copy sits over the photograph rather than beside it, so the
-   whole backdrop is darkened further for contrast. */
 @media (max-width: 1023px) {
   .ws-hero-bg__navy {
     background: linear-gradient(
@@ -610,7 +736,6 @@ a:focus-visible {
   }
 }
 
-/* Small screens crop the wide frame hard; bias the crop toward the lit centre. */
 @media (max-width: 640px) {
   .ws-hero-bg__image {
     background-position: 52% 42%;
@@ -624,6 +749,31 @@ a:focus-visible {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+  }
+
+  .animate-radar-sweep,
+  .animate-radar-pulse,
+  .animate-live-ping,
+  .animate-marker-drop,
+  .animate-slide-up,
+  .animate-view-enter,
+  .animate-tp-flash,
+  .animate-value-tick,
+  .animate-spin-slow,
+  .animate-bounce-subtle,
+  .animate-glow-breathe,
+  .gradient-surface,
+  .shimmer-line {
+    animation: none !important;
+  }
+
+  [class*='animate-[fade-in'],
+  [class*='animate-[sheet-up'] {
+    animation: none !important;
+  }
+
+  * {
+    scroll-behavior: auto !important;
   }
 }
 

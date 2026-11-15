@@ -21,8 +21,8 @@ Package manager is **bun** (project has `bun.lock`).
 bun install                       # install deps
 bun run dev                       # dev server on :3000 (vite --port=3000 --host=0.0.0.0)
 bun run build                     # production build
-npx tsc --noEmit                  # typecheck
-npx tsx src/tests/strategy_engine.test.ts   # engine test suite (18 tests)
+npx tsc --noEmit                  # typecheck the browser app
+npm run test                      # frontend suite: every src/**/*.test.ts (259 tests)
 ```
 
 Admin console (uses npm scripts; `tsx` for the server, `vite` for the app):
@@ -107,57 +107,55 @@ character-for-character.
 
 ## Architecture
 
-WickSentinel is a **multi-timeframe price-action signal engine** (H4 → H1 →
-M15 → M5 → M1). The original No Touch barrier product was replaced wholesale;
-no barrier / path-touch logic remains in the app.
+WickSentinel is a **multi-timeframe price-action analysis workspace**. The
+dashboard was replaced by the Lucky Rise & Fall analyser (see "Dashboard
+migration" below); the previous engine tree was removed.
 
-- `src/engines/*` — pure analytical engines, no React and no I/O:
-  `MarketStructureEngine`, `MarketShiftEngine`, `CandlestickEngine`, `FvgEngine`,
-  `SupportResistanceEngine`, `TrendlineAndRangeEngine`, `ChartPatternEngine`,
-  `TechnicalIndicatorsEngine`, `MultiStrategyEngine`, `AdaptiveFillEngine`,
-  and `OpportunityScoringEngine` (the top-down orchestrator that produces the
-  56-field `OpportunitySignal`).
-- `src/services/DerivWebSocketManager.ts` — feed, symbol discovery, and
-  multi-timeframe candle construction. **Mutates candle arrays in place**:
-  `candles: Map<symbol, Map<timeframe, Candle[]>>`. Consumers must copy the
-  array (`[...list]`) and force re-derivation; a bare `useMemo` keyed only on
-  symbol/timeframe will never update (App bumps a `candleRevision` counter).
-- `src/services/IndexedDbStorage.ts` — persistence (DB `WickSentinel_DB`) plus
-  `computeHistoryAnalytics()` for signal-outcome stats.
-- `src/services/WhatsAppService.ts` — client for `/api/whatsapp/*`; formats the
-  alert payload and evaluates dispatch events (NEW_SIGNAL / MATERIAL_UPDATE /
-  INVALIDATED). Secrets stay server-side.
-- `src/App.tsx` — orchestrator. Owns scanner state, the `scanMarket` pipeline,
-  the auto-scan interval, signal resolution on live ticks, and route selection.
-- `src/components/shell/*` — `AppShell.tsx` (frame), `TopNav.tsx` (the single
-  navigation bar) and `navigation.ts`. `navigation.ts` is the single source of
-  truth: it holds the 10 `Route`s and maps them onto the five `NAV_SECTIONS`
-  (Overview, Scanner, Markets, Activity, Settings) that appear in the nav.
-  Extra routes in a section render as in-page tabs; `ANALYSIS` is a chart
-  drill-down and is not a top-level destination. The former `Sidebar`,
-  `Topbar` and `MobileNav` were removed in the minimal-workspace pass — do not
-  reintroduce a second navigation surface.
-- `src/components/views/*` — one view per route (BestMarket, StrategyScanner,
-  MtfPrecisionEntry, LiveMarketScannerTable reused for Plain/1s, DerivAdvancedChart,
-  OpportunityCard, Signals, PerformanceDashboard, Settings). `ScannerSummary.tsx`
-  is the compact status strip under the chart (state, condition, headline
-  indicators, signal time, tick freshness, confluence score); it replaced the
-  `IndicatorPanel`/`SignalPanel` card grids, which were deleted. The score is
-  the engine's own confluence total and is labelled "score", never
-  "confidence" — do not add a confidence figure the engine does not produce.
-- `src/components/landing/*` — public marketing site (unchanged by the scanner
-  work; still carries legacy "No Touch barrier" copy in the hero preview).
-- `src/components/ui/*` — design-system primitives and `format.ts` helpers.
-- `src/types/scanner.ts` — domain types (single source of truth).
+Frontend layout:
+
+- `src/App.tsx` — the dashboard shell. Hash-routed sections, the shared
+  workspace context (`WorkspaceProvider`), and the single chart. One
+  `<SingleChartCanvas>` is mounted for the whole app; chart-centric modules
+  publish an overlay through `ModuleChartSlot` instead of rendering their own
+  chart (enforced by `src/components/chart/singleChart.test.ts`).
+- `src/analysis/*` — pure analytical engines, no React and no I/O. Includes
+  `signalEngine`, `structureEngine`, `demandSupplyEngine`, `smcEngine`,
+  `trendlineEngine`, `momentumEngine`, `rangeAnalysis`, `confluenceEngine`,
+  `riskManagement`, `strategyOptimizer`, `systemHealth`, and the AI journal.
+- `src/services/derivWebSocket.ts` — the Deriv feed: symbol discovery,
+  historical candles, live OHLC/tick subscriptions, reconnect/backoff and
+  diagnostics. Reads `src/config/deriv.ts` (public options WS endpoint).
+- `src/hooks/*` — the state layer that binds the feed to the engines
+  (`useDerivChartData`, `usePriceActionAnalysis`, `useVolatilityScanner`,
+  `useAiModules`, `useStrategyLab`, `useSystemHealth`, `useAppSettings`, …).
+- `src/context/*` — `WorkspaceContext` (shared market/analysis state) and
+  `ModuleOverlayContext` (the chart overlay a module publishes).
+- `src/components/{nav,dashboard,ai,chart,views}/*` — presentation only.
+  `nav/Navigation.tsx` is the single navigation surface (sidebar + mobile).
+- `src/components/landing/*` — public marketing site (UNCHANGED by the
+  dashboard migration; still carries legacy "No Touch barrier" copy in the hero
+  preview).
+- `src/components/brand/*`, `src/components/ui/{primitives,ThemeToggle}`,
+  `src/lib/{router,auth,theme,balances}.ts` — shared with the public site.
+- `src/types/*` — domain types, split per concern (`market`, `analysis`,
+  `signals`, `scanner`, `engine`, …).
+
+The dashboard keeps its state in `localStorage` (settings, alerts, training,
+journal, model-performance records) and reads the market directly from the
+public Deriv WebSocket. It places no orders.
+
+Server-side (unchanged by the migration) lives in `server/`: accounts,
+sessions, balances, the signal/risk/execution pipeline and the admin console.
 
 ## Scanner pipeline
 
-`OpportunityScoringEngine.analyzeTopDown({ symbolInfo, c4h, c1h, c15m, c5m, c1m,
-minScoreThreshold, fvgMinDisplacement })` returns an `OpportunitySignal` or null.
-Confluence is weighted 20/20/20/15/15/10 (market structure, valid range & POI,
-price-action trigger, momentum, MTF alignment, technical confirmation). The
-minimum score floor is hard-clamped to 75%. A setup can score ≥75% and still
-report `WAIT` when a mandatory gate fails.
+The dashboard's signal path runs client-side. `useVolatilityScanner` sweeps the
+eligible synthetic markets and, for each, `usePriceActionAnalysis` runs the
+analysis engines in `src/analysis/` (`signalEngine`, `structureEngine`,
+`demandSupplyEngine`, `smcEngine`, …). Candidates are scored by
+`qualityScore.ts` (tier thresholds via `PUBLICATION_MIN_SCORE`) and reconciled
+across engines by `coAnalysis.ts`. The Market Scanner rows are monitor-only:
+they carry price, health and descriptive range, never a direction or confidence.
 
 ## WhatsApp alerts (server-side)
 
@@ -240,41 +238,28 @@ Server layout (`server/`):
 
 **Account balances are read-only.** The backend holds the Deriv token (sealed,
 server-side only) and is the sole authority on which accounts exist and their
-mode; the client cannot widen its view by naming another account id. The
-workspace header shows the selected account's balance via
-`src/components/shell/AccountBalance.tsx` and `src/lib/balances.ts`, with DEMO
-and REAL listed separately. The right-hand account panel
-(`views/TradePanel.tsx`) renders the same store: one row per mode showing the
-actual balance and currency, with the selected account highlighted and a
-per-row loading / live / stale / unavailable / disconnected state. The shared
+mode; the client cannot widen its view by naming another account id. The shared
+`src/lib/balances.ts` store exposes the selected account's balance to any surface
+that needs it, with DEMO and REAL listed separately. The shared
 `formatMoney` / `pickAccount` / `BALANCE_STATE_LABEL` / `lastUpdatedShort` /
-`lastUpdatedLabel` helpers live in `src/lib/balances.ts` so both surfaces render
+`lastUpdatedLabel` helpers live in `src/lib/balances.ts` so every surface renders
 identically. A null balance renders as "—"/"Unavailable" and is never shown as
 `0`. The figure is informational and never authorizes a trade.
 
-The header chip (`AccountBalance.tsx`) is responsive: at every width it shows
-the mode badge and balance; the state label, last-read age, currency suffix and
-in-bar refresh appear from `sm` up. It opens a switcher listing every account,
-and picking one re-reads with `?refresh=1`, so the bar updates immediately. On
-phones the switcher drops to a full-width sheet. Prefer `max-*:hidden` over
-`hidden sm:*` for hiding a `Button`/`IconButton`, whose base class hard-codes
-`inline-flex` — Tailwind emits `.inline-flex` after `.hidden`, so the plain
-`hidden` utility loses at equal specificity and the element stays visible.
+The old dashboard's header balance chip (`AccountBalance.tsx`) was removed with
+the dashboard migration; `src/lib/balances.ts` is unchanged and remains the
+single client-side store for balance reads.
 
-Balance tests: `npm run test:balance` (19 cases) and
-`npm run test:balance-display` (25 cases).
+Balance tests: `npm run test:balance` (19 cases). The old frontend balance
+display test (`test:balance-display`) was removed with the previous dashboard.
 
-**Scanner telemetry.** The engines run in the browser, so the admin console can
-only show measured figures because the client reports them. `src/services/
-TelemetryService.ts` batches events (one page load = one session id) and posts
-them via `/api/telemetry/*`; `src/App.tsx` drives its lifecycle and emits
-`scan.started`/`scan.stopped`/`signal.generated`/`settings.changed`. The admin
-read-paths (`analytics/active-users`, `analytics/feature-usage`,
-`monitoring/scanner-sessions`, `monitoring/data-freshness`, `dashboard/summary`)
-consume these records. Where no source exists — billing, subscriptions, market
-data — the admin UI reports **Unavailable**; never substitute an estimate.
-Scanner sessions are keyed by `<userId>:<clientSessionId>` because the client id
-is untrusted.
+**Scanner telemetry.** The server-side telemetry ingest and admin read-paths
+(`server/routes/telemetry.ts`, `test:telemetry`) are unchanged. Note: the old
+dashboard's client emitter (`src/services/TelemetryService.ts`) was removed with
+the dashboard migration, so the new dashboard currently reports no scan
+telemetry — admin analytics that depend on it show **Unavailable** until a
+client emitter is wired back up. Never substitute an estimate. Scanner sessions
+are keyed by `<userId>:<clientSessionId>` because the client id is untrusted.
 
 Frontend: `src/lib/auth.ts` (client store + actions), `src/components/landing/
 AuthPage.tsx` (Sign Up / Login + error page), `src/components/auth/
@@ -297,7 +282,7 @@ the pathname:
 | --- | --- |
 | `/` | `components/landing/LandingPage.tsx` — public homepage (unchanged by scanner work) |
 | `/app` (and `/app/*`) | `App.tsx` — the WickSentinel scanner workspace |
-| `/login`, `/get-started` | `components/landing/AccessPage.tsx` — Deriv OAuth entry |
+| `/login`, `/get-started` | `components/landing/AuthPage.tsx` — Deriv OAuth entry |
 | `/privacy`, `/terms`, `/risk-disclaimer` | `components/landing/LegalPage.tsx` |
 | anything else | `components/landing/NotFoundPage.tsx` |
 
@@ -308,53 +293,93 @@ the pathname:
   Reveal, WsButton, SectionHeading) and `ScannerPreview.tsx`.
 - `src/components/brand/WickSentinelBrand.tsx` — `BrandLogo`, `WickSentinelMark`
   and the `BRAND` constants.
-- Public-site palette lives in `src/index.css` as `--ws-*` tokens; the scanner
-  keeps the original `--surface` / `--accent` tokens. Do not mix the two.
+- Public-site palette lives in `src/index.css` as `--ws-*` tokens alongside the
+  shared `--color-*` tokens the dashboard also uses. There is one token set; the
+  dashboard retints `--color-accent` at runtime from live system status.
 
 **Authentication is Deriv OAuth 2.0 (PKCE) with server-side sessions** — see the
-section above. The scanner's analytics run entirely client-side (IndexedDB), but
-the app is served by `server/index.ts`, which also exposes the WhatsApp dispatch
-endpoints. Do not build a fake auth flow. Landing-page copy must only advertise
-features that exist in `src/engines` / `src/services`, and preview graphics must
-stay labelled as illustrative — never present mock numbers as live market data.
+section above. The dashboard's analytics run entirely client-side (localStorage),
+but the app is served by `server/index.ts`, which also exposes the WhatsApp
+dispatch endpoints. Do not build a fake auth flow. Landing-page copy must only
+advertise features that exist in `src/analysis` / `src/components`, and preview
+graphics must stay labelled as illustrative — never present mock numbers as live
+market data.
 
 > Legacy note: the landing hero copy still mentions an "adaptive No Touch
 > barrier". That product was removed; the copy is a known leftover and the
 > landing page is intentionally left untouched.
 
+## Dashboard migration (Lucky Rise & Fall scanner)
+
+The workspace dashboard was replaced wholesale by the **Lucky Rise & Fall**
+analyser (from `lucky-rise-fall-scanner.zip`). The public site and auth were
+deliberately left intact.
+
+What changed:
+
+- `src/App.tsx` is now the new dashboard shell (hash-routed sections:
+  `dashboard`, `analyser`, `scanner`, `trendlines`, `demandsupply`, the AI
+  module tabs (`boschoch`, `technical`, `smc`, `liquidity`, `fvg`,
+  `orderblock`, `momentum`, `regime`, `confluence`, `live`, `performance`,
+  `risk`, `alerts`), `strategylab`, `health`, `training`, `history`,
+  `settings`).
+- New trees: `src/analysis/` (signal + AI engines), `src/hooks/`,
+  `src/context/`, `src/components/{nav,dashboard,ai,chart,views}/`,
+  `src/theme/`, `src/config/`, `src/utils/`, `src/services/derivWebSocket.ts`,
+  and the new `src/types/*`.
+- Removed: the old `src/engines/`, `src/features/`, `src/components/{shell,
+  views,analysis,controls,chart}/`, `src/services/{DerivWebSocketManager,
+  IndexedDbStorage,TelemetryService,WhatsAppService}.ts`, and the old
+  `src/tests/` frontend suites.
+
+What is UNCHANGED (do not touch): `src/Root.tsx`, `src/main.tsx`,
+`src/components/landing/*`, `src/components/auth/*`,
+`src/components/brand/*`, `src/components/ui/ThemeToggle.tsx`, and
+`src/lib/{router,auth,theme,balances}.ts`, plus the whole `server/` and
+`admin/` trees. The landing page, OAuth login and legal pages behave exactly
+as before.
+
+`src/index.css` was **merged**: it carries both the public-site `--color-*`
+tokens and the dashboard's terminal palette in one `@theme` block, plus the
+dashboard animation library and the hero-band styles. A token is defined once.
+The dashboard overrides `--color-accent`/`--color-accent-soft` at runtime from
+live system status (`src/theme/accents.ts`), so the shared accent token is the
+public-site value by default.
+
+Tests: `npm run test` runs every frontend `src/**/*.test.ts` (259 tests, node's
+built-in runner via `tsx`). `src/components/chart/singleChart.test.ts` enforces
+"exactly one candlestick chart" — it matches only the chart *component* import,
+because `lucide-react` also exports an icon named `CandlestickChart` used by the
+landing page.
+
 ## Conventions
 
-- Design tokens live in `src/index.css` (`--app-bg`, `--surface`, `--accent`,
-  `--border`, …). Reuse them; do not hardcode new palette values in components.
-- Tailwind v4 utility classes with arbitrary values are used heavily, e.g.
-  `bg-[#101829]`. `TONE_HEX` in `src/components/ui/format.ts` maps semantic
-  tones to hex for inline `style` usage (charts, bars).
-- All engine/scanner logic must stay in `src/engines` and `src/services`;
-  components are presentation only.
+- Design tokens live in `src/index.css` as `--color-*` custom properties
+  (`--color-app`, `--color-surface`, `--color-line`, `--color-accent`, …).
+  Reuse them; do not hardcode new palette values in components. The dashboard
+  may also use Tailwind arbitrary values; when you touch them, prefer the tokens.
+- Analytical logic lives in `src/analysis/`; data access in `src/services/`
+  and `src/hooks/`. Components are presentation only. The dashboard is
+  client-side: it reads the public Deriv WebSocket directly and keeps its state
+  in `localStorage`.
 - Every settings/display control must drive real behaviour — no decorative
   controls.
-- **WickSentinel is a signal scanner, not an execution platform.** There is no
-  stake sizing, risk config, martingale, order placement or trade automation
-  anywhere in `src/` or `server/`. Do not add order-entry UI or imply that the
-  product trades: the right-hand workspace panel (`views/TradePanel.tsx`)
-  deliberately shows account status, real signal levels and an explicit advisory
-  notice instead. Signal levels drawn on the chart are annotations of values the
-  engine already published — the chart must never derive or suggest its own.
+- **The dashboard is analysis-only; the execution layer lives on the server.**
+  The dashboard renders signals, overlays and analytics but places no orders.
+  Order placement is server-side only, gated behind the execution flags in
+  `server/config/flags.ts` (see the execution sections below). Do not add
+  order-entry UI to the dashboard or imply the client trades.
 
 ## Design language
 
-The UI follows the design language of reatech360.com. Keep to it:
+The workspace and the public site share one token set but have distinct
+characters:
 
-- Base surface is near-black navy `#060b16`; there is one primary blue
-  `#0068B5` (hover `#2E8AD8`) and one light-blue accent `#60A5FA`. The
-  previous indigo/violet brand (`#635BFF`, `#8057E5`) is retired — do not
-  reintroduce it.
-- The palette is defined once in `src/index.css` `:root`. Components still
-  use Tailwind arbitrary values in places; when you touch them, prefer the
-  tokens.
-- Cards are `16px` radius with a multi-layer shadow (inset top highlight +
-  ambient + deep) and an optional `glass` variant
-  (`backdrop-blur-xl backdrop-saturate-150`). Radii scale is 8/10/14/18.
+- Public site (WickSentinel brand): near-black navy `#060b16`, one primary blue
+  `#0068B5` (hover `#2E8AD8`) and a light-blue accent `#60A5FA`. The previous
+  indigo/violet brand (`#635BFF`, `#8057E5`) is retired — do not reintroduce it.
+- Dashboard: a trading-terminal palette (`--color-app` `#080d16`, panel
+  `#162033`, `--color-accent` retinted live by `src/theme/accents.ts`).
 - Typography is Plus Jakarta Sans for headings, Inter for body, JetBrains
   Mono for figures.
 
@@ -365,7 +390,7 @@ at runtime.
 
 - All colours are semantic CSS variables in `src/index.css`: `:root` holds the
   dark values, `[data-theme='light']` overrides them. Tailwind bridges the
-  variables through `@theme inline` (e.g. `--color-fg-1`), so components use
+  variables through `@theme` (e.g. `--color-fg-1`), so components use
   `bg-surface`, `text-fg-3`, `border-line`, `text-success`, etc. Never hardcode
   a hex or `rgba()` in a component — add or reuse a token instead.
 - `src/lib/theme.ts` owns the runtime. The choice is stored in `localStorage`
@@ -375,29 +400,24 @@ at runtime.
   `setTheme`/`toggle` write the attribute.
 - `src/components/ui/ThemeToggle.tsx` is the control (`icon` and `switch`
   variants). It is wired into the landing nav and the workspace top bar.
-- Chart colours cannot be CSS classes, so the palette is mirrored as
-  `--chart-*` variables and read at runtime via `readChartColors()` in
-  `src/components/chart/chartTheme.ts`. `src/components/chart/TradingChart.tsx`
-  is the reusable Lightweight Charts wrapper (v5 `chart.addSeries(CandlestickSeries
-  | AreaSeries, …)` API); it applies theme colours live and rebuilds the series
-  in place rather than recreating the chart, so pan/zoom survives every tick.
-  `TONE_HEX` in `ui/format.ts` likewise returns `var(...)` strings so inline
-  styles and SVG follow the theme.
-- Chart-structure overlays (S/R + flip zones, supply/demand, trendlines,
-  protected swings, confirmed patterns, breakout levels) are split so each layer
-  is independently testable: `src/engines/ChartStructureEngine.ts` derives the
-  structure from candles (pure engine logic), `src/components/chart/chartOverlays.ts`
-  maps structure to a flat list of drawable shapes, and
-  `src/components/chart/overlayPrimitives.ts` paints them through a Lightweight
-  Charts `ISeriesPrimitive` (the library has no zone/segment primitive of its
-  own). Visibility toggles live in `OverlayLegend.tsx` and persist via
-  `src/lib/overlayPreferences.ts`. The chart still only annotates values the
-  engine already published — never derives or invents levels of its own.
-- The chart's data effect distinguishes a full repaint from a one-bar update via
-  `loadMode()` in `chartData.ts`. This matters because a symbol's first render
-  often happens before its history arrives; treating that empty state as
-  "loaded" left the chart showing a single bar. Do not call `fitContent()` on an
-  empty series — it collapses the visible range.
+- Chart colours cannot be CSS classes. `src/theme/designTokens.ts` is the
+  single source of truth for the canvas (`CHART_COLORS`, `UI_COLORS`,
+  `CONNECTION_TONES`). The candlestick canvas is intentionally theme-independent:
+  it always renders on white with fixed teal/red candles, so a theme switch or
+  an AI-module change can never recolour a candle.
+- `src/components/CandlestickChart.tsx` is the reusable Lightweight Charts v5
+  wrapper. Exactly one instance exists, owned by
+  `src/components/chart/SingleChartCanvas.tsx`. Chart-centric modules render no
+  canvas of their own: `src/components/chart/ModuleChartSlot.tsx` publishes the
+  module's overlay (AI zones, trendlines, supply/demand, structure) through
+  `ModuleOverlayContext`, and the primitives in `src/components/chart/*`
+  (`AiChartPrimitive`, `TrendlineChartPrimitive`, `DsChartPrimitive`,
+  `StructureChartPrimitive`, `SignalAnnotationPrimitive`) paint them. The chart
+  only annotates values the engines already published — never derives or invents
+  levels of its own. `src/components/chart/singleChart.test.ts` enforces the
+  single-chart rule.
+- The chart's data effect distinguishes a full repaint from a one-bar update.
+  Do not call `fitContent()` on an empty series — it collapses the visible range.
 - The landing hero sits on a dark photograph in both themes. `.ws-hero-band`
   pins the dark token values for that subtree so light-mode text stays legible
   over the image.
@@ -416,59 +436,43 @@ remote-tracking ref. Do not open a pull request unless explicitly asked.
 Earlier notes here claimed the token was read-only and that pushes failed with
 `403 Resource not accessible by integration` — that is no longer accurate.
 
-## Multi-AI chart analyser (workspace restyle)
+## Multi-AI analysis modules
 
 - The institutional restyle lives in the token layer, not in components:
-  `src/index.css` `:root` holds the dark navy/charcoal palette and the
-  `@theme inline` bridge maps new semantic tokens to Tailwind classes. Use the
-  Tailwind classes (`text-rise`, `text-fall`, `text-live`,
-  `text-neutral-signal`, `bg-rise/10`, …) rather than raw hex. Blue and red
-  mean rise/fall — they are semantics, never forecasts.
-- Layout: `TradingWorkspace.tsx` is a flex row where the chart column is
-  `flex-1` (~72–78% wide) and the analysis panel is a fixed `xl:w-[340px]` /
-  `2xl:w-[360px]` aside. Below `xl` the panel is a slide-over drawer with a
-  backdrop, so the chart stays full-width on tablet/Android. The chart height is
-  responsive via a `resize` listener, not a fixed number.
-- Analysis architecture (`src/features/analysis/`):
-  - `engines/types.ts` defines `AnalysisEngine`, `MarketSnapshot` and
-    `EngineOutput`. An engine is asked for `checkAvailability()` before
-    `analyze()`; an unavailable engine is reported `UNAVAILABLE` and is **never**
-    called.
-  - `engines/deterministicEngine.ts` wraps the real
-    `OpportunityScoringEngine.analyzeTopDown` pipeline. It only reports zones the
-    engine already published (valid tradeable range + confirmed entry) and never
-    invents a price.
-  - `engines/unavailableEngines.ts` declares the specialized AI engines. No
-    inference provider is wired up (`@google/genai` is present but unused and
-    `GEMINI_API_KEY` is absent), so all of them are `UNAVAILABLE` and throw
-    rather than fabricating output. Wire a provider here and flip
-    `checkAvailability` when one exists.
-  - `snapshot.ts` builds the immutable `MarketSnapshot` with real provenance
-    (source, freshness, completeness); stale/short/malformed buffers are marked
-    incomplete and the run fails honestly.
-  - `orchestrator.ts` runs the five stages (verify → technical → AI engines →
-    comparison → validate). A directional result is produced only when the
-    deterministic engine validated a zone and no available engine contradicts
-    it; otherwise the status is `WAIT` and `zone` is null.
-  - `useAnalysisRunner.ts` owns the single-flight run lifecycle and cancels
-    in-flight work; `components/analysis/AnalysisPanel.tsx` renders the five
-    sections (Run analysis, Analysis progress, Engine status, Analysis result,
-    Next zone to watch).
-- Drawing management (`src/features/drawing-management/`) keeps drawing
-  *metadata* in a framework-agnostic `DrawingStore` (persisted under
-  `wicksentinel_drawings_v1`) and projects it to chart shapes in `geometry.ts`.
-  A drawing can only be created from a validated analysis zone
-  (`sourceAnalysisId` required) with ordered, finite coordinates; invalid input
-  is rejected rather than coerced. Coordinates are stored in chart units (epoch
-  seconds + price) so a drawing survives resizes and timeframe switches without
-  being silently moved.
-- The M2 timeframe was added to the `Timeframe` union and is aggregated in
-  `DerivWebSocketManager` from the 1m batch (and updated live). The toolbar only
-  marks a timeframe active once its buffer is non-empty, so a failed request
-  never looks like a successful switch.
-- Tests: `npm run test:drawings` and `npm run test:analysis` cover the
-  anti-fabrication guarantees (no zone without validation, unavailable engines
-  never called, disagreement ⇒ WAIT, invalid coordinates rejected).
+  `src/index.css` `:root` holds the dark navy/charcoal palette and the `@theme`
+  bridge maps semantic tokens to Tailwind classes. Use the Tailwind classes
+  (`text-bull`, `text-bear`, `text-warn`, `text-live`, `bg-bull/10`, …) rather
+  than raw hex. Blue/red and green/red mean rise/fall — they are semantics,
+  never forecasts.
+- Layout: `src/App.tsx` mounts a flex row where the chart column is `flex-1`
+  and the analysis panel is a fixed aside; below `xl` the panel is a slide-over
+  drawer, so the chart stays full-width on tablet/Android.
+- Module registry: `src/hooks/useAiModules.ts` exports
+  `AI_MODULE_DEFINITIONS`, the single source of truth for the AI tabs. Each
+  entry names an `AiEngine` and its publication gate; adding a module is a
+  one-line addition. The engines live in `src/analysis/*` and are pure (no React,
+  no I/O):
+  - `src/analysis/aiCommon.ts` — shared primitives (ATR, SMA, confirmation).
+  - `bosChochEngine.ts`, `technicalEngine.ts`, `smcEngine.ts`,
+    `liquidityEngine.ts`, `fvgEngine.ts`, `orderBlockEngine.ts`,
+    `momentumEngine.ts`, `marketRegimeEngine.ts`, `confluenceEngine.ts`,
+    `liveScannerEngine.ts`, `riskManagement.ts`, `strategyOptimizer.ts`,
+    `marketAnomaly.ts`, `marketIntelligence.ts`, `instrumentIntelligence.ts`.
+  - `coAnalysis.ts` (`reconcileEngines`) reconciles peer decisions and flags
+    disagreement, so no single module can fabricate a tradeable zone.
+  - `src/types/aiModule.ts` defines the `AiSignal` / `AiZone` contract; the
+    module view (`src/components/ai/moduleViews.tsx`, `AiModuleView.tsx`)
+    renders it. A module never publishes a direction or zone the engine did not
+    produce; `deriveSignalLifecycle` (`src/utils/signalStatus.ts`) tracks the
+    signal through its lifecycle.
+- Alerts: `src/analysis/alertEngine.ts` + `alertSources.ts` turn module
+  observations into alerts; `src/hooks/useAlertManager.ts` owns the queue and
+  `src/components/ai/AlertsView.tsx` renders it. Notifications use
+  `src/utils/notify.ts` / `sound.ts`.
+- The M2 timeframe is aggregated by the feed from the 1m batch (and updated
+  live). The toolbar only marks a timeframe active once its buffer is non-empty,
+  so a failed request never looks like a successful switch.
+- Tests: `npm run test` runs every `src/**/*.test.ts` (259 tests).
 
 ## Deriv API reality check (verified 2026-11, read-only)
 
