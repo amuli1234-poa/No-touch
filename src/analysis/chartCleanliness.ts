@@ -90,7 +90,16 @@ function pruneStructure(
 
   const srBands = structure.srBands.filter((b) => b.status === 'active');
 
-  return { ...structure, breaks, rejectionZones, srBands };
+  // Watch zones are opportunities, not history: a failed / invalidated / already
+  // mitigated zone must leave the chart the moment it stops being tradeable.
+  const watchZones = structure.watchZones.filter(
+    (z) => z.stage !== 'FAILED' && z.stage !== 'INVALIDATED' && z.freshness !== 'MITIGATED'
+  );
+
+  // Only FRESH, unfilled imbalances stay; a probed / tested / filled gap is consumed.
+  const fvg = structure.fvg.filter((g) => g.freshness === 'FRESH');
+
+  return { ...structure, breaks, rejectionZones, srBands, watchZones, fvg };
 }
 
 /**

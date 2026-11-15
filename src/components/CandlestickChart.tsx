@@ -261,13 +261,13 @@ function ChartLegendOverlay({
   if (activeLevels.length === 0) return null;
 
   return (
-    <div className="absolute top-2 left-2 sm:top-3 sm:left-3 z-25 pointer-events-none bg-elevated/92 backdrop-blur-sm border border-line shadow-sm rounded-xl px-2 py-1 sm:px-2.5 sm:py-1.5 flex flex-col gap-0.5 sm:gap-1 max-w-[165px] sm:max-w-[200px] text-[9px] sm:text-[10px] font-mono">
-      <span className="font-bold text-muted uppercase tracking-wider">Active S/R Legend</span>
+    <div className="absolute top-2 left-2 sm:top-3 sm:left-3 z-25 pointer-events-none bg-elevated/90 backdrop-blur-sm border border-line shadow-sm rounded-lg px-2 py-1 flex flex-col gap-0.5 max-w-[150px] text-[9px] font-mono">
+      <span className="font-bold text-muted uppercase tracking-wider">S / R</span>
       <div className="flex flex-col gap-0.5">
         {activeLevels.map((lvl) => (
-          <div key={lvl.id} className="flex items-center justify-between gap-1.5 sm:gap-2 text-muted">
+          <div key={lvl.id} className="flex items-center justify-between gap-1.5 text-muted">
             <span className={`font-semibold ${lvl.type === 'support' ? 'text-emerald-400' : 'text-bear'}`}>
-              {lvl.type === 'support' ? 'SUP' : 'RES'} ({lvl.touches}x)
+              {lvl.type === 'support' ? 'S' : 'R'} ({lvl.touches}×)
             </span>
             <span className="font-mono text-ink">{formatPrice(lvl.price, precision)}</span>
           </div>

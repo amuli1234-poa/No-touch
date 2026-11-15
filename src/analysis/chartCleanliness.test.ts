@@ -209,7 +209,11 @@ test('structure overlay pruning drops mitigated bands and invalidated zones', ()
       { id: 'active', status: 'active' } as never,
       { id: 'broken', status: 'broken' } as never,
     ],
-    fvg: [{ id: 'gap' } as never],
+    fvg: [
+      { id: 'gap', freshness: 'FRESH' } as never,
+      { id: 'filled', freshness: 'MITIGATED' } as never,
+      { id: 'probed', freshness: 'PROBED' } as never,
+    ],
     watchZones: [],
     testedZones: [],
     summary: '',
@@ -219,6 +223,31 @@ test('structure overlay pruning drops mitigated bands and invalidated zones', ()
   assert.deepEqual(clean!.rejectionZones.map((z) => z.id), ['fresh']);
   assert.deepEqual(clean!.srBands.map((b) => b.id), ['active']);
   assert.deepEqual(clean!.fvg.map((g) => g.id), ['gap']);
+});
+
+test('failed / invalidated / mitigated watch zones are removed from the chart', () => {
+  const candles = flat(60);
+  const structure: StructureOverlayData = {
+    bias: 'bullish',
+    htfBias: 'bullish',
+    htfTimeframe: 'H1',
+    breaks: [],
+    rejectionZones: [],
+    srBands: [],
+    fvg: [],
+    watchZones: [
+      { id: 'watching', stage: 'ZONE_DETECTED', freshness: 'FRESH' } as never,
+      { id: 'approaching', stage: 'PRICE_APPROACHING', freshness: 'FRESH' } as never,
+      { id: 'failed', stage: 'FAILED', freshness: 'FRESH' } as never,
+      { id: 'dead', stage: 'INVALIDATED', freshness: 'FRESH' } as never,
+      { id: 'consumed', stage: 'ZONE_DETECTED', freshness: 'MITIGATED' } as never,
+    ],
+    testedZones: [],
+    summary: '',
+  };
+  const clean = pruneStructureOverlay({ structure, candles, atr: 1 });
+  assert.ok(clean);
+  assert.deepEqual(clean!.watchZones.map((z) => z.id), ['watching', 'approaching']);
 });
 
 test('pruning a null structure overlay is a no-op', () => {

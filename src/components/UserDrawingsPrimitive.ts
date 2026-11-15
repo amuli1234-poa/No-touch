@@ -8,6 +8,7 @@ import type {
   Time,
 } from 'lightweight-charts';
 import type { CanvasRenderingTarget2D } from 'fancy-canvas';
+import { MARKUP_ALPHA, MARKUP_WIDTH, drawAnchorDot, hexToRgba } from './chart/chartMarkupStyle';
 
 export type DrawingKind = 'trendline' | 'horizontal' | 'rectangle';
 
@@ -29,6 +30,11 @@ export const DRAWING_COLORS: Record<DrawingKind, string> = {
   rectangle: '#8b5cf6',
 };
 
+/**
+ * User drawing tools (trendline / horizontal / rectangle). Lines are thin, rectangle
+ * fills are barely there, and anchors are small dots — the same minimal language as the
+ * analysis markup so user drawings never clutter the candles.
+ */
 class DrawingsRenderer implements IPrimitivePaneRenderer {
   constructor(private readonly source: UserDrawingsPrimitive) {}
 
@@ -52,9 +58,8 @@ class DrawingsRenderer implements IPrimitivePaneRenderer {
         if (coords.some((c) => c.x === null || c.y === null)) continue;
         const pts = coords as Array<{ x: number; y: number }>;
 
-        ctx.strokeStyle = drawing.color;
-        ctx.fillStyle = drawing.color;
-        ctx.lineWidth = 1.6;
+        ctx.strokeStyle = hexToRgba(drawing.color, MARKUP_ALPHA.line);
+        ctx.lineWidth = MARKUP_WIDTH.line;
 
         if (drawing.kind === 'horizontal' && pts.length >= 1) {
           const y = pts[0].y;
@@ -64,28 +69,21 @@ class DrawingsRenderer implements IPrimitivePaneRenderer {
           ctx.lineTo(mediaSize.width, y);
           ctx.stroke();
           ctx.setLineDash([]);
-          ctx.beginPath();
-          ctx.arc(pts[0].x, y, 3, 0, Math.PI * 2);
-          ctx.fill();
+          drawAnchorDot(ctx, pts[0].x, y, drawing.color);
         } else if (drawing.kind === 'trendline' && pts.length >= 2) {
           ctx.beginPath();
           ctx.moveTo(pts[0].x, pts[0].y);
           ctx.lineTo(pts[1].x, pts[1].y);
           ctx.stroke();
-          for (const p of pts) {
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
-            ctx.fill();
-          }
+          for (const p of pts) drawAnchorDot(ctx, p.x, p.y, drawing.color);
         } else if (drawing.kind === 'rectangle' && pts.length >= 2) {
           const x = Math.min(pts[0].x, pts[1].x);
           const y = Math.min(pts[0].y, pts[1].y);
           const w = Math.abs(pts[1].x - pts[0].x);
           const h = Math.abs(pts[1].y - pts[0].y);
-          ctx.globalAlpha = 0.12;
+          ctx.fillStyle = hexToRgba(drawing.color, MARKUP_ALPHA.fillFaint);
           ctx.fillRect(x, y, w, h);
-          ctx.globalAlpha = 1;
-          ctx.strokeRect(x, y, w, h);
+          ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
         }
       }
 

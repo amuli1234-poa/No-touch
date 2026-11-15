@@ -418,6 +418,19 @@ at runtime.
   single-chart rule.
 - The chart's data effect distinguishes a full repaint from a one-bar update.
   Do not call `fitContent()` on an empty series — it collapses the visible range.
+- Chart markup is minimalist by contract. Every primitive paints through
+  `src/components/chart/chartMarkupStyle.ts` (palette `MARKUP`, `MARKUP_ALPHA`,
+  `MARKUP_WIDTH`, the short-code `MARKUP_LABEL` vocabulary and the `drawLabel` /
+  `drawZoneBox` / `drawHLine` / `drawAnchorDot` helpers). Boundaries stay thin
+  (`<= 1.5px`), zone fills stay lightly transparent (`<= 0.1` alpha) and every
+  on-chart label is a short code (`S`, `R`, `DZ`, `SZ`, `BOS`, `CHoCH`, `WATCH`,
+  `FVG`, `TL`, `E`, `SL`, `TP`) — never a sentence or a status name.
+  `chartMarkupStyle.test.ts` locks the source-level contract and
+  `chartPrimitivesMarkup.test.ts` drives every primitive's real draw path against a
+  recording canvas to assert thin strokes, faint fills and short labels at paint
+  time. The cleanliness pass (`pruneOverlaysForLiveChart` / `pruneStructureOverlay`)
+  drops everything that is no longer tradeable: broken S/R, mitigated rejection
+  bands, failed / invalidated watch zones, filled FVGs and stale structure breaks.
 - The landing hero sits on a dark photograph in both themes. `.ws-hero-band`
   pins the dark token values for that subtree so light-mode text stays legible
   over the image.

@@ -11,16 +11,24 @@ import type {
 import type { CanvasRenderingTarget2D } from 'fancy-canvas';
 import type { AiSignal, AiZone } from '../../types/aiModule';
 import { formatPrice } from '../../utils/derivParser';
+import {
+  MARKUP,
+  MARKUP_ALPHA,
+  MARKUP_LABEL,
+  MARKUP_WIDTH,
+  drawHLine,
+  drawLabel,
+  drawZoneBox,
+} from './chartMarkupStyle';
 
 /**
  * Shared chart overlay for the independent AI strategy modules (Support & Resistance AI,
  * Chart Patterns AI, BOS & CHOCH AI, Technical AI, SMC/ICT & Price Action AI).
  *
- * Draws ONLY the current relevant zones (blue = bullish, red = bearish), the FUTURE watch
- * zones (dimmer + dashed) and, when a signal is confirmed, the entry / stop / TP1-3 levels
- * with a directional arrow. Historical / invalidated / completed markings are never drawn —
- * the modules prune them before the overlay is built, so the chart always reflects the
- * current live market, never a historical analysis.
+ * Draws only the current relevant zones (blue = bullish, red = bearish), the FUTURE watch
+ * zones (dimmer + dashed) and, when a signal is confirmed, the entry / stop / TP levels
+ * with a small directional marker. Zones are lightly shaded with thin edges and short
+ * labels; historical / invalidated / completed markings are never drawn.
  */
 export interface AiChartOverlay {
   /** Current valid zones in play (nearest first). */
@@ -31,42 +39,47 @@ export interface AiChartOverlay {
   precision: number;
 }
 
-const COLORS = {
-  bull: '#3b82f6',
-  bear: '#ef4444',
-  bullBand: 'rgba(59, 130, 246, 0.16)',
-  bearBand: 'rgba(239, 68, 68, 0.16)',
-  bullEdge: 'rgba(59, 130, 246, 0.9)',
-  bearEdge: 'rgba(239, 68, 68, 0.9)',
-  entry: '#2563eb',
-  stop: '#dc2626',
-  target: '#16a34a',
-};
-
-function hexToRgba(hex: string, alpha: number): string {
-  const clean = hex.replace('#', '');
-  const r = parseInt(clean.slice(0, 2), 16);
-  const g = parseInt(clean.slice(2, 4), 16);
-  const b = parseInt(clean.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+/**
+ * Compresses a module zone label ("SUPPORT", "BULLISH OB", "DEMAND ZONE", …) to a short
+ * on-chart code. Unknown labels fall back to their first word so the chart never shows a
+ * sentence.
+ */
+export function shortZoneLabel(label: string): string {
+  const key = label.trim().toUpperCase();
+  if (key.includes('SUPPORT')) return MARKUP_LABEL.support;
+  if (key.includes('RESIST')) return MARKUP_LABEL.resistance;
+  if (key.includes('DEMAND')) return MARKUP_LABEL.demand;
+  if (key.includes('SUPPLY')) return MARKUP_LABEL.supply;
+  if (key.includes('CHOCH')) return MARKUP_LABEL.choch;
+  if (key.includes('BOS')) return MARKUP_LABEL.bos;
+  if (key.includes('FVG')) return MARKUP_LABEL.fvg;
+  if (key.includes('OB')) return 'OB';
+  return key.split(/\s+/)[0]?.slice(0, 6) || 'Z';
 }
 
-function roundRect(
+function drawBreakMarker(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
-  w: number,
-  h: number,
-  r: number
+  color: string,
+  bullish: boolean
 ): void {
-  const radius = Math.min(r, w / 2, h / 2);
+  const s = 4;
+  ctx.save();
+  ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.arcTo(x + w, y, x + w, y + h, radius);
-  ctx.arcTo(x + w, y + h, x, y + h, radius);
-  ctx.arcTo(x, y + h, x, y, radius);
-  ctx.arcTo(x, y, x + w, y, radius);
+  if (bullish) {
+    ctx.moveTo(x, y - s);
+    ctx.lineTo(x - s, y + s);
+    ctx.lineTo(x + s, y + s);
+  } else {
+    ctx.moveTo(x, y + s);
+    ctx.lineTo(x - s, y - s);
+    ctx.lineTo(x + s, y - s);
+  }
   ctx.closePath();
+  ctx.fill();
+  ctx.restore();
 }
 
 class AiRenderer implements IPrimitivePaneRenderer {
@@ -78,72 +91,42 @@ class AiRenderer implements IPrimitivePaneRenderer {
     const overlay = this.source.overlay;
     if (!chart || !series || !overlay) return;
 
-    target.useBitmapCoordinateSpace((scope) => {
-      const ctx = scope.context;
-      const mediaSize = scope.mediaSize;
+    target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
       const width = mediaSize.width;
+      const height = mediaSize.height;
+      if (width <= 0) return;
       ctx.save();
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'left';
 
       const drawZone = (zone: AiZone, isWatch: boolean) => {
         const isBull = zone.direction === 'RISE';
-        const color = isBull ? COLORS.bull : COLORS.bear;
-        const band = isBull ? COLORS.bullBand : COLORS.bearBand;
-        const edge = isBull ? COLORS.bullEdge : COLORS.bearEdge;
+        const color = isBull ? MARKUP.support : MARKUP.bear;
 
         const yUpper = series.priceToCoordinate(zone.upperPrice);
         const yLower = series.priceToCoordinate(zone.lowerPrice);
         if (yUpper === null || yLower === null) return;
         const top = Math.min(yUpper, yLower);
-        const height = Math.max(2, Math.abs(yLower - yUpper));
+        const h = Math.max(2, Math.abs(yLower - yUpper));
 
-        ctx.globalAlpha = isWatch ? 0.55 : 1;
-        ctx.fillStyle = band;
-        ctx.fillRect(0, top, width, height);
+        drawZoneBox(ctx, {
+          x: 0,
+          y: top,
+          w: width,
+          h,
+          color,
+          fillAlpha: isWatch ? MARKUP_ALPHA.fillFaint : MARKUP_ALPHA.fill,
+          edgeAlpha: MARKUP_ALPHA.edge,
+          edgesOnly: true,
+          dash: isWatch ? [6, 5] : [],
+        });
 
-        ctx.strokeStyle = edge;
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash(isWatch ? [6, 5] : []);
-        ctx.beginPath();
-        ctx.moveTo(0, yUpper);
-        ctx.lineTo(width, yUpper);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(0, yLower);
-        ctx.lineTo(width, yLower);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        const title = `${zone.label}${isWatch ? ' · WATCH' : ''}`;
-        const meta = `Q${Math.round(zone.quality)}/100 · ${isBull ? 'RISE' : 'FALL'}`;
-        ctx.font = '800 10px "Plus Jakarta Sans", system-ui, sans-serif';
-        const tw = ctx.measureText(title).width;
-        ctx.font = '600 9px "Plus Jakarta Sans", system-ui, sans-serif';
-        const mw = ctx.measureText(meta).width;
-        const blockW = Math.max(tw, mw) + 16;
-        const blockH = 26;
-        const blockX = 6;
-        const blockY = Math.max(
-          4,
-          Math.min(mediaSize.height - blockH - 4, top + height / 2 - blockH / 2)
-        );
-
-        ctx.fillStyle = 'rgba(9, 14, 24, 0.9)';
-        roundRect(ctx, blockX, blockY, blockW, blockH, 6);
-        ctx.fill();
-        ctx.strokeStyle = hexToRgba(color, 0.75);
-        ctx.lineWidth = 1;
-        roundRect(ctx, blockX, blockY, blockW, blockH, 6);
-        ctx.stroke();
-
-        ctx.fillStyle = color;
-        ctx.font = '800 10px "Plus Jakarta Sans", system-ui, sans-serif';
-        ctx.fillText(title, blockX + 8, blockY + 10);
-        ctx.fillStyle = 'rgba(226, 232, 240, 0.9)';
-        ctx.font = '600 9px "Plus Jakarta Sans", system-ui, sans-serif';
-        ctx.fillText(meta, blockX + 8, blockY + 20);
-        ctx.globalAlpha = 1;
+        const code = shortZoneLabel(zone.label);
+        const ly = Math.max(9, Math.min(height - 9, top + h / 2));
+        drawLabel(ctx, `${code}${isWatch ? ` ${MARKUP_LABEL.watch}` : ''}`, 6, ly, color, {
+          size: 9,
+          weight: 700,
+        });
       };
 
       for (const zone of overlay.watchZones ?? []) drawZone(zone, true);
@@ -152,98 +135,32 @@ class AiRenderer implements IPrimitivePaneRenderer {
       const signal = overlay.signal;
       if (signal) {
         const isRise = signal.direction === 'RISE';
-        const dirColor = isRise ? COLORS.bull : COLORS.bear;
+        const dirColor = isRise ? MARKUP.support : MARKUP.bear;
 
         const drawLevel = (price: number, color: string, badge: string, dash: number[]) => {
           const y = series.priceToCoordinate(price);
           if (y === null) return;
-          ctx.save();
-          ctx.setLineDash(dash);
-          ctx.strokeStyle = hexToRgba(color, 0.85);
-          ctx.lineWidth = 1.6;
-          ctx.beginPath();
-          ctx.moveTo(0, y);
-          ctx.lineTo(width, y);
-          ctx.stroke();
-          ctx.setLineDash([]);
-          ctx.font = '700 9px "Plus Jakarta Sans", system-ui, sans-serif';
+          drawHLine(ctx, y, width, color, { dash, width: MARKUP_WIDTH.line, alpha: MARKUP_ALPHA.line });
           const text = `${badge} ${formatPrice(price, overlay.precision)}`;
-          const tw = ctx.measureText(text).width;
-          ctx.fillStyle = 'rgba(9, 14, 24, 0.9)';
-          roundRect(ctx, width - tw - 16, y - 9, tw + 12, 18, 5);
-          ctx.fill();
-          ctx.strokeStyle = hexToRgba(color, 0.8);
-          ctx.lineWidth = 1;
-          roundRect(ctx, width - tw - 16, y - 9, tw + 12, 18, 5);
-          ctx.stroke();
-          ctx.fillStyle = color;
-          ctx.fillText(text, width - tw - 10, y);
-          ctx.restore();
+          drawLabel(ctx, text, width - 70, y - 9, color, { size: 9, weight: 700 });
         };
 
-        drawLevel(signal.entryPrice, COLORS.entry, 'ENTRY', []);
-        drawLevel(signal.takeProfit1, COLORS.target, 'TP1', [7, 5]);
-        drawLevel(signal.takeProfit2, COLORS.target, 'TP2', [7, 5]);
+        drawLevel(signal.entryPrice, MARKUP.entry, MARKUP_LABEL.entry, []);
+        drawLevel(signal.takeProfit1, MARKUP.target, MARKUP_LABEL.target, [7, 5]);
+        drawLevel(signal.takeProfit2, MARKUP.target, MARKUP_LABEL.target, [7, 5]);
         if (signal.takeProfit3 !== null) {
-          drawLevel(signal.takeProfit3, COLORS.target, 'TP3', [7, 5]);
+          drawLevel(signal.takeProfit3, MARKUP.target, MARKUP_LABEL.target, [7, 5]);
         }
-        drawLevel(signal.stopLoss, COLORS.stop, 'INVALIDATION', []);
+        drawLevel(signal.stopLoss, MARKUP.stop, MARKUP_LABEL.stop, []);
 
         const xEntry = chart.timeScale().timeToCoordinate(signal.confirmedBarTime as UTCTimestamp);
         const yEntry = series.priceToCoordinate(signal.entryPrice);
-        if (xEntry !== null && yEntry !== null) {
-          const arrowY = isRise ? yEntry + 26 : yEntry - 26;
-          ctx.strokeStyle = hexToRgba(dirColor, 0.9);
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.moveTo(xEntry, yEntry);
-          ctx.lineTo(xEntry, isRise ? arrowY - 10 : arrowY + 10);
-          ctx.stroke();
-
-          ctx.fillStyle = dirColor;
-          ctx.beginPath();
-          if (isRise) {
-            ctx.moveTo(xEntry, arrowY - 12);
-            ctx.lineTo(xEntry - 7, arrowY + 4);
-            ctx.lineTo(xEntry + 7, arrowY + 4);
-          } else {
-            ctx.moveTo(xEntry, arrowY + 12);
-            ctx.lineTo(xEntry - 7, arrowY - 4);
-            ctx.lineTo(xEntry + 7, arrowY - 4);
-          }
-          ctx.closePath();
-          ctx.fill();
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
-          ctx.lineWidth = 1.2;
-          ctx.stroke();
-
-          const title = isRise ? 'RISE' : 'FALL';
-          const meta = `${signal.modelLabel} · ${signal.score}/100`;
-          ctx.font = '800 11px "Plus Jakarta Sans", system-ui, sans-serif';
-          const tw = ctx.measureText(title).width;
-          ctx.font = '600 9px "Plus Jakarta Sans", system-ui, sans-serif';
-          const mw = ctx.measureText(meta).width;
-          const blockW = Math.max(tw + 12, mw) + 18;
-          const blockH = 32;
-          const blockX = Math.max(6, Math.min(width - blockW - 6, xEntry - blockW / 2));
-          const blockY = isRise
-            ? Math.min(mediaSize.height - blockH - 6, arrowY + 10)
-            : Math.max(6, arrowY - blockH - 10);
-
-          ctx.fillStyle = 'rgba(9, 14, 24, 0.92)';
-          roundRect(ctx, blockX, blockY, blockW, blockH, 7);
-          ctx.fill();
-          ctx.strokeStyle = dirColor;
-          ctx.lineWidth = 1.5;
-          roundRect(ctx, blockX, blockY, blockW, blockH, 7);
-          ctx.stroke();
-
-          ctx.fillStyle = dirColor;
-          ctx.font = '800 11px "Plus Jakarta Sans", system-ui, sans-serif';
-          ctx.fillText(title, blockX + 9, blockY + 11);
-          ctx.fillStyle = 'rgba(226, 232, 240, 0.9)';
-          ctx.font = '600 9px "Plus Jakarta Sans", system-ui, sans-serif';
-          ctx.fillText(meta, blockX + 9, blockY + 24);
+        if (xEntry !== null && yEntry !== null && xEntry >= 0 && xEntry <= width) {
+          drawBreakMarker(ctx, xEntry, yEntry, dirColor, isRise);
+          drawLabel(ctx, isRise ? 'RISE' : 'FALL', xEntry + 7, yEntry - 10, dirColor, {
+            size: 9,
+            weight: 700,
+          });
         }
       }
 
