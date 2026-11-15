@@ -635,16 +635,44 @@ export class DerivWebSocketService {
     return markets;
   }
 
-  /** Registers (or refreshes) the desired candle subscription, restored after reconnect. */
-  registerCandleSubscription(symbol: string, granularitySec: number, count: number) {
+  /**
+   * Registers (or refreshes) the desired candle subscription, restored after reconnect.
+   * Returns the live entry so callers can detect whether it is still the registered
+   * subscription once an in-flight request resolves (see `subscribeCandles`).
+   */
+  registerCandleSubscription(
+    symbol: string,
+    granularitySec: number,
+    count: number
+  ): CandleSubscription {
     const key = `${symbol}:${granularitySec}`;
     const existing = this.candleSubs.get(key);
     if (existing) {
       existing.count = count;
-      existing.subscriptionId = null;
-      return;
+      return existing;
     }
-    this.candleSubs.set(key, { symbol, granularity: granularitySec, count, subscriptionId: null });
+    const created: CandleSubscription = {
+      symbol,
+      granularity: granularitySec,
+      count,
+      subscriptionId: null,
+    };
+    this.candleSubs.set(key, created);
+    return created;
+  }
+
+  /**
+   * Forgets an upstream subscription id that was issued for a request the caller has
+   * already abandoned (the user switched instrument or timeframe before it resolved).
+   * Without this the server keeps streaming data nobody consumes.
+   */
+  private async forgetOrphanedSubscription(subscriptionId: unknown): Promise<void> {
+    if (typeof subscriptionId !== 'string') return;
+    try {
+      await this.sendRequest({ forget: subscriptionId });
+    } catch {
+      // Ignore forget failures if the stream already closed.
+    }
   }
 
   /**
@@ -732,7 +760,7 @@ export class DerivWebSocketService {
     count: number
   ): Promise<Candle[]> {
     await this.connect();
-    this.registerCandleSubscription(symbol, granularitySec, count);
+    const registered = this.registerCandleSubscription(symbol, granularitySec, count);
 
     const res = await this.sendRequest({
       ticks_history: symbol,
@@ -745,10 +773,18 @@ export class DerivWebSocketService {
     });
 
     const key = `${symbol}:${granularitySec}`;
-    const sub = this.candleSubs.get(key);
     const subId = (res.subscription as { id?: unknown } | undefined)?.id;
-    if (sub && typeof subId === 'string') {
-      sub.subscriptionId = subId;
+    if (this.candleSubs.get(key) !== registered) {
+      // The user switched instrument or timeframe while this request was in flight.
+      // The stream is no longer wanted, so forget the id the server just issued —
+      // otherwise it keeps pushing candles nobody consumes.
+      await this.forgetOrphanedSubscription(subId);
+    } else if (typeof subId === 'string') {
+      const superseded = registered.subscriptionId;
+      registered.subscriptionId = subId;
+      if (superseded && superseded !== subId) {
+        await this.forgetOrphanedSubscription(superseded);
+      }
     }
 
     const candles = parseHistoricalCandles(res.candles);
@@ -801,11 +837,21 @@ export class DerivWebSocketService {
     const existing = this.tickSubs.get(symbol);
     if (existing && existing.subscriptionId) return;
 
+    // Register the intent before the request so a switch that happens while it is in
+    // flight can cancel it (see `unsubscribeTicks`).
+    const registered: TickSubscription = existing ?? { symbol, subscriptionId: null };
+    this.tickSubs.set(symbol, registered);
+
     const res = await this.sendRequest({ ticks: symbol, subscribe: 1 });
     const subId = (res.subscription as { id?: unknown } | undefined)?.id;
-    const sub = this.tickSubs.get(symbol) ?? { symbol, subscriptionId: null };
-    if (typeof subId === 'string') sub.subscriptionId = subId;
-    this.tickSubs.set(symbol, sub);
+
+    if (this.tickSubs.get(symbol) !== registered) {
+      // The stream was cancelled (instrument switched) while this request was in flight;
+      // forget the id so the server stops pushing ticks for a symbol we no longer show.
+      await this.forgetOrphanedSubscription(subId);
+      return;
+    }
+    if (typeof subId === 'string') registered.subscriptionId = subId;
 
     const tick = parseTick(res.tick);
     if (tick) {

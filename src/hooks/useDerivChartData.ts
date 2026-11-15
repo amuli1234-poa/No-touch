@@ -131,9 +131,11 @@ export function useDerivChartData() {
           granularity,
           INITIAL_CANDLE_COUNT
         );
+        // A newer switch superseded this request while it was in flight: abandon it before
+        // opening any tick stream, otherwise this symbol would stream forever unobserved.
+        if (requestCounterRef.current !== reqSeq) return;
         // Open a continuous tick stream so the forming candle updates between OHLC frames.
         void service.subscribeTicks(symbol).catch(() => {});
-        if (requestCounterRef.current !== reqSeq) return;
 
         setDataset({
           datasetId: nextDatasetId,

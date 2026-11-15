@@ -125,6 +125,12 @@ Frontend layout:
 - `src/services/derivWebSocket.ts` — the Deriv feed: symbol discovery,
   historical candles, live OHLC/tick subscriptions, reconnect/backoff and
   diagnostics. Reads `src/config/deriv.ts` (public options WS endpoint).
+  Switching instrument or timeframe must leave exactly **one** candle stream and
+  one tick stream open. Cancelling a subscribe while its request is in flight
+  forgets the id the server issues, and `subscribeTicks`/`subscribeCandles`
+  never re-register a stream that was cancelled mid-flight. Locked down by
+  `src/services/derivWebSocket.test.ts` (fake socket, in-flight cancellation and
+  a rapid switch across every eligible index).
 - `src/hooks/*` — the state layer that binds the feed to the engines
   (`useDerivChartData`, `usePriceActionAnalysis`, `useVolatilityScanner`,
   `useAiModules`, `useStrategyLab`, `useSystemHealth`, `useAppSettings`, …).
