@@ -11,6 +11,7 @@ import type { AutoExecutionRunner } from '../execution/autoRunner.js';
 import type { ContractMonitor } from '../execution/contractMonitor.js';
 import type { MarketScanner } from '../services/marketScanner.js';
 import type { MarketDataService } from '../services/marketData.js';
+import type { ExecutionFlags } from '../config/flags.js';
 import { createSignal, SignalError } from '../services/signals.js';
 import { adapterFor, AdapterError } from '../execution/adapters/index.js';
 import { normalisePreferences, MIN_DURATION_MINUTES, MAX_DURATION_MINUTES } from '../execution/preferences.js';
@@ -48,6 +49,12 @@ export interface ExecutionRouterDeps {
   monitor?: ContractMonitor;
   /** Optional: the automatic scanner, for the status surface. */
   scanner?: MarketScanner;
+  /**
+   * Optional: the resolved kill switches. When present, the scanner status
+   * explains WHY the scanner is off (master switch vs demo switch) instead of a
+   * bare "not running", so a fresh local checkout is not a silent dead end.
+   */
+  flags?: ExecutionFlags;
   /** Optional per-minute limits, for tests. Defaults are conservative. */
   limits?: { signalsPerMinute?: number; submitsPerMinute?: number };
 }
@@ -301,8 +308,18 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
    * caller's own signals touched — a customer cannot see another's activity.
    */
   router.get('/api/execution/scanner', requireSession(ctx), (req: AuthedRequest, res: Response) => {
+    const flags = deps.flags;
+    const executionEnabled = flags ? flags.allowExecution : true;
+    const demoEnabled = flags ? flags.allowDemoExecution : true;
+    // Why the scanner is (not) running, so a client can tell the user what to do
+    // rather than showing a bare "not running". The scanner needs both switches.
+    const reason = !executionEnabled
+      ? 'execution_disabled'
+      : !demoEnabled
+        ? 'demo_execution_disabled'
+        : null;
     if (!scanner) {
-      res.json({ running: false, lastPassAt: null, recent: [] });
+      res.json({ running: false, executionEnabled, demoEnabled, reason, lastPassAt: null, recent: [] });
       return;
     }
     const userId = req.user!.id;
@@ -322,7 +339,7 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
         confidence: o.candidate?.confidence ?? null,
         executed: o.auto?.outcome === 'executed'
       }));
-    res.json({ running: scanner.isRunning, lastPassAt: scanner.lastPassTime, recent });
+    res.json({ running: scanner.isRunning, executionEnabled, demoEnabled, reason, lastPassAt: scanner.lastPassTime, recent });
   });
 
   router.get('/api/execution/contracts', requireSession(ctx), (req: AuthedRequest, res: Response) => {

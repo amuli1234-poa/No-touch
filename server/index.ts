@@ -93,7 +93,8 @@ export function createApp(cfg: ServerConfig, store: Store): AppBundle {
       market,
       runner: execution.runner,
       monitor: execution.monitor,
-      scanner: execution.scanner
+      scanner: execution.scanner,
+      flags: execution.flags
     })
   );
 

@@ -360,7 +360,11 @@ export function TradeView() {
                         ? scanner.lastPassAt
                           ? `Scanner running · last pass ${new Date(scanner.lastPassAt).toLocaleTimeString()}`
                           : 'Scanner running · first pass pending'
-                        : 'Scanner is not running on the server'}
+                        : scanner?.reason === 'execution_disabled'
+                          ? 'Scanner off — the server master switch is off (set ALLOW_EXECUTION=true)'
+                          : scanner?.reason === 'demo_execution_disabled'
+                            ? 'Scanner off — demo execution is off (set ALLOW_DEMO_EXECUTION=true)'
+                            : 'Scanner is not running on the server'}
                     </p>
                   )}
                   {scanner && scanner.recent.length > 0 && (

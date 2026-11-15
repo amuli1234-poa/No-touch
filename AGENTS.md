@@ -653,6 +653,13 @@ has Markdown at `https://developers.deriv.com/llms/<endpoint>.md` (e.g. `buy.md`
 - Wired in `composition.ts` (bundled as `scanner`) and started in `index.ts` only
   when `ALLOW_EXECUTION` and `ALLOW_DEMO_EXECUTION` are both on; stopped on
   shutdown. `GET /api/execution/scanner` returns per-user status (`test:scanner`).
+- **Local gotcha:** the switches live in the environment, and `.env` is
+  git-ignored, so a fresh clone has them OFF — the scanner will not start and
+  every trade is rejected. Set `ALLOW_EXECUTION=true` and
+  `ALLOW_DEMO_EXECUTION=true` in `.env` and restart the backend (see
+  `.env.example`). The status endpoint reports `reason` (`execution_disabled` /
+  `demo_execution_disabled`) and the Trade panel shows it, so the cause is
+  visible rather than a silent "not running".
 
 ## Contract monitoring and reconciliation (Phase 8)
 

@@ -114,6 +114,8 @@ async function withServer(
     /** When set, an automatic runner is wired and these preferences are stored. */
     automatic?: boolean;
     limits?: { signalsPerMinute?: number; submitsPerMinute?: number };
+    /** When set, a fake scanner is passed to the router for status tests. */
+    scanner?: { isRunning: boolean; lastPassTime: number | null; recent: unknown[] };
   } = {}
 ) {
   const express = (await import('express')).default;
@@ -177,7 +179,19 @@ async function withServer(
   const monitor = new ContractMonitor({ store, broker, auditor });
   (gateway as any).onContractOpened = (u: any, c: any, t: string) => monitor.monitor(u, c, t);
   const app = express();
-  app.use(createExecutionRouter({ cfg, store, gateway, market, runner, monitor, limits: opts.limits }));
+  app.use(
+    createExecutionRouter({
+      cfg,
+      store,
+      gateway,
+      market,
+      runner,
+      monitor,
+      limits: opts.limits,
+      flags,
+      scanner: opts.scanner as any
+    })
+  );
   const server = app.listen(0);
   const port = (server.address() as any).port;
   const base = `http://127.0.0.1:${port}`;
@@ -516,4 +530,45 @@ test('POST /preview rejects a parameter the family does not support', async () =
     assert.equal(res.status, 422);
     assert.equal(res.body.error, 'unsupported_parameter');
   });
+});
+
+test('GET /scanner reports running with the switches on', async () => {
+  await withServer(
+    async ({ get }) => {
+      const res = await get('/api/execution/scanner');
+      assert.equal(res.status, 200);
+      assert.equal(res.body.running, true);
+      assert.equal(res.body.executionEnabled, true);
+      assert.equal(res.body.demoEnabled, true);
+      assert.equal(res.body.reason, null);
+    },
+    { scanner: { isRunning: true, lastPassTime: 123, recent: [] } }
+  );
+});
+
+test('GET /scanner explains the master switch is off', async () => {
+  await withServer(
+    async ({ get }) => {
+      const res = await get('/api/execution/scanner');
+      assert.equal(res.status, 200);
+      assert.equal(res.body.running, false);
+      assert.equal(res.body.executionEnabled, false);
+      assert.equal(res.body.reason, 'execution_disabled');
+    },
+    { flags: { allowExecution: false, allowDemoExecution: false } }
+  );
+});
+
+test('GET /scanner explains the demo switch is off', async () => {
+  await withServer(
+    async ({ get }) => {
+      const res = await get('/api/execution/scanner');
+      assert.equal(res.status, 200);
+      assert.equal(res.body.running, false);
+      assert.equal(res.body.executionEnabled, true);
+      assert.equal(res.body.demoEnabled, false);
+      assert.equal(res.body.reason, 'demo_execution_disabled');
+    },
+    { flags: { allowExecution: true, allowDemoExecution: false } }
+  );
 });

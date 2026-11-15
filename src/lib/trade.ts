@@ -167,6 +167,12 @@ export function rejectionMessage(code: string, reasons: string[] = []): string {
 
 export interface ScannerStatus {
   running: boolean;
+  /** Whether the master kill switch allows execution. */
+  executionEnabled: boolean;
+  /** Whether the DEMO kill switch allows execution. */
+  demoEnabled: boolean;
+  /** Why the scanner is off: 'execution_disabled' | 'demo_execution_disabled' | null. */
+  reason: 'execution_disabled' | 'demo_execution_disabled' | null;
   lastPassAt: number | null;
   recent: Array<{
     symbol: string;
@@ -186,6 +192,12 @@ export async function fetchScannerStatus(): Promise<ScannerStatus | null> {
     if (!data) return null;
     return {
       running: Boolean(data.running),
+      executionEnabled: data.executionEnabled !== false,
+      demoEnabled: data.demoEnabled !== false,
+      reason:
+        data.reason === 'execution_disabled' || data.reason === 'demo_execution_disabled'
+          ? data.reason
+          : null,
       lastPassAt: typeof data.lastPassAt === 'number' ? data.lastPassAt : null,
       recent: Array.isArray(data.recent) ? data.recent : []
     };
