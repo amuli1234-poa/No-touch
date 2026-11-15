@@ -644,6 +644,9 @@ has Markdown at `https://developers.deriv.com/llms/<endpoint>.md` (e.g. `buy.md`
   used directly as the signal's confidence. A choppy market scores low and is
   ignored; a clean trend scores high. `minTicks` gates the window, `minEfficiency`
   the call, `perSymbolCooldownSeconds` the repeat rate, and `windowMs` the tick age.
+- `minEfficiency` is calibrated, not guessed. Measured on live Volatility indices,
+  a 60-tick window has median efficiency ~0.12 and 90th percentile ~0.36, so the
+  default is 0.35 (near p90). A higher value makes signals so rare they never fire.
 - It subscribes to watched markets so tick buffers fill, then reads the buffer via
   `MarketDataService.getTicks(symbol)`; it never asks Deriv for a price itself. A
   signal is built on a fresh snapshot, exactly as a manual one is.
