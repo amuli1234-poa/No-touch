@@ -425,6 +425,31 @@ at runtime.
   (`fg-5`/`fg-6`) and the semantic tones are tuned to clear 4.5:1 on their
   surfaces in each theme.
 
+## Login troubleshooting (verify before blaming the migration)
+
+The dashboard migration did **not** touch the auth path: `src/lib/auth.ts`,
+`src/lib/balances.ts`, `src/lib/router.ts`, `src/components/auth/*`,
+`src/components/landing/*`, `src/Root.tsx`, `src/main.tsx`, `index.html`,
+`vite.config.ts` and everything under `server/` are byte-identical to the
+pre-migration commit. If login fails, check the environment, not the diff.
+
+- The registered callback is `http://localhost:3000/auth/deriv/callback`. The
+  **Vite dev server must be on :3000** (it proxies `/auth/*` to the backend on
+  :8787). Both must be running or the callback is refused / the token exchange
+  fails. `npm run dev:all` starts both.
+- After Deriv redirects back, the backend 302s to `${DERIV_REDIRECT_URI origin}/app`.
+  With `DERIV_REDIRECT_URI=http://localhost:3000/...` the login only completes
+  **when the browser is on the `localhost:3000` dev preview**. A static GitHub
+  Pages build (no backend) deliberately steps aside via `ProtectedRoute` — it
+  cannot complete a real OAuth login.
+- `NODE_ENV=production` enables HTTPS enforcement, which 308-redirects plain
+  HTTP to `https://`; run dev with `NODE_ENV=development` (the committed `.env`).
+- Debug with: `curl -sD - -o /dev/null http://localhost:3000/auth/start?mode=login`
+  (expect a 302 to `auth.deriv.com` plus a `ws_oauth` cookie). Failures land on
+  `/signin-error?code=…`: `invalid_state`/`duplicate_callback` = stale or reused
+  link, `expired_code` = the code expired (finish promptly), `cancelled` = the
+  user declined, `identity_unverified`/`authorization_failed` = Deriv side.
+
 ## Pushing to GitHub
 
 Pushing works from this container. `git push origin <branch>` succeeds (verified
