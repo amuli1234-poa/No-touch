@@ -378,7 +378,10 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
       for (const mode of ['demo', 'real'] as const) {
         const accountId = result.value.preferredAccountId[mode];
         if (accountId && !user.accounts.some((a) => a.accountId === accountId)) {
-          res.status(403).json({ error: 'account_not_authorized' });
+          res.status(403).json({
+            error: 'account_not_authorized',
+            message: 'That account is not linked to your session.'
+          });
           return;
         }
       }

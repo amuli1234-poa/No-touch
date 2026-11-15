@@ -83,6 +83,33 @@ export type SaveResult =
   | { ok: true; preferences: ExecutionPreferences }
   | { ok: false; error: string; message: string };
 
+/**
+ * Copy for a save rejection that arrived without a `message`. The server always
+ * sends a code, so map the ones a save can actually hit rather than showing a
+ * bare "could not save".
+ */
+const SAVE_ERROR_COPY: Record<string, string> = {
+  unauthorized: 'Your session has expired. Please sign in again.',
+  account_suspended: 'Your account is suspended. Contact support.',
+  account_not_authorized: 'That account is not linked to your session.',
+  invalid_mode: 'That mode is not valid.',
+  invalid_contract_family: 'That contract type is not valid.',
+  invalid_stake: 'Enter a stake greater than zero.',
+  invalid_stake_basis: 'That stake basis is not valid.',
+  invalid_currency: 'That currency is not valid.',
+  invalid_parameters: 'Those trade parameters are not valid.',
+  invalid_duration: 'That duration is not valid.',
+  invalid_duration_unit: 'That duration unit is not valid.',
+  duration_out_of_range: 'That duration is outside the allowed range.',
+  invalid_multiplier: 'Enter a multiplier greater than zero.',
+  invalid_preferences: 'Those settings could not be read.',
+  rate_limited: 'Too many requests — slow down for a moment.'
+};
+
+export function saveErrorMessage(code: string): string {
+  return SAVE_ERROR_COPY[code] ?? 'Could not save your trade settings.';
+}
+
 export async function saveExecutionPreferences(
   body: Partial<ExecutionPreferences>
 ): Promise<SaveResult> {
@@ -95,10 +122,11 @@ export async function saveExecutionPreferences(
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
+      const error = typeof data?.error === 'string' ? data.error : 'save_failed';
       return {
         ok: false,
-        error: typeof data?.error === 'string' ? data.error : 'save_failed',
-        message: typeof data?.message === 'string' ? data.message : 'Could not save your trade settings.'
+        error,
+        message: typeof data?.message === 'string' ? data.message : saveErrorMessage(error)
       };
     }
     return { ok: true, preferences: data.preferences as ExecutionPreferences };

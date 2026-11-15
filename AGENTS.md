@@ -603,6 +603,13 @@ has Markdown at `https://developers.deriv.com/llms/<endpoint>.md` (e.g. `buy.md`
   price); `server/services/strategy.ts` is a pure policy verdict; both never trade.
 - `server/services/risk.ts` is the gate: every rule runs, and it fails closed when
   the balance is unknown. No martingale exists anywhere.
+- The `execution_frequency` and `trades_per_session` rules exclude the intent
+  currently being submitted (`RiskEvaluationInput.excludeIntentId`, passed by the
+  gateway). An intent is created moments before its own risk check, so without
+  this it would count as the most recent trade and reject every first trade.
+- Protected routes answer 401/403 with both an `error` code and a `message`; the
+  Trade panel surfaces `message` (falling back to a code-keyed map) so a dead
+  session reads as "session expired", never a bare "could not save".
 - `server/execution/gateway.ts` is the ONLY purchase submitter. It applies, in
   order: kill switches -> ownership/mode -> approval window -> token -> account
   lock -> signal single-use -> risk -> proposal -> buy. A purchase that may have

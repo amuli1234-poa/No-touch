@@ -63,19 +63,28 @@ export function requireSession(ctx: SessionContext) {
   return (req: AuthedRequest, res: Response, next: NextFunction): void => {
     const session = resolveSession(ctx, req);
     if (!session) {
-      res.status(401).json({ error: 'unauthorized' });
+      res.status(401).json({
+        error: 'unauthorized',
+        message: 'Your session has expired. Please sign in again.'
+      });
       return;
     }
     req.session = session;
     req.user = ctx.store.getUserById(session.userId) ?? undefined;
     if (!req.user) {
-      res.status(401).json({ error: 'unauthorized' });
+      res.status(401).json({
+        error: 'unauthorized',
+        message: 'Your session has expired. Please sign in again.'
+      });
       return;
     }
     // Administrative suspension is enforced here, on the same authorization
     // path every protected trader route already uses — not by a UI label.
     if (req.user.suspended) {
-      res.status(403).json({ error: 'account_suspended' });
+      res.status(403).json({
+        error: 'account_suspended',
+        message: 'Your account is suspended. Contact support.'
+      });
       return;
     }
     // Sliding renewal: extend an otherwise-valid session on use.

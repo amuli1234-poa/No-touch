@@ -144,8 +144,8 @@ test('forward test: a rising series trades, wins, and the ledger reconciles', as
       flags: { allowExecution: true, allowDemoExecution: true, allowRealExecution: false },
       broker,
       balanceProvider: async () => 1000,
-      riskEvaluator: (user, accountId, stake, signal, balance, now) =>
-        evaluateRisk(store, { userId: user.id, accountId, stake, balance, signalAgeSeconds: (now - signal.createdAt) / 1000, now }, effectiveRiskProfile(store, user.id)),
+      riskEvaluator: (user, accountId, stake, signal, balance, now, intentId) =>
+        evaluateRisk(store, { userId: user.id, accountId, stake, balance, signalAgeSeconds: (now - signal.createdAt) / 1000, now, excludeIntentId: intentId }, effectiveRiskProfile(store, user.id)),
       now: clock
     });
     const monitor = new ContractMonitor({ store, broker, auditor, now: clock });
@@ -223,8 +223,8 @@ test('forward test: a losing series engages auto-stop after the consecutive-loss
       flags: { allowExecution: true, allowDemoExecution: true, allowRealExecution: false },
       broker,
       balanceProvider: async () => 1000,
-      riskEvaluator: (user, accountId, stake, signal, balance, now) =>
-        evaluateRisk(store, { userId: user.id, accountId, stake, balance, signalAgeSeconds: (now - signal.createdAt) / 1000, now }, effectiveRiskProfile(store, user.id)),
+      riskEvaluator: (user, accountId, stake, signal, balance, now, intentId) =>
+        evaluateRisk(store, { userId: user.id, accountId, stake, balance, signalAgeSeconds: (now - signal.createdAt) / 1000, now, excludeIntentId: intentId }, effectiveRiskProfile(store, user.id)),
       now: clock
     });
     const monitor = new ContractMonitor({ store, broker, auditor, now: clock });

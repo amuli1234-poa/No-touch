@@ -13,6 +13,7 @@ import { BrokerError } from '../execution/broker/types.js';
 import { assertTransition, canTransition, IllegalTransitionError } from '../execution/stateMachine.js';
 import { redact } from '../execution/audit.js';
 import { RISE_FALL_ADAPTER, MULTIPLIERS_ADAPTER, AdapterError } from '../execution/adapters/index.js';
+import { evaluateRisk, effectiveRiskProfile } from '../services/risk.js';
 import { loadExecutionFlags } from '../config/flags.js';
 import type { ServerConfig } from '../config.js';
 import type { SignalRecord, ContractFamily, DerivContractType, ExecutionPreferencesRecord } from '../execution/types.js';
@@ -196,6 +197,48 @@ test('a valid manual DEMO intent executes and records contract, ledger and audit
     // (which the fake derives from the requested amount).
     assert.equal(broker.buys.length, 1);
     assert.equal(broker.buys[0].price, broker.proposals[0].payload.amount);
+  } finally {
+    await store.close();
+  }
+});
+
+/* --------------------- production risk engine integration ------------------ */
+
+test('a manual DEMO trade executes with the REAL risk engine wired in', async () => {
+  // Regression: with the production evaluator, the just-created intent used to
+  // count as the "most recent trade", so execution_frequency rejected every
+  // submission. This wires the real evaluator exactly as composition.ts does.
+  const store = new Store(tmpDir(), { unsafeDisableLock: true });
+  await store.load();
+  const broker = new FakeBroker();
+  const gateway = new ExecutionGateway({
+    store,
+    cfg: makeConfig(),
+    flags: { allowExecution: true, allowDemoExecution: true, allowRealExecution: false },
+    broker,
+    balanceProvider: async () => 1000,
+    riskEvaluator: (u, accountId, stake, sig, balance, now, intentId) =>
+      evaluateRisk(
+        store,
+        {
+          userId: u.id,
+          accountId,
+          stake,
+          balance,
+          signalAgeSeconds: (now - sig.createdAt) / 1000,
+          now,
+          excludeIntentId: intentId
+        },
+        effectiveRiskProfile(store, u.id)
+      ),
+    now: () => NOW
+  });
+  try {
+    const sig = await seedSignal(store);
+    const intent = await gateway.createIntent(intentInput(sig));
+    const result = await gateway.submit(USER, intent.id, 'fake-token');
+    assert.equal(result.intent.state, 'OPEN');
+    assert.equal(broker.buys.length, 1);
   } finally {
     await store.close();
   }

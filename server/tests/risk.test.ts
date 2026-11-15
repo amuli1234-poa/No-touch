@@ -293,6 +293,38 @@ test('execution_frequency rejects a trade too soon after the last one', async ()
   }
 });
 
+test('the intent being submitted does not count as a prior trade', async () => {
+  // Regression: every submission creates its intent immediately before the
+  // risk check. The frequency rule must exclude that intent, or it compares the
+  // trade against itself (0s since last) and rejects every submission.
+  const store = await storeWith();
+  try {
+    await store.putRiskProfile(profile({ maxExecutionFrequencySeconds: 3 }));
+    const own = intent({ id: 'int_self', createdAt: NOW });
+    await store.putTradeIntent(own);
+    const decision = evaluateRisk(store, { ...baseInput, excludeIntentId: own.id });
+    assert.equal(decision.approved, true, JSON.stringify(decision.reasons));
+    assert.ok(!decision.reasons.includes('execution_frequency'));
+  } finally {
+    await store.close();
+  }
+});
+
+test('a real prior trade still trips the frequency rule when the current intent is excluded', async () => {
+  const store = await storeWith();
+  try {
+    await store.putRiskProfile(profile({ maxExecutionFrequencySeconds: 30 }));
+    await store.putTradeIntent(intent({ id: 'int_prev', createdAt: NOW - 5_000 }));
+    const own = intent({ id: 'int_self', createdAt: NOW });
+    await store.putTradeIntent(own);
+    const decision = evaluateRisk(store, { ...baseInput, excludeIntentId: own.id });
+    assert.equal(decision.approved, false);
+    assert.ok(decision.reasons.includes('execution_frequency'));
+  } finally {
+    await store.close();
+  }
+});
+
 test('trades_per_session rejects once the daily count is reached', async () => {
   const store = await storeWith();
   try {
@@ -302,6 +334,19 @@ test('trades_per_session rejects once the daily count is reached', async () => {
     const decision = evaluateRisk(store, baseInput);
     assert.equal(decision.approved, false);
     assert.ok(decision.reasons.includes('trades_per_session'));
+  } finally {
+    await store.close();
+  }
+});
+
+test('the intent being submitted is not counted towards trades_per_session', async () => {
+  const store = await storeWith();
+  try {
+    await store.putRiskProfile(profile({ maxTradesPerSession: 1, maxExecutionFrequencySeconds: 0 }));
+    const own = intent({ id: 'int_self', createdAt: NOW });
+    await store.putTradeIntent(own);
+    const decision = evaluateRisk(store, { ...baseInput, excludeIntentId: own.id });
+    assert.equal(decision.approved, true, JSON.stringify(decision.reasons));
   } finally {
     await store.close();
   }

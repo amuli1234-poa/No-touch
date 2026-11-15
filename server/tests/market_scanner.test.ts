@@ -220,10 +220,10 @@ async function withScanner(
     flags: { allowExecution: true, allowDemoExecution: true, allowRealExecution: false },
     broker,
     balanceProvider: async () => 1000,
-    riskEvaluator: (user, accountId, stake, signal, balance, now) =>
+    riskEvaluator: (user, accountId, stake, signal, balance, now, intentId) =>
       evaluateRisk(
         store,
-        { userId: user.id, accountId, stake, balance, signalAgeSeconds: (now - signal.createdAt) / 1000, now },
+        { userId: user.id, accountId, stake, balance, signalAgeSeconds: (now - signal.createdAt) / 1000, now, excludeIntentId: intentId },
         effectiveRiskProfile(store, user.id)
       ),
     now: clock

@@ -65,13 +65,14 @@ export function createExecution(cfg: ServerConfig, store: Store, market: MarketD
       stake: number,
       signal: SignalRecord,
       balance: number | null,
-      now: number
+      now: number,
+      intentId: string
     ) => {
       const profile = effectiveRiskProfile(store, user.id);
       const ageSeconds = (now - signal.createdAt) / 1000;
       const decision = evaluateRisk(
         store,
-        { userId: user.id, accountId, stake, balance, signalAgeSeconds: ageSeconds, now },
+        { userId: user.id, accountId, stake, balance, signalAgeSeconds: ageSeconds, now, excludeIntentId: intentId },
         profile
       );
       return { approved: decision.approved, reasons: decision.reasons };

@@ -56,6 +56,14 @@ export interface RiskEvaluationInput {
   signalAgeSeconds: number | null;
   /** Current time. */
   now: number;
+  /**
+   * The intent currently being submitted. It is excluded from the
+   * "time since the last trade" and "trades today" counts, because it is the
+   * trade under evaluation, not a preceding one. Without this, an intent that
+   * was created moments before its own submission would count as the most
+   * recent trade and the frequency rule would reject every first trade.
+   */
+  excludeIntentId?: string | null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -165,11 +173,15 @@ export function evaluateRisk(
     push('min_balance', false, 'balance unavailable');
   }
 
-  // Frequency: the most recent intent for this account within the window.
-  const recent = store
+  // Frequency: the most recent *other* trade for this account within the
+  // window. The intent under evaluation is excluded — it was created as the
+  // first step of this very submission, so counting it would make the rule
+  // compare a trade against itself and reject every submission.
+  const priorIntents = store
     .listTradeIntents(input.userId)
-    .filter((i) => i.accountId === input.accountId)
-    .sort((a, b) => b.createdAt - a.createdAt)[0];
+    .filter((i) => i.accountId === input.accountId && i.id !== input.excludeIntentId)
+    .sort((a, b) => b.createdAt - a.createdAt);
+  const recent = priorIntents[0];
   const sinceLastSeconds = recent ? (input.now - recent.createdAt) / 1000 : Infinity;
   push(
     'execution_frequency',
@@ -177,11 +189,10 @@ export function evaluateRisk(
     `${sinceLastSeconds.toFixed(1)}s since last >= ${profile.maxExecutionFrequencySeconds}s`
   );
 
-  // Trades per session: count intents since the start of the UTC day.
+  // Trades per session: count intents since the start of the UTC day, excluding
+  // the one being submitted (it is not yet a completed trade).
   const dayStart = new Date(input.now).setUTCHours(0, 0, 0, 0);
-  const todayCount = store
-    .listTradeIntents(input.userId)
-    .filter((i) => i.accountId === input.accountId && i.createdAt >= dayStart).length;
+  const todayCount = priorIntents.filter((i) => i.createdAt >= dayStart).length;
   push(
     'trades_per_session',
     todayCount < profile.maxTradesPerSession,

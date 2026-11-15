@@ -391,7 +391,7 @@ test('10. Unauthorized dashboard access is blocked without a session', async () 
   try {
     const res = await get(app.base, '/auth/session');
     assert.equal(res.status, 401);
-    assert.deepEqual(await res.json(), { error: 'unauthorized' });
+    assert.equal((await res.json()).error, 'unauthorized');
 
     const res2 = await fetch(`${app.base}/auth/session`, { headers: { Cookie: 'ws_session=forged.sig' } });
     assert.equal(res2.status, 401);
