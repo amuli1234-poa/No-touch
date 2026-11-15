@@ -632,6 +632,25 @@ has Markdown at `https://developers.deriv.com/llms/<endpoint>.md` (e.g. `buy.md`
 - Wired in `composition.ts` (bundled as `runner`) and invoked from
   `POST /api/execution/signals` when the user is automatic. `test:auto` covers it.
 
+## Automatic scanning (Phase 10)
+
+- `server/services/marketScanner.ts` (`MarketScanner`) is the loop that *feeds*
+  the automatic runner: it watches every eligible Volatility Index, scores each
+  one, and creates a signal when a market is directional enough to act on.
+- It has no authority of its own. It cannot buy or skip a check; it can only
+  propose a signal, which then travels the normal path (kill switches, ownership,
+  risk engine, single-use signal, one purchase path). DEMO-only, like the runner.
+- The score is fractal efficiency — `|last - first| / Σ|Δ|` over the tick window —
+  used directly as the signal's confidence. A choppy market scores low and is
+  ignored; a clean trend scores high. `minTicks` gates the window, `minEfficiency`
+  the call, `perSymbolCooldownSeconds` the repeat rate, and `windowMs` the tick age.
+- It subscribes to watched markets so tick buffers fill, then reads the buffer via
+  `MarketDataService.getTicks(symbol)`; it never asks Deriv for a price itself. A
+  signal is built on a fresh snapshot, exactly as a manual one is.
+- Wired in `composition.ts` (bundled as `scanner`) and started in `index.ts` only
+  when `ALLOW_EXECUTION` and `ALLOW_DEMO_EXECUTION` are both on; stopped on
+  shutdown. `GET /api/execution/scanner` returns per-user status (`test:scanner`).
+
 ## Contract monitoring and reconciliation (Phase 8)
 
 - `server/execution/contractMonitor.ts` (`ContractMonitor`) settles contracts and

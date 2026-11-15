@@ -433,3 +433,87 @@ test('a runaway client is rate-limited on signals', async () => {
     { limits: { signalsPerMinute: 2 } }
   );
 });
+
+/* ------------------------------- preview -------------------------------- */
+
+test('POST /preview prices a trade without buying anything', async () => {
+  await withServer(async ({ post, broker }) => {
+    const res = await post('/api/execution/preview', {
+      symbol: 'R_100',
+      direction: 'RISE',
+      contractFamily: 'rise_fall',
+      accountId: 'DEMO',
+      stake: 20,
+      currency: 'USD',
+      parameters: { duration: 5, durationUnit: 'm' }
+    });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.ok(res.body.preview.payout > 0);
+    // A preview asks Deriv for a price and nothing else.
+    assert.equal(broker.proposals.length, 1);
+    assert.equal(broker.buys.length, 0);
+  });
+});
+
+test('POST /preview requires a session', async () => {
+  await withServer(
+    async ({ post }) => {
+      const res = await post('/api/execution/preview', {
+        symbol: 'R_100',
+        direction: 'RISE',
+        contractFamily: 'rise_fall',
+        accountId: 'DEMO',
+        stake: 20
+      });
+      assert.equal(res.status, 401);
+    },
+    { session: false }
+  );
+});
+
+test('POST /preview rejects an account the user does not own', async () => {
+  await withServer(async ({ post }) => {
+    const res = await post('/api/execution/preview', {
+      symbol: 'R_100',
+      direction: 'RISE',
+      contractFamily: 'rise_fall',
+      accountId: 'SOMEONE_ELSES',
+      stake: 20
+    });
+    assert.equal(res.status, 403);
+    assert.equal(res.body.error, 'account_not_authorized');
+  });
+});
+
+test('POST /preview is refused when the kill switch is off', async () => {
+  await withServer(
+    async ({ post }) => {
+      const res = await post('/api/execution/preview', {
+        symbol: 'R_100',
+        direction: 'RISE',
+        contractFamily: 'rise_fall',
+        accountId: 'DEMO',
+        stake: 20
+      });
+      assert.equal(res.status, 409);
+      assert.equal(res.body.error, 'execution_disabled');
+    },
+    { flags: { allowExecution: false } }
+  );
+});
+
+test('POST /preview rejects a parameter the family does not support', async () => {
+  await withServer(async ({ post }) => {
+    const res = await post('/api/execution/preview', {
+      symbol: 'R_100',
+      direction: 'RISE',
+      contractFamily: 'rise_fall',
+      accountId: 'DEMO',
+      stake: 20,
+      // Rise/Fall has no stop-loss; the adapter must refuse it.
+      parameters: { duration: 5, durationUnit: 'm', stopLoss: 1 }
+    });
+    assert.equal(res.status, 422);
+    assert.equal(res.body.error, 'unsupported_parameter');
+  });
+});

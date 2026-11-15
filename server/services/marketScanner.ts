@@ -1,0 +1,332 @@
+import type { Store, UserRecord } from '../store/store.js';
+import type { ServerConfig } from '../config.js';
+import { open } from '../lib/crypto.js';
+import type { MarketDataService, MarketSnapshot, ActiveSymbol } from './marketData.js';
+import { createSignal, SignalError } from './signals.js';
+import type { AutoExecutionRunner, AutoRunResult } from '../execution/autoRunner.js';
+import type { SignalDirection, ContractFamily } from '../execution/types.js';
+
+/**
+ * AUTOMATIC MARKET SCANNER.
+ *
+ * The loop behind "automatic" mode: it watches every eligible Volatility Index,
+ * scores each one, and — when a market looks directional enough to act on —
+ * creates a validated signal and hands it to the automatic runner. The runner
+ * then does exactly what a manual trade does: kill switches, ownership, the risk
+ * engine, single-use signal, one purchase path.
+ *
+ * This module has no authority of its own. It cannot buy, skip a check or widen
+ * an account's access; it can only *propose* a signal. Everything downstream
+ * treats that proposal as it would a customer's.
+ *
+ * Two properties are deliberate:
+ *
+ *  - It is DEMO-only. The runner refuses a real account outright, and the
+ *    scanner only ever proposes on an account the user owns and that is demo.
+ *  - It is transparent. The score is a fractal-efficiency ratio — |net move| over
+ *    total path travelled — not a black box. A choppy market scores low and is
+ *    ignored; a clean trend scores high. There is no claim of an edge here, and
+ *    no martingale: the stake is the customer's fixed preference, never raised
+ *    after a loss.
+ */
+
+/** The market universe, mirroring the client's eligibility rule exactly. */
+const EXCLUDED_NAME_TOKENS = ['BOOM', 'CRASH', 'JUMP', 'STEP', 'RANGE BREAK', 'DAILY RESET', 'DRIFT', 'TREK', 'SKEW'];
+
+/**
+ * True for a genuine Volatility Index (standard or 1-second) the scanner may
+ * watch. Mirrors `src/utils/eligibleMarkets.ts`: family first, then a defensive
+ * name check so a mislabelled synthetic can never slip in.
+ */
+export function isEligibleVolatilitySymbol(s: ActiveSymbol): boolean {
+  const name = s.displayName.toUpperCase();
+  if (EXCLUDED_NAME_TOKENS.some((t) => name.includes(t))) return false;
+  const sub = (s.submarket ?? '').toLowerCase();
+  const sym = s.symbol.toUpperCase();
+  return sub === 'random_index' || sym.startsWith('R_') || sym.startsWith('1HZ') || name.includes('VOLATILITY');
+}
+
+export interface ScannerMarket {
+  symbol: string;
+  displayName: string;
+}
+
+export interface ScannerOptions {
+  /** Ticks used for one reading. */
+  windowTicks: number;
+  /** Only ticks no older than this are considered. */
+  windowMs: number;
+  /** Minimum fractal efficiency (0..1) to call a direction. */
+  minEfficiency: number;
+  /** Minimum ticks required before a market can be scored at all. */
+  minTicks: number;
+  /** Minimum seconds between two signals for the same market and user. */
+  perSymbolCooldownSeconds: number;
+  /** How often a full pass runs. */
+  intervalMs: number;
+}
+
+export const DEFAULT_SCANNER_OPTIONS: ScannerOptions = {
+  windowTicks: 60,
+  windowMs: 60_000,
+  minEfficiency: 0.55,
+  minTicks: 30,
+  perSymbolCooldownSeconds: 120,
+  intervalMs: 30_000
+};
+
+export interface ScanCandidate {
+  symbol: string;
+  displayName: string;
+  direction: SignalDirection;
+  /** Fractal efficiency in 0..1, used as the signal's confidence. */
+  confidence: number;
+  reason: string;
+}
+
+/**
+ * Scores a window of ticks. Pure and deterministic.
+ *
+ * `efficiency = |last - first| / Σ|p_i - p_{i-1}|` — how much of the total price
+ * travel was net movement rather than back-and-forth. A market that ends where
+ * it started scores 0; a straight line scores 1. Below `minEfficiency` there is
+ * no directional call at all.
+ */
+export function analyseTicks(
+  ticks: readonly MarketSnapshot[],
+  opts: Pick<ScannerOptions, 'windowTicks' | 'windowMs' | 'minEfficiency' | 'minTicks'>,
+  now = Date.now()
+): { direction: SignalDirection; confidence: number; reason: string } | null {
+  const recent = ticks
+    .filter((t) => now - t.receivedAt <= opts.windowMs && Number.isFinite(t.quote))
+    .slice(-opts.windowTicks);
+  if (recent.length < opts.minTicks) return null;
+
+  const first = recent[0].quote;
+  const last = recent[recent.length - 1].quote;
+  let path = 0;
+  for (let i = 1; i < recent.length; i++) path += Math.abs(recent[i].quote - recent[i - 1].quote);
+  if (!Number.isFinite(path) || path <= 0) return null;
+
+  const net = last - first;
+  const efficiency = Math.min(1, Math.abs(net) / path);
+  if (efficiency < opts.minEfficiency) return null;
+
+  const direction: SignalDirection = net > 0 ? 'RISE' : 'FALL';
+  return {
+    direction,
+    confidence: efficiency,
+    reason: `Fractal efficiency ${efficiency.toFixed(2)} over ${recent.length} ticks; ${direction} bias.`
+  };
+}
+
+export type ScanOutcomeKind = 'proposed' | 'skipped_cooldown' | 'no_signal' | 'skipped_manual_mode';
+
+export interface ScanOutcome {
+  symbol: string;
+  outcome: ScanOutcomeKind;
+  candidate: ScanCandidate | null;
+  auto: AutoRunResult | null;
+}
+
+export interface MarketScannerDeps {
+  store: Store;
+  cfg: ServerConfig;
+  market: MarketDataService;
+  runner: AutoExecutionRunner;
+  options?: Partial<ScannerOptions>;
+  now?: () => number;
+}
+
+export class MarketScanner {
+  private readonly store: Store;
+  private readonly cfg: ServerConfig;
+  private readonly market: MarketDataService;
+  private readonly runner: AutoExecutionRunner;
+  private readonly opts: ScannerOptions;
+  private readonly now: () => number;
+
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private unsubscribes: Array<() => void> = [];
+  private running = false;
+  private lastPassAt: number | null = null;
+  private readonly recentOutcomes: ScanOutcome[] = [];
+  /** `${userId}:${symbol}` -> epoch ms of the last signal proposed. */
+  private readonly lastProposedAt = new Map<string, number>();
+
+  constructor(deps: MarketScannerDeps) {
+    this.store = deps.store;
+    this.cfg = deps.cfg;
+    this.market = deps.market;
+    this.runner = deps.runner;
+    this.opts = { ...DEFAULT_SCANNER_OPTIONS, ...deps.options };
+    this.now = deps.now ?? (() => Date.now());
+  }
+
+  get isRunning(): boolean {
+    return this.running;
+  }
+
+  get lastPassTime(): number | null {
+    return this.lastPassAt;
+  }
+
+  /** Recent decisions, newest last, capped so status stays cheap to serve. */
+  get recent(): readonly ScanOutcome[] {
+    return this.recentOutcomes;
+  }
+
+  /** The markets the scanner watches, from the live catalogue. */
+  async watchedMarkets(): Promise<ScannerMarket[]> {
+    const symbols = await this.market.getActiveSymbols();
+    return symbols
+      .filter(isEligibleVolatilitySymbol)
+      .map((s) => ({ symbol: s.symbol, displayName: s.displayName }));
+  }
+
+  /**
+   * Begins periodic scanning. Subscribes to every eligible market so tick
+   * buffers fill, then runs a pass on the interval. Idempotent.
+   */
+  async start(): Promise<void> {
+    if (this.running) return;
+    this.running = true;
+    const markets = await this.watchedMarkets();
+    // Subscribing keeps a live tick buffer per market; the scanner never asks
+    // Deriv for a price itself.
+    this.unsubscribes = markets.map((m) => this.market.subscribeTicks(m.symbol, () => {}));
+    this.timer = setInterval(() => {
+      void this.scanOnce().catch(() => {
+        /* a failed pass must not stop the loop */
+      });
+    }, this.opts.intervalMs);
+    // Do not hold the event loop open for the timer alone.
+    (this.timer as unknown as { unref?: () => void }).unref?.();
+  }
+
+  stop(): void {
+    this.running = false;
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+    for (const unsub of this.unsubscribes) unsub();
+    this.unsubscribes = [];
+  }
+
+  /**
+   * One full pass: score every watched market, then offer each candidate to
+   * every customer in automatic mode. Returns the decisions, for tests and for
+   * the status endpoint.
+   */
+  async scanOnce(): Promise<ScanOutcome[]> {
+    const markets = await this.watchedMarkets();
+    const candidates: ScanCandidate[] = [];
+    for (const m of markets) {
+      const ticks = this.market.getTicks(m.symbol);
+      const reading = analyseTicks(ticks, this.opts, this.now());
+      if (reading) {
+        candidates.push({ symbol: m.symbol, displayName: m.displayName, ...reading });
+      }
+    }
+
+    const automaticUsers = this.store
+      .listUsers()
+      .filter((u) => this.store.getExecutionPreferences(u.id)?.mode === 'automatic');
+
+    const outcomes: ScanOutcome[] = [];
+    for (const user of automaticUsers) {
+      const account = this.demoAccountFor(user);
+      if (!account) continue;
+      const token = this.tokenFor(user);
+      if (!token) continue;
+      for (const candidate of candidates) {
+        outcomes.push(await this.offer(user, candidate, account.accountId, account.currency ?? null, token));
+      }
+    }
+
+    this.lastPassAt = this.now();
+    this.recentOutcomes.push(...outcomes);
+    // Keep the in-memory log bounded.
+    if (this.recentOutcomes.length > 200) this.recentOutcomes.splice(0, this.recentOutcomes.length - 200);
+    return outcomes;
+  }
+
+  /** Proposes one candidate to one user, through the normal signal path. */
+  private async offer(
+    user: UserRecord,
+    candidate: ScanCandidate,
+    accountId: string,
+    currency: string | null,
+    token: string
+  ): Promise<ScanOutcome> {
+    const prefs = this.store.getExecutionPreferences(user.id);
+    const family: ContractFamily = prefs?.contractFamily ?? 'rise_fall';
+
+    const key = `${user.id}:${candidate.symbol}`;
+    const last = this.lastProposedAt.get(key) ?? 0;
+    if (this.now() - last < this.opts.perSymbolCooldownSeconds * 1000) {
+      return { symbol: candidate.symbol, outcome: 'skipped_cooldown', candidate, auto: null };
+    }
+
+    // A signal must be built on a fresh price, exactly as a manual one is.
+    const snapshot = await this.market.freshSnapshot(candidate.symbol);
+    if (!snapshot) return { symbol: candidate.symbol, outcome: 'no_signal', candidate, auto: null };
+
+    let signal;
+    try {
+      signal = await createSignal(
+        this.store,
+        this.market,
+        {
+          userId: user.id,
+          accountId,
+          accountMode: 'demo',
+          symbol: candidate.symbol,
+          timeframe: 'scanner',
+          direction: candidate.direction,
+          contractFamily: family,
+          analysisId: 'market_scanner',
+          confidence: candidate.confidence,
+          reason: candidate.reason
+        },
+        { ttlSeconds: 30 }
+      );
+    } catch (err) {
+      if (err instanceof SignalError) {
+        return { symbol: candidate.symbol, outcome: 'no_signal', candidate, auto: null };
+      }
+      throw err;
+    }
+
+    this.lastProposedAt.set(key, this.now());
+    const auto = await this.runner.runForUser(user, signal, token);
+    return { symbol: candidate.symbol, outcome: 'proposed', candidate, auto };
+  }
+
+  /** The user's demo account, preferring the one they selected. */
+  private demoAccountFor(user: UserRecord): UserRecord['accounts'][number] | null {
+    const preferred = this.store.getExecutionPreferences(user.id)?.preferredAccountId?.demo;
+    const demos = user.accounts.filter((a) => a.type === 'demo');
+    return demos.find((a) => a.accountId === preferred) ?? demos[0] ?? null;
+  }
+
+  /**
+   * Unseals the Deriv token from the user's most recent live session. The token
+   * is used only for the purchase the runner makes; it is never logged or
+   * returned. No live session means no automatic trading for that user.
+   */
+  private tokenFor(user: UserRecord): string | null {
+    const now = this.now();
+    const sessions = this.store
+      .listSessionsForUser(user.id)
+      .filter((s) => !s.revoked && s.expiresAt > now && s.derivTokenExpiresAt > now && s.derivTokenSealed)
+      .sort((a, b) => b.lastSeenAt - a.lastSeenAt);
+    for (const session of sessions) {
+      try {
+        return open(session.derivTokenSealed, this.cfg.session.secret);
+      } catch {
+        /* an unreadable token is treated as absent */
+      }
+    }
+    return null;
+  }
+}

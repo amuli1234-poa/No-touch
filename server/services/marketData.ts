@@ -389,6 +389,22 @@ export class MarketDataService {
     });
   }
 
+  /**
+   * A snapshot that is fresh enough to act on, or null. Returns the cached
+   * snapshot when it is already within `maxAgeMs`; otherwise waits briefly for
+   * the next tick. Callers that need a fresh price at decision time use this
+   * instead of trusting a possibly stale cache.
+   */
+  async freshSnapshot(symbol: string, maxAgeMs = 5_000, waitMs = 10_000): Promise<MarketSnapshot | null> {
+    const cached = this.snapshots.get(symbol) ?? null;
+    if (isSnapshotFresh(cached, maxAgeMs, this.opts.now())) return cached;
+    try {
+      return await this.waitForTick(symbol, waitMs);
+    } catch {
+      return null;
+    }
+  }
+
   /** Historical ticks for warm-up, oldest first. */
   async getTicksHistory(symbol: string, count = 500): Promise<MarketSnapshot[]> {
     if (!this.socket) await this.connect();

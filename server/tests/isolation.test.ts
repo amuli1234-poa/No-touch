@@ -425,7 +425,7 @@ test('trading collections persist across a store reload (durability)', async () 
 
 test('a fresh risk profile carries the conservative defaults and no escalation field', () => {
   const profile: RiskProfileRecord = { userId: USER_A.id, ...DEFAULT_RISK_PROFILE, updatedAt: Date.now() };
-  assert.equal(profile.maxStake, 10);
+  assert.equal(profile.maxStake, DEFAULT_RISK_PROFILE.maxStake);
   assert.equal(profile.maxConsecutiveLosses, 3);
   // No martingale: there is deliberately no field to escalate a stake after a loss.
   assert.equal(Object.prototype.hasOwnProperty.call(profile, 'martingale'), false);

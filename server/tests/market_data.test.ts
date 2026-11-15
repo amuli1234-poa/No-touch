@@ -275,3 +275,40 @@ test('requests auto-connect and reject on timeout if no response arrives', async
     svc.close();
   }
 });
+
+test('freshSnapshot returns the cached tick when it is still fresh', async () => {
+  const { svc, sock } = await connectedService();
+  try {
+    sock().emit('message', { data: tick('R_100', 100, 1) });
+    // `now` is pinned to 1000, and the tick was received at 1000.
+    const snap = await svc.freshSnapshot('R_100');
+    assert.equal(snap?.quote, 100);
+  } finally {
+    svc.close();
+  }
+});
+
+test('freshSnapshot waits for the next tick when the cache is stale', async () => {
+  const { svc, sock } = await connectedService();
+  try {
+    // Seed a snapshot, then advance time past the freshness window by pinning a
+    // later clock: a second service shares nothing, so drive it directly.
+    sock().emit('message', { data: tick('R_100', 100, 1) });
+    const pending = svc.freshSnapshot('R_100', -1); // any age is "stale"
+    sock().emit('message', { data: tick('R_100', 123, 2) });
+    const snap = await pending;
+    assert.equal(snap?.quote, 123);
+  } finally {
+    svc.close();
+  }
+});
+
+test('freshSnapshot returns null rather than hanging when no tick arrives', async () => {
+  const { svc } = await connectedService({ requestTimeoutMs: 20 });
+  try {
+    const snap = await svc.freshSnapshot('R_999', 5_000, 20);
+    assert.equal(snap, null);
+  } finally {
+    svc.close();
+  }
+});

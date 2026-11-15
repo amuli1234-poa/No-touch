@@ -12,7 +12,7 @@ import type {
   AccountMode,
   ContractFamily
 } from './types.js';
-import { resolveTradableAccountForUser, AccountAccessError } from './accountGuard.js';
+import { resolveTradableAccountForUser, AccountAccessError, type ResolvedAccount } from './accountGuard.js';
 import { assertTransition } from './stateMachine.js';
 import { ExecutionLocks } from './locks.js';
 import { adapterFor } from './adapters/index.js';
@@ -126,6 +126,28 @@ export interface ExecutionResult {
   buy: BuyResult | null;
 }
 
+/** Input for a price preview. `account` must come from the account guard. */
+export interface PreviewInput {
+  account: ResolvedAccount;
+  accessToken: string | null;
+  contractFamily: ContractFamily;
+  contractType: DerivContractType;
+  symbol: string;
+  stake: number;
+  basis: 'stake' | 'payout';
+  currency: string;
+  parameters: TradeIntentRecord['parameters'];
+}
+
+/** A priced, uncommitted trade. Nothing here is a purchase. */
+export interface PreviewResult {
+  proposalId: string;
+  askPrice: number;
+  payout: number;
+  spot: number;
+  longform: string;
+}
+
 export class ExecutionGateway {
   private readonly store: Store;
   private readonly cfg: ServerConfig;
@@ -149,6 +171,52 @@ export class ExecutionGateway {
     this.locks = deps.locks ?? new ExecutionLocks();
     this.auditor = deps.auditor ?? new ExecutionAuditor(deps.store, { now: deps.now });
     this.now = deps.now ?? (() => Date.now());
+  }
+
+  /**
+   * Prices a proposed trade WITHOUT creating an intent or buying anything.
+   *
+   * This exists so the customer can see the real payout before they commit. It
+   * runs the same kill-switch, ownership and adapter validation as a real
+   * submission, then asks the broker for a proposal. It deliberately does NOT
+   * evaluate risk and does NOT consume a signal: a preview must be repeatable,
+   * and the risk decision belongs to the moment of purchase, when the balance
+   * and open-contract state are current.
+   *
+   * Nothing here can move money.
+   */
+  async preview(input: PreviewInput): Promise<PreviewResult> {
+    const permitted = executionPermitted(this.flags, input.account.mode);
+    if (!permitted.permitted) {
+      throw new ExecutionError('execution_disabled', 'Execution is disabled.', [
+        permitted.reason ?? 'execution_disabled'
+      ]);
+    }
+    if (!input.accessToken) {
+      throw new ExecutionError('token_expired', 'The Deriv authorization has expired.');
+    }
+    const payload = adapterFor(input.contractFamily).buildProposal({
+      directionContractType: input.contractType,
+      amount: input.stake,
+      basis: input.basis,
+      currency: input.currency,
+      symbol: input.symbol,
+      parameters: input.parameters
+    });
+    const proposal = await this.broker.requestProposal({
+      accountId: input.account.accountId,
+      accessToken: input.accessToken,
+      accountMode: input.account.mode,
+      payload,
+      reqId: 1
+    });
+    return {
+      proposalId: proposal.proposalId,
+      askPrice: proposal.askPrice,
+      payout: proposal.payout,
+      spot: proposal.spot,
+      longform: proposal.longcode
+    };
   }
 
   /**

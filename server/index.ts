@@ -47,7 +47,7 @@ export function createApp(cfg: ServerConfig, store: Store): AppBundle {
   // Server-side market data on the public options gateway, plus the execution
   // layer. Kill switches default off, so nothing trades until explicitly enabled.
   const market = new MarketDataService(cfg);
-  const execution = createExecution(cfg, store);
+  const execution = createExecution(cfg, store, market);
   const app = express();
   app.disable('x-powered-by');
 
@@ -92,7 +92,8 @@ export function createApp(cfg: ServerConfig, store: Store): AppBundle {
       gateway: execution.gateway,
       market,
       runner: execution.runner,
-      monitor: execution.monitor
+      monitor: execution.monitor,
+      scanner: execution.scanner
     })
   );
 
@@ -199,6 +200,13 @@ async function main(): Promise<void> {
   market.connect().catch((err) => {
     console.warn(`[server] Market data unavailable at boot: ${err instanceof Error ? err.message : err}`);
   });
+  // The automatic scanner only runs when execution is enabled. It has no
+  // authority of its own — it proposes signals; the gateway still decides.
+  if (execution.flags.allowExecution && execution.flags.allowDemoExecution) {
+    execution.scanner.start().catch((err) => {
+      console.warn(`[server] Scanner could not start: ${err instanceof Error ? err.message : err}`);
+    });
+  }
   if (execution.flags.allowExecution) {
     console.log(
       `[server] Execution ENABLED (demo=${execution.flags.allowDemoExecution}, real=${execution.flags.allowRealExecution}).`
@@ -215,6 +223,7 @@ async function main(): Promise<void> {
   // command) is not blocked by a lock this process no longer needs.
   const shutdown = (signal: string) => {
     console.log(`[server] ${signal} received, shutting down.`);
+    execution.scanner.stop();
     market.close();
     execution.monitor.close();
     server.close(() => {

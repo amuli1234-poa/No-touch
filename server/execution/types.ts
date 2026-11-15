@@ -97,15 +97,31 @@ export interface RiskProfileRecord {
   updatedAt: number;
 }
 
+/**
+ * Conservative defaults, raised for the Trade panel.
+ *
+ * These are the caps a customer starts with; they are still hard limits the
+ * risk engine enforces on every purchase, and REAL execution remains behind its
+ * own kill switch regardless. The figures support the documented ticket —
+ * a $20 stake with a ~$38 payout — and a scanner that watches several markets:
+ *
+ *  - `maxStake` 25          allows the $20 example with headroom.
+ *  - `maxOpenContracts` 10  enough to hold a position per watched market.
+ *  - `maxAccountExposure` 200  ten stakes at the cap cannot exceed this.
+ *  - `maxExecutionFrequencySeconds` 3  a burst throttle; still not free rein.
+ *
+ * There is still no martingale: no limit can be raised automatically after a
+ * loss, and there is deliberately no stake-escalation field.
+ */
 export const DEFAULT_RISK_PROFILE: Omit<RiskProfileRecord, 'userId' | 'updatedAt'> = {
-  maxStake: 10,
-  maxDailyLoss: 50,
+  maxStake: 25,
+  maxDailyLoss: 100,
   maxConsecutiveLosses: 3,
-  maxOpenContracts: 3,
-  maxTradesPerSession: 20,
-  maxAccountExposure: 30,
+  maxOpenContracts: 10,
+  maxTradesPerSession: 200,
+  maxAccountExposure: 200,
   minAvailableBalance: 5,
-  maxExecutionFrequencySeconds: 30,
+  maxExecutionFrequencySeconds: 3,
   signalFreshnessSeconds: 60
 };
 

@@ -8,6 +8,8 @@ import { effectiveRiskProfile, evaluateRisk } from '../services/risk.js';
 import { ExecutionAuditor } from './audit.js';
 import { AutoExecutionRunner } from './autoRunner.js';
 import { ContractMonitor } from './contractMonitor.js';
+import { MarketScanner } from '../services/marketScanner.js';
+import type { MarketDataService } from '../services/marketData.js';
 import type { SignalRecord } from './types.js';
 
 /**
@@ -27,9 +29,11 @@ export interface ExecutionBundle {
   runner: AutoExecutionRunner;
   monitor: ContractMonitor;
   flags: ExecutionFlags;
+  /** The automatic-mode scanner. Created here so the runner has one owner. */
+  scanner: MarketScanner;
 }
 
-export function createExecution(cfg: ServerConfig, store: Store): ExecutionBundle {
+export function createExecution(cfg: ServerConfig, store: Store, market: MarketDataService): ExecutionBundle {
   const flags = loadExecutionFlags();
   const broker = new DerivBroker(cfg);
   const balances = new BalanceService(cfg);
@@ -76,5 +80,6 @@ export function createExecution(cfg: ServerConfig, store: Store): ExecutionBundl
   });
 
   const runner = new AutoExecutionRunner({ store, gateway, auditor });
-  return { gateway, runner, monitor, flags };
+  const scanner = new MarketScanner({ store, cfg, market, runner });
+  return { gateway, runner, monitor, flags, scanner };
 }

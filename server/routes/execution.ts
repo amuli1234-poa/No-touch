@@ -9,11 +9,12 @@ import type { ExecutionGateway } from '../execution/gateway.js';
 import { ExecutionError } from '../execution/gateway.js';
 import type { AutoExecutionRunner } from '../execution/autoRunner.js';
 import type { ContractMonitor } from '../execution/contractMonitor.js';
+import type { MarketScanner } from '../services/marketScanner.js';
 import type { MarketDataService } from '../services/marketData.js';
 import { createSignal, SignalError } from '../services/signals.js';
 import { adapterFor, AdapterError } from '../execution/adapters/index.js';
 import { normalisePreferences, MIN_DURATION_MINUTES, MAX_DURATION_MINUTES } from '../execution/preferences.js';
-import { AccountAccessError } from '../execution/accountGuard.js';
+import { AccountAccessError, resolveAccountForUser } from '../execution/accountGuard.js';
 import type { SignalDirection, ContractFamily, DerivContractType } from '../execution/types.js';
 import { CONTRACT_FAMILY_TYPES } from '../execution/types.js';
 
@@ -45,6 +46,8 @@ export interface ExecutionRouterDeps {
   runner?: AutoExecutionRunner;
   /** Optional: when present, a stuck intent can be reconciled on demand. */
   monitor?: ContractMonitor;
+  /** Optional: the automatic scanner, for the status surface. */
+  scanner?: MarketScanner;
   /** Optional per-minute limits, for tests. Defaults are conservative. */
   limits?: { signalsPerMinute?: number; submitsPerMinute?: number };
 }
@@ -69,7 +72,7 @@ function parseFamily(value: unknown): ContractFamily | null {
 }
 
 export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
-  const { store, gateway, market, runner, monitor } = deps;
+  const { store, gateway, market, runner, monitor, scanner } = deps;
   const ctx = { cfg: deps.cfg, store };
   // Per-user limits. These blunt a runaway client or a stuck loop; the risk
   // engine's execution-frequency rule remains the real trading throttle.
@@ -100,6 +103,15 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
     const account = user.accounts.find((a) => a.accountId === body.accountId);
     if (!account) {
       res.status(403).json({ error: 'account_not_authorized' });
+      return;
+    }
+    const symbol = String(body.symbol ?? '');
+    // A signal must be built on a fresh price. The backend does not otherwise
+    // subscribe to ticks, so its snapshot can be stale or absent; wait briefly
+    // for the next tick rather than trusting whatever happens to be cached.
+    const snapshot = await market.freshSnapshot(symbol);
+    if (!snapshot) {
+      res.status(422).json({ error: 'no_price', message: `No live price for ${symbol} yet.` });
       return;
     }
     try {
@@ -133,6 +145,56 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
         return;
       }
       res.status(500).json({ error: 'signal_failed' });
+    }
+  });
+
+  /**
+   * Prices a trade without creating an intent or buying anything. Used by the
+   * Trade panel to show the real payout before the customer commits. Repeatable
+   * by design: it consumes no signal and evaluates no risk.
+   */
+  router.post('/api/execution/preview', requireSession(ctx), json, async (req: AuthedRequest, res: Response) => {
+    const body = req.body ?? {};
+    const user = req.user!;
+    const contractFamily = parseFamily(body.contractFamily);
+    const direction = parseDirection(body.direction);
+    if (!contractFamily || !direction || direction === 'NONE') {
+      res.status(400).json({ error: 'invalid_preview' });
+      return;
+    }
+    const accountId = String(body.accountId ?? '');
+    let account;
+    try {
+      account = resolveAccountForUser(user, accountId);
+    } catch (err) {
+      const code = err instanceof AccountAccessError ? err.code : 'account_not_authorized';
+      res.status(403).json({ error: code });
+      return;
+    }
+    const contractType = directionContractType(direction, contractFamily);
+    try {
+      const preview = await gateway.preview({
+        account,
+        accessToken: tokenFor(deps, req),
+        contractFamily,
+        contractType,
+        symbol: String(body.symbol ?? ''),
+        stake: Number(body.stake ?? 0),
+        basis: body.basis === 'payout' ? 'payout' : 'stake',
+        currency: String(body.currency ?? 'USD'),
+        parameters: normaliseParameters(body.parameters ?? {})
+      });
+      res.json({ preview });
+    } catch (err) {
+      if (err instanceof AdapterError) {
+        res.status(422).json({ error: err.code, message: err.message });
+        return;
+      }
+      if (err instanceof ExecutionError) {
+        res.status(409).json({ error: err.code, reasons: err.reasons });
+        return;
+      }
+      res.status(502).json({ error: 'preview_failed' });
     }
   });
 
@@ -231,6 +293,36 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
 
   router.get('/api/execution/intents', requireSession(ctx), (req: AuthedRequest, res: Response) => {
     res.json({ intents: store.listTradeIntents(req.user!.id) });
+  });
+
+  /**
+   * The automatic scanner's status, scoped to the caller. It reports whether the
+   * scanner is running and what it recently decided, but only for markets the
+   * caller's own signals touched — a customer cannot see another's activity.
+   */
+  router.get('/api/execution/scanner', requireSession(ctx), (req: AuthedRequest, res: Response) => {
+    if (!scanner) {
+      res.json({ running: false, lastPassAt: null, recent: [] });
+      return;
+    }
+    const userId = req.user!.id;
+    const signalSymbols = new Set(
+      store
+        .listTradeIntents(userId)
+        .map((i) => store.getSignal(userId, i.signalId)?.symbol)
+        .filter((s): s is string => typeof s === 'string')
+    );
+    const recent = scanner.recent
+      .filter((o) => signalSymbols.has(o.symbol))
+      .slice(-20)
+      .map((o) => ({
+        symbol: o.symbol,
+        outcome: o.outcome,
+        direction: o.candidate?.direction ?? null,
+        confidence: o.candidate?.confidence ?? null,
+        executed: o.auto?.outcome === 'executed'
+      }));
+    res.json({ running: scanner.isRunning, lastPassAt: scanner.lastPassTime, recent });
   });
 
   router.get('/api/execution/contracts', requireSession(ctx), (req: AuthedRequest, res: Response) => {

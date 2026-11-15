@@ -1,5 +1,17 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, Bot, Hand, Info, Lock, ShieldAlert } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowUpRight,
+  Bot,
+  CheckCircle2,
+  Hand,
+  Info,
+  Loader2,
+  Lock,
+  RefreshCw,
+  ShieldAlert
+} from 'lucide-react';
 
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { useAuth } from '../../lib/auth';
@@ -7,29 +19,39 @@ import { useBalances, formatMoney, pickAccount } from '../../lib/balances';
 import {
   DEFAULT_DURATION_BOUNDS,
   fetchExecutionPreferences,
+  fetchScannerStatus,
+  placeTrade,
+  previewTrade,
   saveExecutionPreferences,
   toMinutes,
   type ContractFamily,
   type DurationBounds,
   type ExecutionMode,
-  type ExecutionPreferences
+  type ExecutionParameters,
+  type ExecutionPreferences,
+  type ScannerStatus,
+  type SignalDirection,
+  type TradePreview
 } from '../../lib/trade';
 import { Card, StatTile } from '../ui/primitives';
 
 /** Live Deriv floor: the smallest stake the platform accepts. */
 const MIN_STAKE = 0.35;
+/** Multipliers must be chosen; Deriv's range for the synthetic indices starts at 40. */
+const DEFAULT_MULTIPLIER = 40;
 
 /**
  * TRADE — the order ticket.
  *
  * The left sidebar opens this panel beside the shared chart. It lets the
- * customer set *how* they want to trade: manual or automatic, the contract
- * family, the stake and the duration (5–300 minutes). Manual and automatic both
- * run through the same server-side execution layer, so every kill switch, the
- * risk engine and signal single-use apply identically.
+ * customer set *how* they want to trade (manual or automatic, the contract
+ * family, the stake and the duration), price the trade, and — in manual mode —
+ * place it.
  *
- * This panel only records preferences. Placing a trade is a separate, explicit
- * step — see the confirm flow. Nothing here can move money on its own.
+ * Everything a manual trade does goes through the server's single purchase path
+ * (signal → intent → submit), so the kill switches, the risk engine and the
+ * single-use signal all apply. This panel can never buy on its own: it can only
+ * ask the server to.
  */
 export function TradeView() {
   const ws = useWorkspace();
@@ -47,6 +69,15 @@ export function TradeView() {
   const [family, setFamily] = useState<ContractFamily>('rise_fall');
   const [stakeInput, setStakeInput] = useState('1');
   const [durationMinutes, setDurationMinutes] = useState('5');
+  const [multiplierInput, setMultiplierInput] = useState(String(DEFAULT_MULTIPLIER));
+
+  // Manual placement state.
+  const [direction, setDirection] = useState<SignalDirection | null>(null);
+  const [preview, setPreview] = useState<TradePreview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [placing, setPlacing] = useState(false);
+  const [placed, setPlaced] = useState<{ contractId: number | null; payout: number | null } | null>(null);
+  const [scanner, setScanner] = useState<ScannerStatus | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,7 +90,12 @@ export function TradeView() {
         setMode(res.preferences.mode);
         setFamily(res.preferences.contractFamily);
         setStakeInput(String(res.preferences.stake.amount));
-        setDurationMinutes(String(toMinutes(res.preferences.parameters.duration, res.preferences.parameters.durationUnit) ?? 5));
+        setDurationMinutes(
+          String(toMinutes(res.preferences.parameters.duration, res.preferences.parameters.durationUnit) ?? 5)
+        );
+        if (res.preferences.parameters.multiplier) {
+          setMultiplierInput(String(res.preferences.parameters.multiplier));
+        }
       }
       setLoading(false);
     })();
@@ -70,9 +106,35 @@ export function TradeView() {
 
   const authenticated = auth.status === 'authenticated';
   const accounts = balances.accounts;
-  const selectedAccount = useMemo(() => {
-    const preferredMode = mode === 'automatic' ? 'demo' : 'demo';
-    return pickAccount(accounts, preferredMode, balances.selectedAccountId);
+
+  // Poll the scanner's status while in automatic mode, so the customer can see
+  // it working rather than having to trust it blindly.
+  useEffect(() => {
+    if (!authenticated || mode !== 'automatic') {
+      setScanner(null);
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      const status = await fetchScannerStatus();
+      if (!cancelled) setScanner(status);
+    };
+    void poll();
+    const id = setInterval(() => void poll(), 15_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [authenticated, mode]);
+
+  // A manual trade uses the account the customer has selected; automatic runs on
+  // demo in this build. Either way the server re-checks ownership on submit.
+  const tradingAccount = useMemo(() => {
+    if (mode === 'automatic') return pickAccount(accounts, 'demo', balances.selectedAccountId);
+    return (
+      accounts.find((a) => a.accountId === balances.selectedAccountId) ??
+      pickAccount(accounts, 'demo', balances.selectedAccountId)
+    );
   }, [accounts, balances.selectedAccountId, mode]);
 
   const realAccount = useMemo(() => pickAccount(accounts, 'real', balances.selectedAccountId), [
@@ -85,21 +147,48 @@ export function TradeView() {
   const minutes = Number(durationMinutes);
   const durationValid =
     Number.isFinite(minutes) && minutes >= bounds.minMinutes && minutes <= bounds.maxMinutes;
+  const multiplier = Number(multiplierInput);
+  const multiplierValid = Number.isFinite(multiplier) && multiplier > 0;
 
-  const save = useCallback(
-    async (patch: Partial<ExecutionPreferences>) => {
-      setSaving(true);
-      const result = await saveExecutionPreferences(patch);
-      setSaving(false);
-      if (result.ok) {
-        setPrefs(result.preferences);
-        setNotice({ tone: 'ok', text: 'Trade settings saved.' });
-      } else {
-        setNotice({ tone: 'error', text: result.message });
-      }
-    },
-    []
+  const currency = tradingAccount?.currency ?? prefs?.stake.currency ?? 'USD';
+
+  const parameters: ExecutionParameters = useMemo(
+    () => ({
+      duration: minutes,
+      durationUnit: 'm',
+      multiplier: family === 'multipliers' ? multiplier : null,
+      cancellation: null,
+      stopLoss: null,
+      takeProfit: null
+    }),
+    [minutes, family, multiplier]
   );
+
+  const canTrade =
+    authenticated &&
+    !!tradingAccount &&
+    stakeValid &&
+    (family === 'multipliers' ? multiplierValid : durationValid) &&
+    !!ws.selectedSymbol &&
+    !placing;
+
+  // Any change to the ticket invalidates a price that was quoted for the old one.
+  useEffect(() => {
+    setPreview(null);
+    setPlaced(null);
+  }, [stakeInput, durationMinutes, multiplierInput, family, direction, tradingAccount?.accountId]);
+
+  const save = useCallback(async (patch: Partial<ExecutionPreferences>) => {
+    setSaving(true);
+    const result = await saveExecutionPreferences(patch);
+    setSaving(false);
+    if (result.ok) {
+      setPrefs(result.preferences);
+      setNotice({ tone: 'ok', text: 'Trade settings saved.' });
+    } else {
+      setNotice({ tone: 'error', text: result.message });
+    }
+  }, []);
 
   const onModeChange = (next: ExecutionMode) => {
     setMode(next);
@@ -108,6 +197,7 @@ export function TradeView() {
 
   const onFamilyChange = (next: ContractFamily) => {
     setFamily(next);
+    setDirection(null);
     void save({ contractFamily: next });
   };
 
@@ -116,7 +206,7 @@ export function TradeView() {
       setNotice({ tone: 'error', text: `Enter a stake of at least ${MIN_STAKE}.` });
       return;
     }
-    void save({ stake: { basis: 'stake', amount: stake, currency: prefs?.stake.currency ?? null } });
+    void save({ stake: { basis: 'stake', amount: stake, currency } });
   };
 
   const saveDuration = () => {
@@ -142,6 +232,56 @@ export function TradeView() {
       }
     });
   };
+
+  const getQuote = async () => {
+    if (!tradingAccount || !direction) return;
+    setPreviewing(true);
+    setNotice(null);
+    const result = await previewTrade({
+      accountId: tradingAccount.accountId,
+      symbol: ws.selectedSymbol,
+      direction,
+      contractFamily: family,
+      stake,
+      currency,
+      parameters
+    });
+    setPreviewing(false);
+    if (result.ok) {
+      setPreview(result.preview);
+    } else {
+      setNotice({ tone: 'error', text: result.message });
+    }
+  };
+
+  const confirmTrade = async () => {
+    if (!tradingAccount || !direction || !canTrade) return;
+    setPlacing(true);
+    setNotice(null);
+    const result = await placeTrade({
+      accountId: tradingAccount.accountId,
+      symbol: ws.selectedSymbol,
+      timeframe: ws.timeframe,
+      direction,
+      contractFamily: family,
+      stake,
+      currency,
+      parameters,
+      // Fresh per confirmation, so a genuine retry of a *new* trade is allowed
+      // but a double-click on this one is a server-side no-op.
+      idempotencyKey: `trade_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+    });
+    setPlacing(false);
+    if (result.ok) {
+      setPlaced({ contractId: result.contractId, payout: result.payout });
+      setNotice({ tone: 'ok', text: 'Trade placed.' });
+      setPreview(null);
+    } else {
+      setNotice({ tone: 'error', text: result.message });
+    }
+  };
+
+  const payoutRatio = preview && preview.askPrice > 0 ? preview.payout / preview.askPrice : null;
 
   return (
     <div className="h-full min-h-0 overflow-y-auto p-3 space-y-3">
@@ -204,10 +344,41 @@ export function TradeView() {
             {mode === 'automatic' && (
               <div className="mt-2.5 flex items-start gap-2 rounded-lg border border-line-soft bg-panel px-2.5 py-2">
                 <Info className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5" />
-                <p className="text-[10.5px] text-muted leading-snug">
-                  Automatic execution runs on your <strong className="text-ink">demo</strong> account in this
-                  build. Real-money automation stays switched off until it is explicitly released.
-                </p>
+                <div className="min-w-0">
+                  <p className="text-[10.5px] text-muted leading-snug">
+                    Automatic execution runs on your <strong className="text-ink">demo</strong> account in this
+                    build. Real-money automation stays switched off until it is explicitly released.
+                  </p>
+                  {authenticated && (
+                    <p className="text-[10.5px] text-muted leading-snug mt-1.5 flex items-center gap-1.5">
+                      <span
+                        className={`inline-block w-1.5 h-1.5 rounded-full ${
+                          scanner?.running ? 'bg-success' : 'bg-faint'
+                        }`}
+                      />
+                      {scanner?.running
+                        ? scanner.lastPassAt
+                          ? `Scanner running · last pass ${new Date(scanner.lastPassAt).toLocaleTimeString()}`
+                          : 'Scanner running · first pass pending'
+                        : 'Scanner is not running on the server'}
+                    </p>
+                  )}
+                  {scanner && scanner.recent.length > 0 && (
+                    <ul className="mt-1.5 space-y-0.5">
+                      {scanner.recent
+                        .slice(-3)
+                        .reverse()
+                        .map((r, i) => (
+                          <li key={`${r.symbol}-${i}`} className="text-[10px] text-faint font-mono">
+                            {r.symbol}
+                            {r.direction ? ` · ${r.direction}` : ''}
+                            {r.confidence !== null ? ` · ${r.confidence.toFixed(2)}` : ''}
+                            {r.executed ? ' · traded' : ''}
+                          </li>
+                        ))}
+                    </ul>
+                  )}
+                </div>
               </div>
             )}
           </Card>
@@ -246,9 +417,7 @@ export function TradeView() {
               Stake
             </label>
             <div className="mt-1.5 flex items-center gap-2">
-              <span className="text-[12px] font-bold text-muted">
-                {selectedAccount?.currency ?? prefs?.stake.currency ?? 'USD'}
-              </span>
+              <span className="text-[12px] font-bold text-muted">{currency}</span>
               <input
                 id="trade-stake"
                 type="number"
@@ -269,33 +438,51 @@ export function TradeView() {
 
           {/* ----------------------------- duration --------------------------- */}
           <Card className="p-3">
-            <label htmlFor="trade-duration" className="text-[10px] font-bold uppercase tracking-wider text-faint">
-              Duration
-            </label>
-            <div className="mt-1.5 flex items-center gap-2">
-              <input
-                id="trade-duration"
-                type="number"
-                min={bounds.minMinutes}
-                max={bounds.maxMinutes}
-                step="1"
-                inputMode="numeric"
-                value={durationMinutes}
-                onChange={(e) => setDurationMinutes(e.target.value)}
-                onBlur={saveDuration}
-                disabled={!authenticated || family === 'multipliers'}
-                className="flex-1 min-w-0 bg-panel border border-line rounded-lg px-2.5 py-2 text-[13px] font-mono tabular-nums text-ink outline-none focus:border-accent/50 disabled:opacity-50"
-              />
-              <span className="text-[12px] font-bold text-muted">minutes</span>
-            </div>
             {family === 'multipliers' ? (
-              <p className="text-[10px] text-faint mt-1">
-                Multipliers contracts have no fixed duration; they run until you close them.
-              </p>
+              <>
+                <label htmlFor="trade-multiplier" className="text-[10px] font-bold uppercase tracking-wider text-faint">
+                  Multiplier
+                </label>
+                <input
+                  id="trade-multiplier"
+                  type="number"
+                  min={1}
+                  step="1"
+                  inputMode="numeric"
+                  value={multiplierInput}
+                  onChange={(e) => setMultiplierInput(e.target.value)}
+                  disabled={!authenticated}
+                  className="mt-1.5 w-full bg-panel border border-line rounded-lg px-2.5 py-2 text-[13px] font-mono tabular-nums text-ink outline-none focus:border-accent/50"
+                />
+                <p className="text-[10px] text-faint mt-1">
+                  Multipliers contracts have no fixed duration; they run until you close them.
+                </p>
+              </>
             ) : (
-              <p className="text-[10px] text-faint mt-1">
-                Between {bounds.minMinutes} and {bounds.maxMinutes} minutes.
-              </p>
+              <>
+                <label htmlFor="trade-duration" className="text-[10px] font-bold uppercase tracking-wider text-faint">
+                  Duration
+                </label>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <input
+                    id="trade-duration"
+                    type="number"
+                    min={bounds.minMinutes}
+                    max={bounds.maxMinutes}
+                    step="1"
+                    inputMode="numeric"
+                    value={durationMinutes}
+                    onChange={(e) => setDurationMinutes(e.target.value)}
+                    onBlur={saveDuration}
+                    disabled={!authenticated}
+                    className="flex-1 min-w-0 bg-panel border border-line rounded-lg px-2.5 py-2 text-[13px] font-mono tabular-nums text-ink outline-none focus:border-accent/50 disabled:opacity-50"
+                  />
+                  <span className="text-[12px] font-bold text-muted">minutes</span>
+                </div>
+                <p className="text-[10px] text-faint mt-1">
+                  Between {bounds.minMinutes} and {bounds.maxMinutes} minutes.
+                </p>
+              </>
             )}
           </Card>
 
@@ -322,10 +509,105 @@ export function TradeView() {
                 hint={mode === 'manual' ? 'Manual only' : undefined}
               />
             </div>
-            {!realAccount && (
-              <p className="text-[10px] text-faint mt-1.5">No real account is linked to this session.</p>
+            {tradingAccount && (
+              <p className="text-[10px] text-faint mt-1.5">
+                Placing on <span className="font-bold text-ink">{tradingAccount.accountId}</span> (
+                {tradingAccount.mode}).
+              </p>
             )}
           </Card>
+
+          {/* --------------------------- manual placement --------------------- */}
+          {mode === 'manual' && (
+            <Card className="p-3">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-faint mb-2">Direction</div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDirection('RISE')}
+                  disabled={!authenticated}
+                  aria-pressed={direction === 'RISE'}
+                  className={`flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-[12px] font-bold transition-colors cursor-pointer disabled:opacity-50 ${
+                    direction === 'RISE'
+                      ? 'border-success/45 bg-success/10 text-success'
+                      : 'border-line bg-panel text-ink hover:border-success/30'
+                  }`}
+                >
+                  <ArrowUpRight className="w-3.5 h-3.5" /> Rise
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDirection('FALL')}
+                  disabled={!authenticated}
+                  aria-pressed={direction === 'FALL'}
+                  className={`flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-[12px] font-bold transition-colors cursor-pointer disabled:opacity-50 ${
+                    direction === 'FALL'
+                      ? 'border-danger/45 bg-danger/10 text-danger'
+                      : 'border-line bg-panel text-ink hover:border-danger/30'
+                  }`}
+                >
+                  <ArrowDownRight className="w-3.5 h-3.5" /> Fall
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={getQuote}
+                disabled={!canTrade || !direction || previewing}
+                className="mt-2.5 w-full flex items-center justify-center gap-1.5 rounded-lg border border-accent/40 bg-accent/8 text-accent px-3 py-2 text-[12px] font-bold hover:bg-accent/12 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {previewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                {previewing ? 'Getting price…' : 'Get price'}
+              </button>
+
+              {preview && (
+                <div className="mt-2.5 rounded-lg border border-line-soft bg-panel px-3 py-2.5">
+                  <dl className="space-y-1.5 text-[11.5px]">
+                    <Row label="Stake" value={`${preview.askPrice.toFixed(2)} ${currency}`} />
+                    <Row label="Payout" value={`${preview.payout.toFixed(2)} ${currency}`} />
+                    <Row
+                      label="Return"
+                      value={payoutRatio ? `${payoutRatio.toFixed(2)}×` : '—'}
+                      valueClass={payoutRatio && payoutRatio >= 1.5 ? 'text-success' : 'text-ink'}
+                    />
+                    <Row label="Entry spot" value={preview.spot ? preview.spot.toFixed(2) : '—'} />
+                  </dl>
+                  <p className="text-[10px] text-faint mt-2 leading-snug">
+                    A payout below 1.50× the stake is a poor return for the risk. This is a quote, not a
+                    commitment — the price is re-taken when you confirm.
+                  </p>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={confirmTrade}
+                disabled={!canTrade || !direction || placing}
+                className="mt-2.5 w-full flex items-center justify-center gap-1.5 rounded-lg bg-accent text-on-accent px-3 py-2.5 text-[12.5px] font-extrabold hover:bg-accent-strong transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {placing ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUpRight className="w-4 h-4" />}
+                {placing
+                  ? 'Placing…'
+                  : direction
+                    ? `Place ${direction === 'RISE' ? 'Rise' : 'Fall'} · ${stakeValid ? stake.toFixed(2) : '—'} ${currency}`
+                    : 'Choose a direction'}
+              </button>
+
+              {placed && (
+                <div className="mt-2.5 flex items-start gap-2 rounded-lg border border-success/40 bg-success/8 px-3 py-2">
+                  <CheckCircle2 className="w-4 h-4 text-success shrink-0 mt-0.5" />
+                  <div>
+                    <div className="text-[11.5px] font-bold text-success">Trade placed</div>
+                    <p className="text-[10.5px] text-muted mt-0.5">
+                      Contract {placed.contractId ?? '—'}
+                      {placed.payout !== null ? ` · payout ${placed.payout.toFixed(2)} ${currency}` : ''}. Track
+                      it in Trade History.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </Card>
+          )}
 
           {/* ------------------------------ summary --------------------------- */}
           <Card className="p-3">
@@ -333,7 +615,8 @@ export function TradeView() {
             <dl className="space-y-1.5 text-[11.5px]">
               <Row label="Mode" value={mode === 'manual' ? 'Manual' : 'Automatic'} />
               <Row label="Contract" value={family === 'rise_fall' ? 'Rise / Fall' : 'Multipliers'} />
-              <Row label="Stake" value={stakeValid ? `${stake.toFixed(2)} ${selectedAccount?.currency ?? 'USD'}` : '—'} />
+              {mode === 'manual' && <Row label="Direction" value={direction ?? '—'} />}
+              <Row label="Stake" value={stakeValid ? `${stake.toFixed(2)} ${currency}` : '—'} />
               <Row
                 label="Duration"
                 value={family === 'multipliers' ? 'No expiry' : durationValid ? `${minutes} min` : '—'}
@@ -359,8 +642,8 @@ export function TradeView() {
             <div className="flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 text-warn shrink-0 mt-0.5" />
               <p className="text-[10.5px] text-muted leading-snug">
-                Trading is a real risk to your capital. The next step adds the confirm-and-place flow; these
-                settings alone place nothing.
+                Trading is a real risk to your capital. Every trade is checked by the server's risk controls
+                before it is sent to Deriv.
               </p>
             </div>
           </Card>
@@ -385,11 +668,11 @@ export function TradeView() {
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value, valueClass = 'text-ink' }: { label: string; value: string; valueClass?: string }) {
   return (
     <div className="flex items-center justify-between gap-2">
       <dt className="text-muted">{label}</dt>
-      <dd className="font-bold text-ink font-mono tabular-nums">{value}</dd>
+      <dd className={`font-bold font-mono tabular-nums ${valueClass}`}>{value}</dd>
     </div>
   );
 }

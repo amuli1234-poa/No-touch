@@ -36,7 +36,8 @@
     "admin:bootstrap": "tsx server/admin/bootstrap.ts",
     "dev:admin": "vite --config admin/vite.config.ts --port=3001 --host=0.0.0.0",
     "build:admin": "vite build --config admin/vite.config.ts",
-    "lint:admin": "tsc --noEmit -p admin/tsconfig.json"
+    "lint:admin": "tsc --noEmit -p admin/tsconfig.json",
+    "test:scanner": "tsx server/tests/market_scanner.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
