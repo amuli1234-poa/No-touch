@@ -245,49 +245,54 @@
   }
 }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
+@layer base {
+  /* Element defaults live in the base layer so Tailwind utilities can override
+     them. Kept unlayered, `font: inherit` (a shorthand) would beat every font
+     utility on <button>/<input>/<select> — text-xs, font-bold, text-[11px]. */
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
 
-button {
-  -webkit-tap-highlight-color: transparent;
-}
+  button {
+    -webkit-tap-highlight-color: transparent;
+  }
 
-button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-a:focus-visible {
-  outline: 2px solid var(--color-accent-cyan);
-  outline-offset: 2px;
-}
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  a:focus-visible {
+    outline: 2px solid var(--color-accent-cyan);
+    outline-offset: 2px;
+  }
 
-::selection {
-  background: color-mix(in oklab, var(--color-accent) 30%, transparent);
-  color: var(--color-ink);
-}
+  ::selection {
+    background: color-mix(in oklab, var(--color-accent) 30%, transparent);
+    color: var(--color-ink);
+  }
 
-/* ---- Scrollbars ---------------------------------------------------------- */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--color-line-strong);
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--color-fg-5);
-}
+  /* ---- Scrollbars -------------------------------------------------------- */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line-strong);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-fg-5);
+  }
 
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-line) transparent;
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line) transparent;
+  }
 }
 
 /* =========================================================================

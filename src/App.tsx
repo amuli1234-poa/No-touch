@@ -103,7 +103,6 @@ const LEGACY_HASH: Record<string, AppSection> = {
   analysis: 'analyser',
   signal: 'analyser',
   chart: 'analyser',
-  live: 'analyser',
 };
 
 function sectionFromHash(): AppSection {
