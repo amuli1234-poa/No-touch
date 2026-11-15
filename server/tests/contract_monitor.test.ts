@@ -239,7 +239,7 @@ test('an open update refreshes the live fields without settling', async () => {
     await monitor.onUpdate(USER, contract.id, {
       contractId: Number(contract.id),
       status: 'open',
-      profit: null,
+      profit: 0.42,
       isExpired: false,
       entrySpot: 100,
       exitSpot: null,
@@ -251,6 +251,7 @@ test('an open update refreshes the live fields without settling', async () => {
     });
     const refreshed = store.getContract('u_a', contract.id)!;
     assert.equal(refreshed.status, 'open');
+    assert.equal(refreshed.profit, 0.42);
     assert.equal(refreshed.payout, 1.95);
     assert.equal(store.listLedgerEntries('u_a').filter((e) => e.kind === 'settlement').length, 0);
   } finally {

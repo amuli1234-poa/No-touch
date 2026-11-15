@@ -26,9 +26,9 @@ import type { AccountMode, ContractStatus } from '../types.js';
  * A buy is only ever issued with the proposal's own `ask_price`, so Deriv cannot
  * fill at a worse price than was validated.
  *
- * Every socket is created per call and closed afterwards: there is no long-lived
- * authenticated socket to leak, and the account id can never be confused across
- * calls. `uncertain` is set on any failure that may have reached Deriv (a
+ * Previews use a one-request socket. An actual trade keeps the streaming
+ * proposal's socket open just long enough to buy its connection-scoped id, then
+ * closes it. `uncertain` is set on any failure that may have reached Deriv (a
  * timeout after sending `buy`, or a dropped socket), so the gateway never
  * blindly retries.
  *
@@ -75,6 +75,7 @@ export class DerivBroker implements BrokerAdapter {
   private readonly wsFactory: DerivSocketFactory;
   private readonly timeoutMs: number;
   private readonly sockets = new Set<MinimalWebSocket>();
+  private readonly proposals = new Map<string, { socket: MinimalWebSocket; timer: ReturnType<typeof setTimeout> }>();
 
   constructor(cfg: ServerConfig, options: DerivBrokerOptions = {}) {
     this.cfg = cfg;
@@ -109,31 +110,77 @@ export class DerivBroker implements BrokerAdapter {
   }
 
   /**
-   * Opens a session, sends one request, resolves with the first matching
-   * response, then closes. `uncertainOnTimeout` decides whether a timeout means
-   * the outcome is unknown (a buy) or a clean failure (a proposal).
+   * Sends one request, resolves with its matching response and closes unless
+   * the proposal must stay available for a buy. `uncertainOnTimeout` decides
+   * whether a timeout means an unknown outcome or a clean failure.
    */
   private async request<T = any>(
     accessToken: string,
     accountId: string,
     message: Record<string, unknown>,
-    opts: { uncertainOnTimeout: boolean; expect: string }
-  ): Promise<T> {
-    const socketUrl = await this.requestSocketUrl(accessToken, accountId);
-    return await new Promise<T>((resolve, reject) => {
+    opts: { uncertainOnTimeout: boolean; expect: string; retainSocket?: boolean; socket?: MinimalWebSocket }
+  ): Promise<{ response: T; socket: MinimalWebSocket | null }> {
+    const socketUrl = opts.socket ? null : await this.requestSocketUrl(accessToken, accountId);
+    return await new Promise<{ response: T; socket: MinimalWebSocket | null }>((resolve, reject) => {
       let settled = false;
-      let socket: MinimalWebSocket | null = null;
+      let socket: MinimalWebSocket | null = opts.socket ?? null;
 
-      const finish = (fn: () => void) => {
+      const onOpen = () => {
+        try {
+          socket!.send(JSON.stringify(message));
+        } catch {
+          finish(() => reject(new BrokerError('socket_failed', 'Could not send the trading request.')));
+        }
+      };
+      const onMessage = (event: any) => {
+        let msg: any;
+        try {
+          msg = typeof event?.data === 'string' ? JSON.parse(event.data) : null;
+        } catch {
+          return;
+        }
+        if (!msg) return;
+        if (msg.error) {
+          finish(() =>
+            reject(
+              new BrokerError('rejected', msg.error.message || 'Deriv rejected the request.', false, msg.error.code || null)
+            )
+          );
+          return;
+        }
+        if (msg.msg_type === opts.expect) {
+          finish(() => resolve({ response: msg as T, socket: opts.retainSocket ? socket : null }), opts.retainSocket);
+        }
+      };
+      const onError = () => {
+        finish(() =>
+          reject(new BrokerError('socket_failed', 'The trading socket failed.', opts.uncertainOnTimeout))
+        );
+      };
+      const onClose = () => {
+        finish(() =>
+          reject(new BrokerError('socket_failed', 'The trading socket closed before a response.', opts.uncertainOnTimeout))
+        );
+      };
+      const detachListeners = () => {
+        socket?.removeEventListener?.('open', onOpen);
+        socket?.removeEventListener?.('message', onMessage);
+        socket?.removeEventListener?.('error', onError);
+        socket?.removeEventListener?.('close', onClose);
+      };
+      const finish = (fn: () => void, retainSocket = false) => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        try {
-          socket?.close();
-        } catch {
-          /* closing an already-closed socket is not an error */
+        detachListeners();
+        if (!retainSocket) {
+          try {
+            socket?.close();
+          } catch {
+            /* closing an already-closed socket is not an error */
+          }
+          if (socket) this.sockets.delete(socket);
         }
-        if (socket) this.sockets.delete(socket);
         fn();
       };
 
@@ -149,77 +196,60 @@ export class DerivBroker implements BrokerAdapter {
         );
       }, this.timeoutMs);
 
-      try {
-        socket = this.wsFactory(socketUrl);
-        this.sockets.add(socket);
-      } catch {
-        finish(() => reject(new BrokerError('socket_failed', 'Could not open the trading socket.')));
-        return;
+      if (socket) {
+        socket.addEventListener('message', onMessage);
+        socket.addEventListener('error', onError);
+        socket.addEventListener('close', onClose);
+        onOpen();
+      } else {
+        try {
+          socket = this.wsFactory(socketUrl!);
+          this.sockets.add(socket);
+        } catch {
+          finish(() => reject(new BrokerError('socket_failed', 'Could not open the trading socket.')));
+          return;
+        }
+        socket.addEventListener('open', onOpen);
+        socket.addEventListener('message', onMessage);
+        socket.addEventListener('error', onError);
+        socket.addEventListener('close', onClose);
       }
-
-      socket.addEventListener('open', () => {
-        try {
-          socket!.send(JSON.stringify(message));
-        } catch {
-          finish(() => reject(new BrokerError('socket_failed', 'Could not send the trading request.')));
-        }
-      });
-
-      socket.addEventListener('message', (event: any) => {
-        let msg: any;
-        try {
-          msg = typeof event?.data === 'string' ? JSON.parse(event.data) : null;
-        } catch {
-          return;
-        }
-        if (!msg) return;
-        if (msg.error) {
-          // Deriv answered with a rejection: a definite outcome, not uncertain.
-          finish(() =>
-            reject(
-              new BrokerError('rejected', msg.error.message || 'Deriv rejected the request.', false, msg.error.code || null)
-            )
-          );
-          return;
-        }
-        if (msg.msg_type === opts.expect) {
-          finish(() => resolve(msg as T));
-        }
-      });
-
-      socket.addEventListener('error', () => {
-        // A socket error after we have sent a buy may have reached Deriv.
-        finish(() =>
-          reject(
-            new BrokerError('socket_failed', 'The trading socket failed.', opts.uncertainOnTimeout)
-          )
-        );
-      });
-
-      socket.addEventListener('close', () => {
-        // A close without a response, after sending, is an unknown outcome.
-        finish(() =>
-          reject(
-            new BrokerError('socket_failed', 'The trading socket closed before a response.', opts.uncertainOnTimeout)
-          )
-        );
-      });
     });
   }
 
   async requestProposal(req: ProposalRequest): Promise<ProposalResult> {
-    const msg = await this.request<any>(req.accessToken, req.accountId, { proposal: 1, ...req.payload, req_id: req.reqId }, {
-      // A proposal never moves money, so a timeout is a clean failure.
-      uncertainOnTimeout: false,
-      expect: 'proposal'
-    });
+    const { response: msg, socket } = await this.request<any>(
+      req.accessToken,
+      req.accountId,
+      { proposal: 1, ...req.payload, ...(req.retainForBuy ? { subscribe: 1 } : {}), req_id: req.reqId },
+      {
+        // A proposal never moves money, so a timeout is a clean failure.
+        uncertainOnTimeout: false,
+        expect: 'proposal',
+        retainSocket: req.retainForBuy
+      }
+    );
     const p = msg.proposal ?? {};
     const askPrice = toNumber(p.ask_price);
-    if (askPrice === null || askPrice <= 0) {
+    const proposalId = String(p.id ?? '');
+    if (askPrice === null || askPrice <= 0 || !proposalId) {
+      if (socket) this.closeSocket(socket);
       throw new BrokerError('rejected', 'Deriv returned a proposal without a usable price.');
     }
+    if (req.retainForBuy && socket) {
+      const key = this.proposalKey(req.accountId, proposalId);
+      const existing = this.proposals.get(key);
+      if (existing) {
+        clearTimeout(existing.timer);
+        this.closeSocket(existing.socket);
+      }
+      const timer = setTimeout(() => this.releaseProposal(key), this.timeoutMs);
+      (timer as any)?.unref?.();
+      this.proposals.set(key, { socket, timer });
+      socket.addEventListener('close', () => this.releaseProposal(key));
+    }
     return {
-      proposalId: String(p.id ?? ''),
+      proposalId,
       askPrice,
       payout: toNumber(p.payout) ?? 0,
       spot: toNumber(p.spot) ?? 0,
@@ -229,12 +259,20 @@ export class DerivBroker implements BrokerAdapter {
   }
 
   async buy(req: BuyRequest): Promise<BuyResult> {
-    const msg = await this.request<any>(
+    const key = this.proposalKey(req.accountId, req.proposalId);
+    const pending = this.proposals.get(key);
+    if (!pending) {
+      throw new BrokerError('rejected', 'The Deriv proposal session expired before purchase.');
+    }
+    clearTimeout(pending.timer);
+    this.proposals.delete(key);
+    const { response: msg } = await this.request<any>(
       req.accessToken,
       req.accountId,
       { buy: req.proposalId, price: req.price, req_id: req.reqId },
-      // The buy may have reached Deriv: a timeout here is an UNKNOWN outcome.
-      { uncertainOnTimeout: true, expect: 'buy' }
+      // Reuse the proposal's connection: its streaming id is connection-scoped.
+      // The buy may have reached Deriv, so a timeout is an UNKNOWN outcome.
+      { uncertainOnTimeout: true, expect: 'buy', socket: pending.socket }
     );
     const b = msg.buy ?? {};
     const contractId = toNumber(b.contract_id);
@@ -346,7 +384,7 @@ export class DerivBroker implements BrokerAdapter {
     _accountMode: AccountMode,
     accessToken: string
   ): Promise<ContractUpdate[]> {
-    const msg = await this.request<any>(
+    const { response: msg } = await this.request<any>(
       accessToken,
       accountId,
       { portfolio: 1, req_id: 1 },
@@ -357,7 +395,7 @@ export class DerivBroker implements BrokerAdapter {
   }
 
   async getBalance(accountId: string, _accountMode: AccountMode, accessToken: string): Promise<number> {
-    const msg = await this.request<any>(accessToken, accountId, { balance: 1, req_id: 1 }, {
+    const { response: msg } = await this.request<any>(accessToken, accountId, { balance: 1, req_id: 1 }, {
       uncertainOnTimeout: false,
       expect: 'balance'
     });
@@ -370,6 +408,8 @@ export class DerivBroker implements BrokerAdapter {
   }
 
   close(): void {
+    for (const pending of this.proposals.values()) clearTimeout(pending.timer);
+    this.proposals.clear();
     for (const s of this.sockets) {
       try {
         s.close();
@@ -378,6 +418,27 @@ export class DerivBroker implements BrokerAdapter {
       }
     }
     this.sockets.clear();
+  }
+
+  private proposalKey(accountId: string, proposalId: string): string {
+    return JSON.stringify([accountId, proposalId]);
+  }
+
+  private releaseProposal(key: string): void {
+    const pending = this.proposals.get(key);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    this.proposals.delete(key);
+    this.closeSocket(pending.socket);
+  }
+
+  private closeSocket(socket: MinimalWebSocket): void {
+    try {
+      socket.close();
+    } catch {
+      /* closing an already-closed socket is not an error */
+    }
+    this.sockets.delete(socket);
   }
 }
 

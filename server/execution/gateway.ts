@@ -436,7 +436,8 @@ export class ExecutionGateway {
         accessToken,
         accountMode: intent.accountMode,
         payload,
-        reqId
+        reqId,
+        retainForBuy: true
       });
       await this.recordAttempt(intent, 'proposal', 'ok', reqId, null, null);
     } catch (err) {

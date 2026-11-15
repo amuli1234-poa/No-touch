@@ -8,6 +8,7 @@ import { afterEach, describe, it } from 'node:test';
 import { Store } from '../store/store.js';
 import { StoreConflictError, StoreLockedError } from '../store/errors.js';
 import { StoreLock } from '../store/lock.js';
+import { renameWithRetry } from '../store/json_backend.js';
 import { SqliteBackend } from '../store/sqlite_backend.js';
 
 /**
@@ -170,6 +171,45 @@ describe('Phase 0A: foreign-write detection', () => {
     }
     assert.equal(store.listUsers().length, 5);
     await store.close();
+  });
+});
+
+describe('JSON atomic replacement', () => {
+  it('retries transient permission errors before completing the rename', async () => {
+    let attempts = 0;
+    const delays: number[] = [];
+    await renameWithRetry(
+      'source',
+      'destination',
+      async () => {
+        attempts += 1;
+        if (attempts === 1) throw Object.assign(new Error('file is temporarily locked'), { code: 'EPERM' });
+      },
+      async (milliseconds) => {
+        delays.push(milliseconds);
+      }
+    );
+    assert.equal(attempts, 2);
+    assert.deepEqual(delays, [25]);
+  });
+
+  it('surfaces a persistent permission error after bounded retries', async () => {
+    let attempts = 0;
+    const permissionError = Object.assign(new Error('access denied'), { code: 'EACCES' });
+    await assert.rejects(
+      () =>
+        renameWithRetry(
+          'source',
+          'destination',
+          async () => {
+            attempts += 1;
+            throw permissionError;
+          },
+          async () => {}
+        ),
+      permissionError
+    );
+    assert.equal(attempts, 5);
   });
 });
 

@@ -53,6 +53,7 @@ export class DerivBalanceError extends Error {
  */
 export interface MinimalWebSocket {
   addEventListener(type: string, listener: (event: any) => void): void;
+  removeEventListener?(type: string, listener: (event: any) => void): void;
   send(data: string): void;
   close(): void;
 }

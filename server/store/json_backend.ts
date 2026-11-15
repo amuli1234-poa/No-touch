@@ -28,6 +28,32 @@ import {
  */
 
 const SINGLETON_KEY = 'platformConfig';
+const RENAME_RETRY_DELAYS_MS = [25, 50, 100, 200] as const;
+
+type RenameOperation = (source: string, destination: string) => Promise<void>;
+type WaitOperation = (milliseconds: number) => Promise<void>;
+
+const wait = (milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+
+export async function renameWithRetry(
+  source: string,
+  destination: string,
+  rename: RenameOperation = (from, to) => fsp.rename(from, to),
+  delay: WaitOperation = wait
+): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await rename(source, destination);
+      return;
+    } catch (err) {
+      const code = typeof err === 'object' && err !== null ? (err as NodeJS.ErrnoException).code : undefined;
+      if ((code !== 'EPERM' && code !== 'EACCES') || attempt >= RENAME_RETRY_DELAYS_MS.length) {
+        throw err;
+      }
+      await delay(RENAME_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+}
 
 export interface JsonBackendOptions {
   /** Skips the directory lock. Tests only; never set in production. */
@@ -179,7 +205,7 @@ export class JsonBackend implements StorageBackend {
 
       const tmp = `${this.file}.${process.pid}.tmp`;
       await fsp.writeFile(tmp, snapshot, 'utf8');
-      await fsp.rename(tmp, this.file);
+      await renameWithRetry(tmp, this.file);
       this.lastWrittenMtimeMs = (await fsp.stat(this.file)).mtimeMs;
     });
     return this.queue;

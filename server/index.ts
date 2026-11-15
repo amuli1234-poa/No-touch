@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { loadConfig, type ServerConfig } from './config.js';
 import { Store } from './store/store.js';
 import { createAuthRouter } from './routes/auth.js';
@@ -236,7 +237,9 @@ async function main(): Promise<void> {
 }
 
 // Only auto-start when executed directly (not when imported by tests).
-const isDirectRun = process.argv[1] ? import.meta.url === `file://${process.argv[1]}` : false;
+const isDirectRun = process.argv[1]
+  ? path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1])
+  : false;
 if (isDirectRun) {
   main().catch((err) => {
     console.error('[server] fatal:', err instanceof Error ? err.message : err);

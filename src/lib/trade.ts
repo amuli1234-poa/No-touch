@@ -163,6 +163,98 @@ export interface TradeTicket {
   reason?: string;
 }
 
+export interface ExecutionContract {
+  id: string;
+  accountId: string;
+  accountMode: AccountMode;
+  contractType: 'CALL' | 'PUT' | 'MULTUP' | 'MULTDOWN';
+  symbol: string;
+  stake: number;
+  currency: string;
+  purchaseTime: number;
+  startTime: number;
+  expiryTime: number | null;
+  settlementTime: number | null;
+  status: 'open' | 'sold' | 'won' | 'lost' | 'cancelled' | 'unknown';
+  profit: number | null;
+}
+
+export type ExecutionContractsResult =
+  | { ok: true; contracts: ExecutionContract[] }
+  | { ok: false; error: string; message: string };
+
+function isExecutionContract(value: unknown): value is ExecutionContract {
+  if (!value || typeof value !== 'object') return false;
+  const contract = value as Record<string, unknown>;
+  const finiteNumber = (field: unknown) => typeof field === 'number' && Number.isFinite(field);
+  const nullableNumber = (field: unknown) => field === null || finiteNumber(field);
+  return (
+    typeof contract.id === 'string' &&
+    typeof contract.accountId === 'string' &&
+    (contract.accountMode === 'demo' || contract.accountMode === 'real') &&
+    (contract.contractType === 'CALL' ||
+      contract.contractType === 'PUT' ||
+      contract.contractType === 'MULTUP' ||
+      contract.contractType === 'MULTDOWN') &&
+    typeof contract.symbol === 'string' &&
+    finiteNumber(contract.stake) &&
+    typeof contract.currency === 'string' &&
+    finiteNumber(contract.purchaseTime) &&
+    finiteNumber(contract.startTime) &&
+    nullableNumber(contract.expiryTime) &&
+    nullableNumber(contract.settlementTime) &&
+    (contract.status === 'open' ||
+      contract.status === 'sold' ||
+      contract.status === 'won' ||
+      contract.status === 'lost' ||
+      contract.status === 'cancelled' ||
+      contract.status === 'unknown') &&
+    nullableNumber(contract.profit)
+  );
+}
+
+const CONTRACTS_ERROR_COPY: Record<string, string> = {
+  unauthorized: 'Sign in again to view your account positions.',
+  network: 'The server could not be reached. Your positions were not refreshed.',
+  invalid_contracts: 'The server returned invalid position data.'
+};
+
+/** Loads this signed-in user's persisted Deriv contracts, without a token in the browser. */
+export async function fetchExecutionContracts(): Promise<ExecutionContractsResult> {
+  try {
+    const res = await fetch('/api/execution/contracts', {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' }
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      const error = typeof data?.error === 'string' ? data.error : 'contracts_failed';
+      return {
+        ok: false,
+        error,
+        message:
+          (typeof data?.message === 'string' && data.message) ||
+          CONTRACTS_ERROR_COPY[error] ||
+          'Could not load your account positions.'
+      };
+    }
+    if (!Array.isArray(data?.contracts) || !data.contracts.every(isExecutionContract)) {
+      return {
+        ok: false,
+        error: 'invalid_contracts',
+        message: CONTRACTS_ERROR_COPY.invalid_contracts
+      };
+    }
+    return { ok: true, contracts: data.contracts };
+  } catch {
+    return {
+      ok: false,
+      error: 'network',
+      message: CONTRACTS_ERROR_COPY.network
+    };
+  }
+}
+
 /** Human-readable copy for a server rejection code. */
 const REJECTION_COPY: Record<string, string> = {
   execution_disabled: 'Trading is switched off on the server right now.',

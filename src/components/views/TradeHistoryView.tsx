@@ -3,6 +3,7 @@ import { useWorkspace } from '../../context/WorkspaceContext';
 import { summarizeModelPerformance } from '../../analysis/modelPerformance';
 import { Card, EmptyState, SectionCard } from '../ui/primitives';
 import { formatCandleTime, formatPrice } from '../../utils/derivParser';
+import { ExecutionPositions } from './ExecutionPositions';
 
 export function TradeHistoryView() {
   const ws = useWorkspace();
@@ -56,6 +57,8 @@ export function TradeHistoryView() {
           </button>
         </div>
       </Card>
+
+      <ExecutionPositions />
 
       {records.length === 0 ? (
         <Card>

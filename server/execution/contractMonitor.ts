@@ -79,6 +79,7 @@ export class ContractMonitor {
     if (!update.isExpired && update.status === 'open') {
       const refreshed: ContractRecord = {
         ...contract,
+        profit: update.profit,
         exitSpot: update.exitSpot ?? contract.exitSpot,
         payout: update.payout ?? contract.payout,
         expiryTime: update.dateExpiry ?? contract.expiryTime,

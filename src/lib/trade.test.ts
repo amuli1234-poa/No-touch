@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { saveErrorMessage, saveExecutionPreferences } from './trade';
+import { fetchExecutionContracts, saveErrorMessage, saveExecutionPreferences } from './trade';
 
 /**
  * Trade settings save.
@@ -68,6 +68,54 @@ test('a successful save returns the stored preferences', async () => {
     const result = await saveExecutionPreferences({ mode: 'automatic' });
     assert.equal(result.ok, true);
     assert.equal(result.ok === true && (result.preferences as { mode: string }).mode, 'automatic');
+  } finally {
+    restore();
+  }
+});
+
+test('execution contracts are returned only when the server response is valid', async () => {
+  const contract = {
+    id: '123',
+    accountId: 'VRTC123',
+    accountMode: 'demo',
+    contractType: 'CALL',
+    symbol: 'R_100',
+    stake: 2,
+    currency: 'USD',
+    purchaseTime: 1_700_000_000,
+    startTime: 1_700_000_000,
+    expiryTime: null,
+    settlementTime: null,
+    status: 'open',
+    profit: 0.4
+  };
+  const restore = stubFetch({ status: 200, body: { contracts: [contract] } });
+  try {
+    const result = await fetchExecutionContracts();
+    assert.equal(result.ok, true);
+    assert.equal(result.ok && result.contracts[0].profit, 0.4);
+  } finally {
+    restore();
+  }
+});
+
+test('execution contract errors explain an expired session', async () => {
+  const restore = stubFetch({ status: 401, body: { error: 'unauthorized' } });
+  try {
+    const result = await fetchExecutionContracts();
+    assert.equal(result.ok, false);
+    assert.equal(result.ok === false && result.message, 'Sign in again to view your account positions.');
+  } finally {
+    restore();
+  }
+});
+
+test('malformed execution contract data is surfaced instead of shown as empty history', async () => {
+  const restore = stubFetch({ status: 200, body: { contracts: [{ id: 'not-a-contract' }] } });
+  try {
+    const result = await fetchExecutionContracts();
+    assert.equal(result.ok, false);
+    assert.equal(result.ok === false && result.error, 'invalid_contracts');
   } finally {
     restore();
   }

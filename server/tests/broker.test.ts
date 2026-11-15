@@ -62,6 +62,9 @@ function fakeSocket() {
     addEventListener: (t: string, fn: (e: any) => void) => {
       (listeners[t] ||= []).push(fn);
     },
+    removeEventListener: (t: string, fn: (e: any) => void) => {
+      listeners[t] = (listeners[t] || []).filter((listener) => listener !== fn);
+    },
     send: (d: string) => sent.push(JSON.parse(d)),
     close: () => {
       closed = true;
@@ -76,6 +79,41 @@ const OTP_URL = 'wss://api.derivws.com/trading/v1/options/ws/real?otp=abc';
 
 /** Lets the adapter's awaited OTP fetch resolve and its socket listeners attach. */
 const tick = () => new Promise((r) => setImmediate(r));
+
+function proposalRequest(retainForBuy = false) {
+  return {
+    accountId: 'VRTC1',
+    accessToken: 'tok',
+    accountMode: 'demo' as const,
+    payload: {
+      amount: 1,
+      basis: 'stake' as const,
+      contract_type: 'CALL' as const,
+      currency: 'USD',
+      underlying_symbol: 'R_100',
+      duration: 5,
+      duration_unit: 'm'
+    },
+    reqId: 1,
+    retainForBuy
+  };
+}
+
+async function requestBuyableProposal(broker: DerivBroker, sock: ReturnType<typeof fakeSocket>) {
+  const proposal = broker.requestProposal(proposalRequest(true));
+  await tick();
+  sock.emit('open');
+  assert.equal(sock.sent[0].proposal, 1);
+  assert.equal(sock.sent[0].subscribe, 1);
+  sock.emit('message', {
+    data: JSON.stringify({
+      msg_type: 'proposal',
+      req_id: 1,
+      proposal: { id: 'prop-1', ask_price: 1.23, payout: 2.4, spot: 100, date_start: 1, longcode: 'x' }
+    })
+  });
+  return await proposal;
+}
 
 /** Stubs global fetch to answer the OTP call with a Deriv socket URL. */
 function stubOtp(otpUrl = OTP_URL, ok = true) {
@@ -106,25 +144,14 @@ test('a proposal is sent over an OTP-authenticated socket and mapped back', asyn
   });
   try {
     const p = broker.requestProposal({
-      accountId: 'VRTC1',
-      accessToken: 'tok',
-      accountMode: 'demo',
-      payload: {
-        amount: 1,
-        basis: 'stake',
-        contract_type: 'CALL',
-        currency: 'USD',
-        underlying_symbol: 'R_100',
-        duration: 5,
-        duration_unit: 'm'
-      },
-      reqId: 1
+      ...proposalRequest()
     });
     // The OTP endpoint was called for the right account.
     await tick();
     assert.ok(otp.calls.some((u) => u.includes('/accounts/VRTC1/otp')));
     sock.emit('open');
     assert.equal(sock.sent[0].proposal, 1);
+    assert.equal(sock.sent[0].subscribe, undefined);
     assert.equal(sock.sent[0].contract_type, 'CALL');
     assert.equal(sock.sent[0].underlying_symbol, 'R_100');
     sock.emit('message', {
@@ -145,23 +172,25 @@ test('a proposal is sent over an OTP-authenticated socket and mapped back', asyn
   }
 });
 
-test('a buy is sent with the proposal id and its ask price', async () => {
+test('a trade buys a streaming proposal on the same connection', async () => {
   const otp = stubOtp();
   const sock = fakeSocket();
   const broker = new DerivBroker(makeConfig(), { wsFactory: () => sock as unknown as MinimalWebSocket, timeoutMs: 200 });
   try {
+    const proposal = await requestBuyableProposal(broker, sock);
+    assert.equal(sock.isClosed(), false);
     const p = broker.buy({
       accountId: 'VRTC1',
       accessToken: 'tok',
       accountMode: 'demo',
-      proposalId: 'prop-1',
-      price: 1.23,
+      proposalId: proposal.proposalId,
+      price: proposal.askPrice,
       reqId: 2
     });
-    await tick();
-    sock.emit('open');
-    assert.equal(sock.sent[0].buy, 'prop-1');
-    assert.equal(sock.sent[0].price, 1.23);
+    assert.equal(sock.sent.length, 2);
+    assert.equal(sock.sent[1].buy, 'prop-1');
+    assert.equal(sock.sent[1].price, 1.23);
+    assert.equal(otp.calls.length, 1, 'proposal and buy reuse one OTP socket');
     sock.emit('message', {
       data: JSON.stringify({
         msg_type: 'buy',
@@ -182,6 +211,30 @@ test('a buy is sent with the proposal id and its ask price', async () => {
     const result = await p;
     assert.equal(result.contractId, 999);
     assert.equal(result.transactionId, 555);
+    assert.equal(sock.isClosed(), true);
+  } finally {
+    broker.close();
+    otp.restore();
+  }
+});
+
+test('a buy refuses an expired proposal instead of opening a new socket', async () => {
+  const otp = stubOtp();
+  const broker = new DerivBroker(makeConfig(), { wsFactory: () => fakeSocket() as unknown as MinimalWebSocket });
+  try {
+    await assert.rejects(
+      () =>
+        broker.buy({
+          accountId: 'VRTC1',
+          accessToken: 'tok',
+          accountMode: 'demo',
+          proposalId: 'stale-proposal',
+          price: 1.23,
+          reqId: 2
+        }),
+      (error: unknown) => error instanceof BrokerError && error.code === 'rejected'
+    );
+    assert.equal(otp.calls.length, 0);
   } finally {
     broker.close();
     otp.restore();
@@ -193,6 +246,7 @@ test('a Deriv rejection is a definite failure, not an uncertain one', async () =
   const sock = fakeSocket();
   const broker = new DerivBroker(makeConfig(), { wsFactory: () => sock as unknown as MinimalWebSocket, timeoutMs: 200 });
   try {
+    await requestBuyableProposal(broker, sock);
     const p = broker.buy({
       accountId: 'VRTC1',
       accessToken: 'tok',
@@ -201,8 +255,6 @@ test('a Deriv rejection is a definite failure, not an uncertain one', async () =
       price: 1.23,
       reqId: 2
     });
-    await tick();
-    sock.emit('open');
     sock.emit('message', { data: JSON.stringify({ msg_type: 'buy', error: { code: 'InvalidPrice', message: 'nope' } }) });
     await assert.rejects(
       p,
@@ -219,16 +271,15 @@ test('a buy timeout is classified uncertain, so it is never blindly retried', as
   const sock = fakeSocket();
   const broker = new DerivBroker(makeConfig(), { wsFactory: () => sock as unknown as MinimalWebSocket, timeoutMs: 20 });
   try {
+    const proposal = await requestBuyableProposal(broker, sock);
     const p = broker.buy({
       accountId: 'VRTC1',
       accessToken: 'tok',
       accountMode: 'demo',
-      proposalId: 'prop-1',
+      proposalId: proposal.proposalId,
       price: 1.23,
       reqId: 2
     });
-    await tick();
-    sock.emit('open');
     // No response; the timeout fires.
     await assert.rejects(p, (e: unknown) => e instanceof BrokerError && e.code === 'timeout' && e.uncertain === true);
   } finally {

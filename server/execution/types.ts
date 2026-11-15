@@ -272,7 +272,7 @@ export interface ContractRecord {
   expiryTime: number | null;
   settlementTime: number | null;
   status: ContractStatus;
-  /** Confirmed profit/loss from Deriv, null while open. */
+  /** Latest profit/loss reported by Deriv; null when unavailable. */
   profit: number | null;
   soldFor: number | null;
   /** Deriv transaction id of the purchase, for reconciliation. */

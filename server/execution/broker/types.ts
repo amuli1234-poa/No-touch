@@ -41,6 +41,8 @@ export interface ProposalRequest {
   /** The validated, family-specific proposal payload. */
   payload: ProposalPayload;
   reqId: number;
+  /** Keep the streaming proposal's socket open so its id can be bought. */
+  retainForBuy?: boolean;
 }
 
 export interface ProposalResult {
