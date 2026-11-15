@@ -11,23 +11,23 @@ export function TopBar() {
   const isDark = ws.settings.theme === 'dark';
 
   return (
-    <header className="h-14 shrink-0 border-b border-line bg-nav px-3 sm:px-5 flex items-center justify-between gap-3">
-      <div className="flex items-center gap-2.5 min-w-0">
-        <div className="lg:hidden w-8 h-8 rounded-lg bg-accent/15 text-accent border border-accent/30 flex items-center justify-center shrink-0">
+    <header className="h-12 shrink-0 border-b border-line bg-nav px-3 sm:px-4 flex items-center justify-between gap-3">
+      <div className="flex items-center gap-2 min-w-0">
+        <div className="lg:hidden w-7 h-7 rounded-lg bg-accent/15 text-accent border border-accent/30 flex items-center justify-center shrink-0">
           <ScanSearch className="w-4 h-4" />
         </div>
         <div className="min-w-0">
-          <h1 className="text-sm font-extrabold tracking-tight text-ink leading-none">
+          <h1 className="text-[13px] font-extrabold tracking-tight text-ink leading-none">
             Wick<span className="text-accent">Sentinel</span>
           </h1>
           <div className="flex items-center gap-2 mt-0.5 min-w-0">
-            <span className="text-[11px] font-medium text-muted truncate">
+            <span className="text-[10px] font-medium text-muted truncate">
               {ws.marketName}
             </span>
             <span className="hidden sm:inline text-line" aria-hidden="true">
               ·
             </span>
-            <span className="hidden sm:inline text-[11px] font-mono text-muted">
+            <span className="hidden sm:inline text-[10px] font-mono text-muted">
               {ws.timeframe}
             </span>
           </div>
@@ -56,9 +56,9 @@ export function TopBar() {
           data-testid="theme-toggle"
           aria-label={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
           title={isDark ? 'Light theme' : 'Dark theme'}
-          className="inline-flex items-center justify-center w-9 h-9 text-muted bg-elevated border border-line rounded-lg hover:text-accent hover:border-accent/50 transition-colors cursor-pointer"
+          className="inline-flex items-center justify-center w-8 h-8 text-muted bg-elevated border border-line rounded-lg hover:text-accent hover:border-accent/50 transition-colors cursor-pointer"
         >
-          {isDark ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
+          {isDark ? <Sun className="w-[17px] h-[17px]" /> : <Moon className="w-[17px] h-[17px]" />}
         </button>
 
         <button
@@ -66,9 +66,9 @@ export function TopBar() {
           onClick={() => ws.navigate('settings')}
           aria-label="Open settings"
           title="Settings"
-          className="inline-flex items-center justify-center w-9 h-9 text-muted bg-elevated border border-line rounded-lg hover:text-ink hover:border-accent/50 transition-colors cursor-pointer"
+          className="inline-flex items-center justify-center w-8 h-8 text-muted bg-elevated border border-line rounded-lg hover:text-ink hover:border-accent/50 transition-colors cursor-pointer"
         >
-          <SettingsIcon className="w-[18px] h-[18px]" />
+          <SettingsIcon className="w-[17px] h-[17px]" />
         </button>
       </div>
     </header>

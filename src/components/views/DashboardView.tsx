@@ -49,7 +49,7 @@ export function DashboardView() {
   const lifecycleStyle = lifecycle ? SIGNAL_STATUS_STYLE[lifecycle.status] : null;
 
   return (
-    <div className="flex flex-col gap-4 p-3 sm:p-5 max-w-[1400px] w-full mx-auto">
+    <div className="flex flex-col gap-3.5 p-3 sm:p-4 max-w-[1320px] w-full mx-auto min-w-0 overflow-x-hidden">
       <Card className="p-4 sm:p-5">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="min-w-0">
@@ -127,7 +127,7 @@ export function DashboardView() {
 
       <LiveFeedDiagnostics />
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] gap-4">
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-3.5">
         <BestSignalPanel />
         <SectionCard
           title="Live Market Readings"
@@ -227,7 +227,7 @@ export function DashboardView() {
         <PerformanceStats />
       </SectionCard>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
         <StatTile
           label="Connection"
           value={
@@ -259,7 +259,7 @@ export function DashboardView() {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
         <SectionCard
           title="Market Activity"
           subtitle="Volatility, regime and momentum as measured on live candles"
@@ -321,7 +321,7 @@ export function DashboardView() {
         </SectionCard>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
         <SectionCard
           title="AI Training & Backtesting"
           subtitle="Eight entry models trained and tested on real Deriv history"

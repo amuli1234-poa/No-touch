@@ -78,7 +78,7 @@ export function VolatilitySelector({
         aria-haspopup="listbox"
         aria-expanded={open}
         data-testid="volatility-selector-trigger"
-        className="inline-flex items-center gap-2 h-9 px-3 max-w-[220px] sm:max-w-[280px] bg-elevated border border-line rounded-lg text-xs font-semibold text-ink hover:border-accent/50 transition-colors cursor-pointer"
+        className="inline-flex items-center gap-2 h-8 px-2.5 max-w-[190px] sm:max-w-[240px] bg-elevated border border-line rounded-lg text-xs font-semibold text-ink hover:border-accent/50 transition-colors cursor-pointer"
       >
         <span className="w-1.5 h-1.5 rounded-full bg-teal shrink-0" aria-hidden="true" />
         <span className="truncate">{label}</span>

@@ -693,6 +693,19 @@ Full-width sections (dashboard, health, settings, training, history, alerts, str
 render in `<main>` and correctly keep viewport breakpoints. `SectionCard`'s header wraps
 (`flex-wrap`) so a wide `right` action cluster drops below the title instead of overflowing.
 
+## Dashboard fit (no horizontal scroll)
+
+The dashboard must fit the whole viewport with no left-to-right scrolling. `<main>` already
+carries `overflow-x-hidden` and the dashboard root (`views/DashboardView.tsx`) adds
+`min-w-0 overflow-x-hidden`; keep both. When adding a row, prefer `minmax(0, …)` grid tracks
+(the middle `BestSignalPanel` / `Live Market Readings` split is `minmax(0,1.5fr) minmax(0,1fr)`)
+and `min-w-0` on flex children, so long market names truncate instead of widening the row.
+The chart toolbar (`chart/SingleChartCanvas.tsx`) is `flex-wrap`, so its controls (market
+selector, timeframes, Run/Refresh/Stop) drop to a second line on narrow chart columns; keep
+the controls at `h-8` and the toolbar padding at `py-1.5` so that wrap costs as little
+vertical space as possible. `TopBar.tsx` is intentionally compact (`h-12`, `w-8` icon
+buttons) — the "top bar above the live charts".
+
 ## Branding
 
 The product name is **WickSentinel** everywhere. `src/components/brand/WickSentinelBrand.tsx`
