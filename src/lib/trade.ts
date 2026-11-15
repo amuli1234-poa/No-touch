@@ -1,3 +1,5 @@
+import { expireAuth } from './auth';
+
 /**
  * Trade panel client.
  *
@@ -67,6 +69,7 @@ export async function fetchExecutionPreferences(): Promise<PreferencesResponse |
       credentials: 'same-origin',
       headers: { Accept: 'application/json' }
     });
+    if (res.status === 401) expireAuth();
     if (!res.ok) return null;
     const data = await res.json();
     if (!data?.preferences) return null;
@@ -121,6 +124,7 @@ export async function saveExecutionPreferences(
       body: JSON.stringify(body)
     });
     const data = await res.json().catch(() => ({}));
+    if (res.status === 401) expireAuth();
     if (!res.ok) {
       const error = typeof data?.error === 'string' ? data.error : 'save_failed';
       return {
@@ -227,6 +231,7 @@ export async function fetchExecutionContracts(): Promise<ExecutionContractsResul
       headers: { Accept: 'application/json' }
     });
     const data = await res.json().catch(() => null);
+    if (res.status === 401) expireAuth();
     if (!res.ok) {
       const error = typeof data?.error === 'string' ? data.error : 'contracts_failed';
       return {
@@ -257,6 +262,7 @@ export async function fetchExecutionContracts(): Promise<ExecutionContractsResul
 
 /** Human-readable copy for a server rejection code. */
 const REJECTION_COPY: Record<string, string> = {
+  unauthorized: 'Your session has expired. Sign in again before trading.',
   execution_disabled: 'Trading is switched off on the server right now.',
   demo_execution_disabled: 'Demo trading is switched off on the server right now.',
   real_execution_disabled: 'Real-money trading is switched off on the server right now.',
@@ -279,8 +285,27 @@ const REJECTION_COPY: Record<string, string> = {
 };
 
 export function rejectionMessage(code: string, reasons: string[] = []): string {
+  if (code === 'risk_rejected' && reasons.includes('max_open_contracts')) {
+    const otherReasons = reasons.filter((reason) => reason !== 'max_open_contracts');
+    const message = 'Maximum open trades reached. Wait for an open position to settle before placing another.';
+    return otherReasons.length > 0
+      ? `${message} Other risk checks also failed: ${otherReasons.join(', ')}.`
+      : message;
+  }
   const base = REJECTION_COPY[code] ?? 'The trade could not be placed.';
   return reasons.length > 0 ? `${base} (${reasons.join(', ')})` : base;
+}
+
+function responseRejectionMessage(
+  data: { error?: unknown; message?: unknown; reasons?: unknown },
+  fallbackCode: string
+): string {
+  if (typeof data.message === 'string') return data.message;
+  const code = typeof data.error === 'string' ? data.error : fallbackCode;
+  const reasons = Array.isArray(data.reasons)
+    ? data.reasons.filter((reason): reason is string => typeof reason === 'string')
+    : [];
+  return rejectionMessage(code, reasons);
 }
 
 /* ------------------------------- scanner -------------------------------- */
@@ -307,6 +332,7 @@ export interface ScannerStatus {
 export async function fetchScannerStatus(): Promise<ScannerStatus | null> {
   try {
     const res = await fetch('/api/execution/scanner', { credentials: 'same-origin' });
+    if (res.status === 401) expireAuth();
     if (!res.ok) return null;
     const data = await res.json().catch(() => null);
     if (!data) return null;
@@ -348,11 +374,13 @@ export async function previewTrade(ticket: {
       body: JSON.stringify(ticket)
     });
     const data = await res.json().catch(() => ({}));
+    if (res.status === 401) expireAuth();
     if (!res.ok) {
+      const error = typeof data?.error === 'string' ? data.error : 'preview_failed';
       return {
         ok: false,
-        error: typeof data?.error === 'string' ? data.error : 'preview_failed',
-        message: rejectionMessage(data?.error ?? 'preview_failed', data?.reasons ?? [])
+        error,
+        message: responseRejectionMessage(data, error)
       };
     }
     return { ok: true, preview: data.preview as TradePreview };
@@ -380,6 +408,7 @@ export async function placeTrade(ticket: TradeTicket): Promise<PlaceResult> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
+    if (res.status === 401) expireAuth();
     return { res, data: await res.json().catch(() => ({})) };
   };
 
@@ -393,10 +422,11 @@ export async function placeTrade(ticket: TradeTicket): Promise<PlaceResult> {
     reason: ticket.reason ?? ''
   });
   if (!signal.res.ok || !signal.data?.signal?.id) {
+    const error = typeof signal.data?.error === 'string' ? signal.data.error : 'signal_failed';
     return {
       ok: false,
-      error: signal.data?.error ?? 'signal_failed',
-      message: rejectionMessage(signal.data?.error ?? 'signal_failed', signal.data?.reasons ?? []),
+      error,
+      message: responseRejectionMessage(signal.data, error),
       uncertain: false
     };
   }
@@ -411,21 +441,22 @@ export async function placeTrade(ticket: TradeTicket): Promise<PlaceResult> {
     idempotencyKey: ticket.idempotencyKey
   });
   if (!intent.res.ok || !intent.data?.intent?.id) {
+    const error = typeof intent.data?.error === 'string' ? intent.data.error : 'intent_failed';
     return {
       ok: false,
-      error: intent.data?.error ?? 'intent_failed',
-      message: rejectionMessage(intent.data?.error ?? 'intent_failed', intent.data?.reasons ?? []),
+      error,
+      message: responseRejectionMessage(intent.data, error),
       uncertain: false
     };
   }
 
   const submit = await post(`/api/execution/intents/${intent.data.intent.id}/submit`, {});
   if (!submit.res.ok) {
-    const code = submit.data?.error ?? 'submit_failed';
+    const code = typeof submit.data?.error === 'string' ? submit.data.error : 'submit_failed';
     return {
       ok: false,
       error: code,
-      message: rejectionMessage(code, submit.data?.reasons ?? []),
+      message: responseRejectionMessage(submit.data, code),
       uncertain: code === 'broker_uncertain'
     };
   }

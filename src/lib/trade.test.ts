@@ -1,7 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { fetchExecutionContracts, saveErrorMessage, saveExecutionPreferences } from './trade';
+import {
+  fetchExecutionContracts,
+  placeTrade,
+  rejectionMessage,
+  saveErrorMessage,
+  saveExecutionPreferences
+} from './trade';
 
 /**
  * Trade settings save.
@@ -119,4 +125,48 @@ test('malformed execution contract data is surfaced instead of shown as empty hi
   } finally {
     restore();
   }
+});
+
+test('a manual trade rejected by an expired session shows actionable copy', async () => {
+  const restore = stubFetch({ status: 401, body: { error: 'unauthorized' } });
+  try {
+    const result = await placeTrade({
+      accountId: 'VRTC123',
+      symbol: 'R_100',
+      timeframe: '5m',
+      direction: 'RISE',
+      contractFamily: 'rise_fall',
+      stake: 1,
+      currency: 'USD',
+      parameters: {
+        duration: 5,
+        durationUnit: 'm',
+        multiplier: null,
+        cancellation: null,
+        stopLoss: null,
+        takeProfit: null
+      },
+      idempotencyKey: 'expired-session-test'
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.ok === false && result.error, 'unauthorized');
+    assert.equal(
+      result.ok === false && result.message,
+      'Your session has expired. Sign in again before trading.'
+    );
+    assert.equal(
+      rejectionMessage('unauthorized'),
+      'Your session has expired. Sign in again before trading.'
+    );
+  } finally {
+    restore();
+  }
+});
+
+test('a risk rejection explains the open-contract limit without changing it', () => {
+  assert.equal(
+    rejectionMessage('risk_rejected', ['max_open_contracts']),
+    'Maximum open trades reached. Wait for an open position to settle before placing another.'
+  );
 });

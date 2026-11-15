@@ -43,19 +43,24 @@ function setState(next: AuthState): void {
   emit();
 }
 
+/** Clears stale authenticated UI state after a protected request rejects the session. */
+export function expireAuth(): void {
+  setState({ status: 'anonymous' });
+  resetBalances();
+}
+
 async function requestSession(): Promise<void> {
   try {
     const res = await fetch('/auth/session', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
-    if (res.status === 401) return setState({ status: 'anonymous' });
-    if (!res.ok) return setState({ status: 'anonymous' });
+    if (!res.ok) return expireAuth();
     const data = await res.json();
     if (data?.authenticated && data.user) {
       setState({ status: 'authenticated', user: data.user, session: data.session });
     } else {
-      setState({ status: 'anonymous' });
+      expireAuth();
     }
   } catch {
-    setState({ status: 'anonymous' });
+    expireAuth();
   }
 }
 
@@ -97,13 +102,13 @@ export async function logout(): Promise<void> {
   try {
     await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' });
   } finally {
-    setState({ status: 'anonymous' });
-    resetBalances();
+    expireAuth();
   }
 }
 
 export async function fetchPreferences<T = Record<string, unknown>>(): Promise<T | null> {
   const res = await fetch('/api/preferences', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+  if (res.status === 401) expireAuth();
   if (!res.ok) return null;
   const data = await res.json();
   return (data?.preferences ?? null) as T | null;
@@ -116,6 +121,7 @@ export async function savePreferences(preferences: Record<string, unknown>): Pro
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ preferences })
   });
+  if (res.status === 401) expireAuth();
   return res.ok;
 }
 
