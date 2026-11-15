@@ -655,6 +655,26 @@ has Markdown at `https://developers.deriv.com/llms/<endpoint>.md` (e.g. `buy.md`
   not document `ALLOW_REAL_EXECUTION` as settable. Enabling it is a separate,
   explicit release act requiring the preconditions in the review doc.
 
+## Left sidebar (`nav/Navigation.tsx`)
+
+The `Sidebar` is collapsible: 236px expanded, 68px icon rail when collapsed. The
+collapsed state is owned by `App.tsx` (`sidebarCollapsed`) and persisted to
+`localStorage` under `wicksentinel_sidebar_collapsed`. When collapsed the toggle
+gets its own row below the logo, nav items show icon-only with `aria-label`/`title`
+(the full label), badges move onto the icon, group headers become hairlines, and
+the footer connection badge collapses to a status dot (`CONNECTION_STATUS_DOT`
+from `ConnectionBadge.tsx`).
+
+Sidebar type is deliberately small and bold: item labels `text-[11px] font-bold`,
+group headers `text-[9px] font-bold uppercase`, brand `text-[13px] font-extrabold`.
+
+**Gotcha — text size on `<button>`/`<input>`/`<select>`:** `src/index.css` has an
+*unlayered* `button, input, select, textarea { font: inherit }` rule. Unlayered CSS
+beats Tailwind's layered utilities, so `text-[11px]` on a `<button>` element is
+ignored (it stays at the inherited 16px). Put the size on an inner `<span>` instead
+(the sidebar and mobile sheet already do this). This also means `font-*` weight
+utilities on buttons still apply, but `text-[Npx]` sizes do not.
+
 ## Panel layout: container queries, not viewport breakpoints
 
 The right-hand intelligence panel is a fixed-width column (`xl:w-[420px]`) inside the

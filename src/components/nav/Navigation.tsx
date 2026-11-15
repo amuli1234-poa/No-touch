@@ -13,6 +13,8 @@ import {
   HeartPulse,
   Layers,
   LineChart,
+  PanelLeftClose,
+  PanelLeftOpen,
   Radar,
   ScanSearch,
   Settings as SettingsIcon,
@@ -21,6 +23,8 @@ import {
   TrendingUp,
   Waves,
 } from 'lucide-react';
+import { CONNECTION_STATUS_DOT } from '../ConnectionBadge';
+import type { ConnectionStatus } from '../../types/market';
 
 export type AppSection =
   | 'dashboard'
@@ -134,34 +138,87 @@ interface SidebarProps {
   onSelect: (section: AppSection) => void;
   statusBadge?: ReactNode;
   badges?: SectionBadges;
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
+  connectionStatus?: ConnectionStatus;
 }
 
-export function Sidebar({ active, onSelect, statusBadge, badges }: SidebarProps) {
+export function Sidebar({
+  active,
+  onSelect,
+  statusBadge,
+  badges,
+  collapsed = false,
+  onToggleCollapsed,
+  connectionStatus,
+}: SidebarProps) {
   return (
     <nav
       aria-label="Primary"
-      className="hidden lg:flex flex-col w-[236px] shrink-0 border-r border-line bg-nav"
+      data-collapsed={collapsed ? 'true' : 'false'}
+      className={`hidden lg:flex flex-col shrink-0 border-r border-line bg-nav transition-[width] duration-200 ${
+        collapsed ? 'w-[68px]' : 'w-[236px]'
+      }`}
     >
-      <div className="h-14 px-4 flex items-center gap-2.5 border-b border-line">
-        <div className="w-8 h-8 rounded-lg bg-accent/12 text-accent border border-accent/25 flex items-center justify-center shrink-0">
-          <ScanSearch className="w-4 h-4" />
-        </div>
-        <div className="min-w-0">
-          <div className="text-[15px] font-bold tracking-tight text-ink leading-none">
-            Wick<span className="text-accent">Sentinel</span>
+      <div
+        className={`h-14 flex items-center border-b border-line shrink-0 ${
+          collapsed ? 'px-2 justify-center' : 'px-3 justify-between gap-2'
+        }`}
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-lg bg-accent/12 text-accent border border-accent/25 flex items-center justify-center shrink-0">
+            <ScanSearch className="w-4 h-4" />
           </div>
-          <div className="text-[11px] font-medium text-muted leading-none mt-0.5">
-            Market Intelligence
-          </div>
+          {!collapsed && (
+            <div className="min-w-0">
+              <div className="text-[13px] font-extrabold tracking-tight text-ink leading-none">
+                Wick<span className="text-accent">Sentinel</span>
+              </div>
+              <div className="text-[9px] font-semibold uppercase tracking-wider text-faint leading-none mt-1">
+                Market Intelligence
+              </div>
+            </div>
+          )}
         </div>
+        {onToggleCollapsed && !collapsed && (
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            aria-label="Collapse sidebar"
+            aria-expanded={true}
+            title="Collapse sidebar"
+            className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-faint hover:text-ink hover:bg-elevated transition-colors cursor-pointer"
+          >
+            <PanelLeftClose className="w-4 h-4" aria-hidden="true" />
+          </button>
+        )}
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto py-2 px-2 space-y-3">
+      {onToggleCollapsed && collapsed && (
+        <div className="shrink-0 px-1.5 py-1.5 border-b border-line-soft flex justify-center">
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            aria-label="Expand sidebar"
+            aria-expanded={false}
+            title="Expand sidebar"
+            className="w-full h-7 rounded-lg flex items-center justify-center text-faint hover:text-ink hover:bg-elevated transition-colors cursor-pointer"
+          >
+            <PanelLeftOpen className="w-4 h-4" aria-hidden="true" />
+          </button>
+        </div>
+      )}
+
+      <div className={`flex-1 min-h-0 overflow-y-auto py-2 space-y-3 ${collapsed ? 'px-1.5' : 'px-2'}`}>
         {SECTION_GROUPS.map((group) => (
           <div key={group.label}>
-            <div className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-faint">
-              {group.label}
-            </div>
+            {collapsed ? (
+              <div className="mx-auto mb-1.5 w-5 border-t border-line-soft" aria-hidden="true" />
+            ) : (
+              <div className="px-2 pb-1 text-[9px] font-bold uppercase tracking-wider text-faint">
+                {group.label}
+              </div>
+            )}
             <ul className="space-y-0.5">
               {group.items.map((s) => {
                 const isActive = s.key === active;
@@ -171,15 +228,26 @@ export function Sidebar({ active, onSelect, statusBadge, badges }: SidebarProps)
                       type="button"
                       onClick={() => onSelect(s.key)}
                       aria-current={isActive ? 'page' : undefined}
-                      className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-medium transition-colors duration-150 cursor-pointer border ${
-                        isActive
-                          ? 'bg-accent/10 text-accent border-accent/20'
-                          : 'text-muted border-transparent hover:bg-elevated hover:text-ink'
-                      }`}
+                      aria-label={collapsed ? s.label : undefined}
+                      title={collapsed ? s.label : undefined}
+                      className={`w-full flex items-center rounded-lg transition-colors duration-150 cursor-pointer border ${
+                        collapsed ? 'justify-center px-0 py-2 gap-0' : 'gap-2.5 px-2.5 py-1.5'
+                      } ${isActive ? 'bg-accent/10 text-accent border-accent/20' : 'text-muted border-transparent hover:bg-elevated hover:text-ink'}`}
                     >
-                      <span className={isActive ? 'text-accent' : 'text-faint'}>{s.icon}</span>
-                      <span className="truncate">{s.label}</span>
-                      <Badge count={badges?.[s.key] ?? 0} />
+                      <span className={`relative shrink-0 ${isActive ? 'text-accent' : 'text-faint'}`}>
+                        {s.icon}
+                        {(badges?.[s.key] ?? 0) > 0 && (
+                          <span className="absolute -top-1 -right-1.5 inline-flex items-center justify-center min-w-[14px] h-[14px] px-0.5 rounded-full bg-accent text-white text-[8px] font-bold">
+                            {(badges?.[s.key] ?? 0) > 9 ? '9+' : badges?.[s.key]}
+                          </span>
+                        )}
+                      </span>
+                      {!collapsed && (
+                        <>
+                          <span className="truncate text-[11px] font-bold tracking-tight">{s.label}</span>
+                          <Badge count={badges?.[s.key] ?? 0} />
+                        </>
+                      )}
                     </button>
                   </li>
                 );
@@ -189,7 +257,20 @@ export function Sidebar({ active, onSelect, statusBadge, badges }: SidebarProps)
         ))}
       </div>
 
-      {statusBadge && <div className="p-3 border-t border-line">{statusBadge}</div>}
+      {statusBadge && (
+        <div className={`border-t border-line shrink-0 ${collapsed ? 'p-2 flex justify-center' : 'p-3'}`}>
+          {collapsed ? (
+            <span
+              className={`block w-2.5 h-2.5 rounded-full shrink-0 ${CONNECTION_STATUS_DOT[connectionStatus ?? 'disconnected']}`}
+              data-testid="connection-status"
+              title="Deriv Feed · connection status"
+              aria-hidden="true"
+            />
+          ) : (
+            statusBadge
+          )}
+        </div>
+      )}
     </nav>
   );
 }
@@ -267,18 +348,18 @@ export function MobileMenuSheet({
       <div className="absolute inset-0 bg-black/40 animate-[fade-in_150ms_ease-out]" onClick={onClose} />
       <div className="absolute inset-x-0 bottom-0 max-h-[80dvh] overflow-y-auto rounded-t-2xl bg-nav border-t border-line p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] animate-[sheet-up_220ms_cubic-bezier(0.16,1,0.3,1)]">
         <div className="flex items-center justify-between pb-2">
-          <span className="text-[15px] font-semibold text-ink">All modules</span>
+          <span className="text-[13px] font-bold text-ink">All modules</span>
           <button
             type="button"
             onClick={onClose}
-            className="h-8 px-3 text-[12px] font-medium text-muted bg-elevated border border-line rounded-lg cursor-pointer"
+            className="h-8 px-3 bg-elevated border border-line rounded-lg cursor-pointer"
           >
-            Close
+            <span className="text-[11px] font-bold text-muted">Close</span>
           </button>
         </div>
         {SECTION_GROUPS.map((group) => (
           <div key={group.label} className="mb-3">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-faint px-1 pb-1">
+            <div className="text-[9px] font-bold uppercase tracking-wider text-faint px-1 pb-1">
               {group.label}
             </div>
             <ul className="space-y-0.5">
@@ -292,12 +373,12 @@ export function MobileMenuSheet({
                         onSelect(s.key);
                         onClose();
                       }}
-                      className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-[13px] font-medium cursor-pointer border ${
+                      className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-[11px] font-bold tracking-tight cursor-pointer border ${
                         isActive ? 'bg-accent/10 text-accent border-accent/20' : 'text-muted border-transparent'
                       }`}
                     >
                       <span className={isActive ? 'text-accent' : 'text-faint'}>{s.icon}</span>
-                      <span className="truncate">{s.label}</span>
+                      <span className="truncate text-[11px] font-bold tracking-tight">{s.label}</span>
                     </button>
                   </li>
                 );

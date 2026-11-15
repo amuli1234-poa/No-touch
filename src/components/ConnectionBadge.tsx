@@ -8,33 +8,36 @@ interface ConnectionBadgeProps {
 
 const STATUS_CONFIG: Record<
   ConnectionStatus,
-  { label: string; textClass: string; dotClass: string }
+  { label: string; textClass: string }
 > = {
   connected: {
     label: 'CONNECTED',
     textClass: 'text-emerald-400',
-    dotClass: 'bg-emerald-400',
   },
   connecting: {
     label: 'CONNECTING',
     textClass: 'text-warn',
-    dotClass: 'bg-amber-400 animate-pulse',
   },
   reconnecting: {
     label: 'RECONNECTING',
     textClass: 'text-warn',
-    dotClass: 'bg-amber-400 animate-pulse',
   },
   disconnected: {
     label: 'DISCONNECTED',
     textClass: 'text-muted',
-    dotClass: 'bg-faint',
   },
   error: {
     label: 'DISCONNECTED · ERROR',
     textClass: 'text-bear',
-    dotClass: 'bg-red-500',
   },
+};
+
+export const CONNECTION_STATUS_DOT: Record<ConnectionStatus, string> = {
+  connected: 'bg-emerald-400',
+  connecting: 'bg-amber-400 animate-pulse',
+  reconnecting: 'bg-amber-400 animate-pulse',
+  disconnected: 'bg-faint',
+  error: 'bg-red-500',
 };
 
 export function ConnectionBadge({ status, onReconnect }: ConnectionBadgeProps) {
@@ -57,7 +60,7 @@ export function ConnectionBadge({ status, onReconnect }: ConnectionBadgeProps) {
         ) : (
           <RefreshCw className="w-3.5 h-3.5 shrink-0 animate-spin" aria-hidden="true" />
         )}
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dotClass}`} aria-hidden="true" />
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${CONNECTION_STATUS_DOT[status]}`} aria-hidden="true" />
         <span>Deriv Feed · {cfg.label}</span>
       </div>
 

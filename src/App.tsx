@@ -125,6 +125,21 @@ export default function App() {
   });
   const [moduleOverlay, setModuleOverlay] = useState<ModuleChartOverlay | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('wicksentinel_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('wicksentinel_sidebar_collapsed', String(sidebarCollapsed));
+    } catch {
+      // ignore storage errors
+    }
+  }, [sidebarCollapsed]);
 
   useEffect(() => {
     try {
@@ -847,6 +862,9 @@ export default function App() {
             active={section}
             onSelect={selectSection}
             badges={{ alerts: alertManager.unreadCount }}
+            collapsed={sidebarCollapsed}
+            onToggleCollapsed={() => setSidebarCollapsed((v) => !v)}
+            connectionStatus={connectionStatus}
             statusBadge={
               <ConnectionBadge status={connectionStatus} onReconnect={() => void reconnect()} />
             }
