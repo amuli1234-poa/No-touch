@@ -19,6 +19,7 @@ import { TopBar } from './components/TopBar';
 import { DashboardView } from './components/views/DashboardView';
 import { SettingsView } from './components/views/SettingsView';
 import { TradeHistoryView } from './components/views/TradeHistoryView';
+import { TradeView } from './components/views/TradeView';
 import { TrainingView } from './components/views/TrainingView';
 import { TrendlineScannerView } from './components/TrendlineScannerView';
 import { DemandSupplyAIView } from './components/DemandSupplyAIView';
@@ -75,6 +76,7 @@ import { SignalToastStack, type SignalToast } from './components/SignalToasts';
 
 const VALID_SECTIONS: AppSection[] = [
   'dashboard',
+  'trade',
   'analyser',
   'scanner',
   'trendlines',
@@ -948,6 +950,7 @@ export default function App() {
                           <AiTabView id={section} scanners={aiModules} journal={aiJournal} />
                         </div>
                       )}
+                      {section === 'trade' && <TradeView />}
                       {section === 'risk' && (
                         <div className="h-full overflow-y-auto">
                           <RiskView />

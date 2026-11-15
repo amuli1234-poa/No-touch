@@ -752,3 +752,35 @@ titles live in the `TITLES` map in `src/Root.tsx` and in `index.html`. There is 
   JetBrains Mono (figures), both loaded in `index.html` and declared in
   `src/index.css` `@theme`.
 - `src/lib/balances.test.ts` (node:test) pins the display rules. Run `npm test`.
+
+## Trade panel (left sidebar → "Trade")
+
+`nav/Navigation.tsx` adds a `trade` section; `App.tsx` renders `views/TradeView.tsx`
+in the right panel beside the shared chart. The ticket sets the *intent*: mode
+(manual / automatic), contract family (rise_fall / multipliers), stake and duration.
+
+- `src/lib/trade.ts` is the only client: GET/PUT `/api/execution/preferences`.
+  The session is an HttpOnly cookie, so the browser never holds a Deriv token.
+- `server/execution/preferences.ts` (`normalisePreferences`) validates every write.
+  Duration is 5–300 minutes; stake must be positive; unknown mode/family is refused.
+  Two fields are **never writable here**: `realExecutionAuthorised` and
+  `autoStopped` — they are carried over from the stored record, so saving a stake
+  can never switch real execution on or clear the emergency stop.
+- A preference expresses intent only. It grants no authority: the gateway
+  re-derives mode, account ownership and the server-side kill switches on every
+  purchase. Keep it that way when adding fields.
+- Contract facts (verified against `contracts_for`): Rise/Fall is `intraday`,
+  15s–1d, `limit_order: null` — **no stop-loss/take-profit**. Multipliers is
+  `no_expiry` with `multiplier` (40–400) and SL/TP, so it has no fixed duration.
+  This is why the panel trades **durations** and disables the duration field for
+  Multipliers. Do not promise SL/TP on Rise/Fall.
+- `server/tests/preferences.test.ts` pins the validation and the two
+  non-writable safety fields. Run `npx tsx --test server/tests/preferences.test.ts`.
+
+### Phase status
+
+1. Trade panel UI + preferences API — **done**.
+2. Manual execution (confirm → place) — next.
+3. Raise the conservative risk caps (currently maxOpen=3, exposure=$30, freq=30s).
+4. Automatic scanning loop across the eligible volatility indices.
+5. Tests + demo verification, then an explicit real-execution release.

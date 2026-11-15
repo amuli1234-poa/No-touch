@@ -12,6 +12,7 @@ import type { ContractMonitor } from '../execution/contractMonitor.js';
 import type { MarketDataService } from '../services/marketData.js';
 import { createSignal, SignalError } from '../services/signals.js';
 import { adapterFor, AdapterError } from '../execution/adapters/index.js';
+import { normalisePreferences, MIN_DURATION_MINUTES, MAX_DURATION_MINUTES } from '../execution/preferences.js';
 import { AccountAccessError } from '../execution/accountGuard.js';
 import type { SignalDirection, ContractFamily, DerivContractType } from '../execution/types.js';
 import { CONTRACT_FAMILY_TYPES } from '../execution/types.js';
@@ -235,6 +236,47 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
   router.get('/api/execution/contracts', requireSession(ctx), (req: AuthedRequest, res: Response) => {
     res.json({ contracts: store.listContracts(req.user!.id) });
   });
+
+  /**
+   * The Trade panel's preferences. A preference expresses intent only — it can
+   * never grant authority, and the gateway re-derives every permission on each
+   * purchase. `realExecutionAuthorised` and `autoStopped` are carried over, not
+   * writable here.
+   */
+  router.get('/api/execution/preferences', requireSession(ctx), (req: AuthedRequest, res: Response) => {
+    const existing = store.getExecutionPreferences(req.user!.id);
+    const normalised = normalisePreferences({}, existing, req.user!.id);
+    res.json({
+      preferences: normalised.ok ? normalised.value : existing,
+      durationBounds: { minMinutes: MIN_DURATION_MINUTES, maxMinutes: MAX_DURATION_MINUTES }
+    });
+  });
+
+  router.put(
+    '/api/execution/preferences',
+    requireSession(ctx),
+    json,
+    async (req: AuthedRequest, res: Response) => {
+      const user = req.user!;
+      const existing = store.getExecutionPreferences(user.id);
+      const result = normalisePreferences(req.body ?? {}, existing, user.id);
+      if (!result.ok) {
+        res.status(422).json({ error: result.error.code, message: result.error.message });
+        return;
+      }
+      // A preferred account must be one the user actually owns; the gateway
+      // re-checks on submit, but rejecting early gives a clear message.
+      for (const mode of ['demo', 'real'] as const) {
+        const accountId = result.value.preferredAccountId[mode];
+        if (accountId && !user.accounts.some((a) => a.accountId === accountId)) {
+          res.status(403).json({ error: 'account_not_authorized' });
+          return;
+        }
+      }
+      await store.putExecutionPreferences(result.value);
+      res.json({ preferences: result.value });
+    }
+  );
 
   router.get('/api/execution/ledger', requireSession(ctx), (req: AuthedRequest, res: Response) => {
     res.json({ entries: store.listLedgerEntries(req.user!.id) });

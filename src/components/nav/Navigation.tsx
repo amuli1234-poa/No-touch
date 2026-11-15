@@ -18,6 +18,7 @@ import {
   Radar,
   ScanSearch,
   Settings as SettingsIcon,
+  Wallet,
   ShieldCheck,
   Sparkles,
   TrendingUp,
@@ -28,6 +29,7 @@ import type { ConnectionStatus } from '../../types/market';
 
 export type AppSection =
   | 'dashboard'
+  | 'trade'
   | 'analyser'
   | 'scanner'
   | 'trendlines'
@@ -73,6 +75,7 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
     label: 'Workspace',
     items: [
       { key: 'dashboard', label: 'Dashboard', shortLabel: 'Home', icon: <BarChart3 className="w-[18px] h-[18px]" /> },
+      { key: 'trade', label: 'Trade', shortLabel: 'Trade', icon: <Wallet className="w-[18px] h-[18px]" /> },
       { key: 'analyser', label: 'Chart Analyser', shortLabel: 'Analyser', icon: <ScanSearch className="w-[18px] h-[18px]" /> },
       { key: 'scanner', label: 'Market Scanner', shortLabel: 'Scanner', icon: <Sparkles className="w-[18px] h-[18px]" /> },
       { key: 'live', label: 'Live Market Scanner', shortLabel: 'Live', icon: <Radar className="w-[18px] h-[18px]" /> },

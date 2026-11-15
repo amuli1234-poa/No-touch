@@ -28,6 +28,7 @@ import type { SignalLifecycle } from '../utils/signalStatus';
 
 export type NavSection =
   | 'dashboard'
+  | 'trade'
   | 'analyser'
   | 'scanner'
   | 'trendlines'
