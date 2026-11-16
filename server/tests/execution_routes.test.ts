@@ -145,7 +145,7 @@ async function withServer(
     preferences: {}
   };
   await store.upsertUser(USER);
-  const flags = { allowExecution: true, allowDemoExecution: true, allowRealExecution: false, ...opts.flags };
+  const flags = { allowExecution: true, allowDemoExecution: true, allowRealExecution: false, allowAutomaticTrading: true, ...opts.flags };
   const auditor = new ExecutionAuditor(store);
   const monitor = new ContractMonitor({ store, broker, auditor });
   const gateway = new ExecutionGateway({
@@ -255,6 +255,7 @@ async function withServer(
       monitor,
       user: USER,
       post: (p, b) => call('POST', p, b),
+      put: (p, b) => call('PUT', p, b),
       get: (p) => call('GET', p)
     });
   } finally {
@@ -800,6 +801,57 @@ test('a manual user\'s signal is NOT auto-executed', async () => {
     assert.equal(res.body.auto, null);
     assert.equal(broker.buys.length, 0);
   });
+});
+
+
+test('an automatic user is NOT executed when automatic trading is switched off', async () => {
+  await withServer(
+    async ({ post, broker, store }) => {
+      const res = await post('/api/execution/signals', {
+        symbol: 'R_100',
+        direction: 'RISE',
+        contractFamily: 'rise_fall',
+        accountId: 'DEMO',
+        timeframe: '5m'
+      });
+      assert.equal(res.status, 201, JSON.stringify(res.body));
+      // The signal is still recorded, but no purchase happens.
+      assert.equal(broker.buys.length, 0, 'automatic must not buy while the switch is off');
+      assert.equal(res.body.auto?.outcome, 'rejected');
+      assert.equal(res.body.auto?.reason, 'automatic_disabled');
+      // The refusal is auditable, not silent.
+      assert.ok(
+        store
+          .listExecutionAudit()
+          .some((entry) => entry.action === 'execution.submit' && entry.detail?.reason === 'automatic_disabled')
+      );
+    },
+    { automatic: true, flags: { allowAutomaticTrading: false } }
+  );
+});
+
+test('PUT /preferences refuses automatic mode while automatic trading is switched off', async () => {
+  await withServer(
+    async ({ store, put }) => {
+      const res = await put('/api/execution/preferences', { mode: 'automatic' });
+      assert.equal(res.status, 422);
+      assert.equal(res.body.error, 'automatic_disabled');
+      assert.notEqual(store.getExecutionPreferences('u_a')?.mode, 'automatic');
+    },
+    { flags: { allowAutomaticTrading: false } }
+  );
+});
+
+test('GET /scanner reports automatic trading disabled with a reason', async () => {
+  await withServer(
+    async ({ get }) => {
+      const res = await get('/api/execution/scanner');
+      assert.equal(res.status, 200);
+      assert.equal(res.body.automaticEnabled, false);
+      assert.equal(res.body.reason, 'automatic_disabled');
+    },
+    { flags: { allowAutomaticTrading: false } }
+  );
 });
 
 

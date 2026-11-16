@@ -26,6 +26,13 @@ export interface ExecutionFlags {
    * changes it — see `loadExecutionFlags`.
    */
   allowRealExecution: boolean;
+  /**
+   * Permits AUTOMATIC trading — the scanner placing trades on its own. Defaults
+   * to false, so a fresh install only ever trades by hand. This is deliberately
+   * separate from the execution switches: turning manual trading on must never
+   * silently turn automatic trading on as well.
+   */
+  allowAutomaticTrading: boolean;
 }
 
 /**
@@ -47,7 +54,11 @@ export function loadExecutionFlags(env: NodeJS.ProcessEnv = process.env): Execut
   // off, and the flag is not documented as settable in this release.
   const allowRealExecution = flag(env.ALLOW_REAL_EXECUTION) && allowExecution;
 
-  return { allowExecution, allowDemoExecution, allowRealExecution };
+  // Automatic trading is opt-in and independent: it needs its own flag AND the
+  // master switch, so enabling manual execution never enables the scanner.
+  const allowAutomaticTrading = flag(env.ALLOW_AUTOMATIC_TRADING) && allowExecution;
+
+  return { allowExecution, allowDemoExecution, allowRealExecution, allowAutomaticTrading };
 }
 
 /**

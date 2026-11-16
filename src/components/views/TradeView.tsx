@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 
 import { useWorkspace } from '../../context/WorkspaceContext';
-import { useAuth } from '../../lib/auth';
+import { startDerivAuth, useAuth } from '../../lib/auth';
 import { useBalances, formatMoney, pickAccount, refreshBalances } from '../../lib/balances';
 import {
   DEFAULT_DURATION_BOUNDS,
@@ -35,6 +35,7 @@ import {
   type TradePreview
 } from '../../lib/trade';
 import { Card, StatTile } from '../ui/primitives';
+import { ExecutionPositions } from './ExecutionPositions';
 
 /** Live Deriv floor: the smallest stake the platform accepts. */
 const MIN_STAKE = 0.35;
@@ -111,8 +112,8 @@ export function TradeView() {
   const accounts = balances.accounts;
 
   // Poll the scanner's status while signed in. In automatic mode this shows the
-  // loop working; in manual mode it is the source of truth for which setups may
-  // be traded, so the panel can gate the direction buttons on a live signal.
+  // loop working; in manual mode it reports whether the server even permits
+  // automatic trading, so the panel can disable the Automatic option.
   useEffect(() => {
     if (!authenticated) {
       setScanner(null);
@@ -165,6 +166,30 @@ export function TradeView() {
   );
   const signalDirection = liveSetup?.direction ?? null;
 
+  // Automatic trading is a server-side switch. Until the panel has heard from
+  // the server it stays optimistic; once told, it is authoritative.
+  const automaticEnabled = scanner ? scanner.automaticEnabled : true;
+
+  // A stored preference may still say "automatic" from before the switch was
+  // turned off. Once the server confirms automatic is off, fall the ticket back
+  // to manual and say so, rather than sitting on a mode the server will refuse.
+  useEffect(() => {
+    if (scanner && !scanner.automaticEnabled && mode === 'automatic') {
+      setMode('manual');
+      setNotice({
+        tone: 'info',
+        text: 'Automatic trading is switched off on this server, so this ticket was reset to manual.'
+      });
+    }
+  }, [scanner, mode]);
+
+  // A Deriv OAuth token lasts a day and cannot be refreshed (Deriv issues no
+  // refresh tokens), so after it lapses every trade and balance read fails. The
+  // server reports the expiry, letting the panel say "reconnect" instead of
+  // showing an opaque failure.
+  const derivTokenExpired =
+    balances.tokenExpiresAt !== null && balances.tokenExpiresAt <= Date.now();
+
   const realAccount = useMemo(() => pickAccount(accounts, 'real', balances.selectedAccountId), [
     accounts,
     balances.selectedAccountId
@@ -202,6 +227,7 @@ export function TradeView() {
     stakeValid &&
     (family === 'multipliers' ? multiplierValid : durationValid) &&
     !!ws.selectedSymbol &&
+    !derivTokenExpired &&
     !placing;
 
   // A manual trade is the customer's own decision — any direction, at any time,
@@ -287,6 +313,10 @@ export function TradeView() {
   }, []);
 
   const onModeChange = (next: ExecutionMode) => {
+    if (next === 'automatic' && !automaticEnabled) {
+      setNotice({ tone: 'info', text: 'Automatic trading is switched off on this server. Place trades manually.' });
+      return;
+    }
     setMode(next);
     void save({ mode: next });
   };
@@ -425,6 +455,30 @@ export function TradeView() {
         </Card>
       )}
 
+      {authenticated && derivTokenExpired && (
+        <Card className="p-3 border-warn/40">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-warn shrink-0 mt-0.5" />
+            <div>
+              <div className="text-[13px] font-bold text-ink">Your Deriv session has expired</div>
+              <p className="text-[12px] text-muted mt-0.5">
+                Deriv sessions last about a day and cannot be refreshed automatically. Reconnect your
+                account to keep trading — until then, trades and balance reads will be refused.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  startDerivAuth('login');
+                }}
+                className="mt-2 rounded-md border border-accent/30 bg-accent/10 px-2.5 py-1.5 text-[11px] font-bold text-accent hover:bg-accent/15 cursor-pointer"
+              >
+                Reconnect Deriv
+              </button>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {loading && (
         <Card className="p-3">
           <div className="text-[12px] text-muted">Loading your trade settings…</div>
@@ -449,9 +503,9 @@ export function TradeView() {
                 active={mode === 'automatic'}
                 icon={<Bot className="w-3.5 h-3.5" />}
                 label="Automatic"
-                hint="Scanner trades for you"
+                hint={automaticEnabled ? 'Scanner trades for you' : 'Disabled on this server'}
                 onClick={() => onModeChange('automatic')}
-                disabled={!authenticated || saving}
+                disabled={!authenticated || saving || !automaticEnabled}
               />
             </div>
 
@@ -765,6 +819,10 @@ export function TradeView() {
               />
             </dl>
           </Card>
+
+          {/* Live positions: open contracts with running P/L and a Close button,
+              so a trade placed here can be cut or taken without leaving the panel. */}
+          {authenticated && <ExecutionPositions key={placed?.contractId ?? 'positions'} />}
 
           {prefs?.autoStopped && (
             <Card className="p-3 border-danger/40">

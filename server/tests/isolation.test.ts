@@ -137,7 +137,31 @@ test('accountsInMode separates DEMO and REAL without mixing them', () => {
 
 test('all execution flags default to false when the environment is empty', () => {
   const flags = loadExecutionFlags({});
-  assert.deepEqual(flags, { allowExecution: false, allowDemoExecution: false, allowRealExecution: false });
+  assert.deepEqual(flags, {
+    allowExecution: false,
+    allowDemoExecution: false,
+    allowRealExecution: false,
+    allowAutomaticTrading: false
+  });
+});
+
+test('automatic trading stays off unless its own flag and the master switch are both on', () => {
+  assert.equal(loadExecutionFlags({}).allowAutomaticTrading, false);
+  assert.equal(loadExecutionFlags({ ALLOW_AUTOMATIC_TRADING: 'true' }).allowAutomaticTrading, false);
+  assert.equal(
+    loadExecutionFlags({ ALLOW_EXECUTION: 'true' }).allowAutomaticTrading,
+    false,
+    'enabling manual execution must not enable automatic trading'
+  );
+  assert.equal(
+    loadExecutionFlags({ ALLOW_EXECUTION: 'true', ALLOW_DEMO_EXECUTION: 'true' }).allowAutomaticTrading,
+    false,
+    'demo execution alone must not enable automatic trading'
+  );
+  assert.equal(
+    loadExecutionFlags({ ALLOW_EXECUTION: 'true', ALLOW_AUTOMATIC_TRADING: 'true' }).allowAutomaticTrading,
+    true
+  );
 });
 
 test('flags require the exact string "true"', () => {

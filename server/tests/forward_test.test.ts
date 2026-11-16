@@ -141,7 +141,7 @@ test('forward test: a rising series trades, wins, and the ledger reconciles', as
     const gateway = new ExecutionGateway({
       store,
       cfg: makeConfig(),
-      flags: { allowExecution: true, allowDemoExecution: true, allowRealExecution: false },
+      flags: { allowExecution: true, allowDemoExecution: true, allowRealExecution: false, allowAutomaticTrading: true },
       broker,
       balanceProvider: async () => 1000,
       riskEvaluator: (user, accountId, stake, signal, balance, now, intentId) =>
@@ -220,7 +220,7 @@ test('forward test: a losing series engages auto-stop after the consecutive-loss
     const gateway = new ExecutionGateway({
       store,
       cfg: makeConfig(),
-      flags: { allowExecution: true, allowDemoExecution: true, allowRealExecution: false },
+      flags: { allowExecution: true, allowDemoExecution: true, allowRealExecution: false, allowAutomaticTrading: true },
       broker,
       balanceProvider: async () => 1000,
       riskEvaluator: (user, accountId, stake, signal, balance, now, intentId) =>

@@ -638,9 +638,11 @@ has Markdown at `https://developers.deriv.com/llms/<endpoint>.md` (e.g. `buy.md`
   `COLLECTION_SPECS`); the Store loads them and exposes tenant-scoped accessors
   (`getSignal(userId, id)` returns null on owner mismatch). Add a collection in
   both places or the SQLite migration will miss it.
-- Kill switches: `ALLOW_EXECUTION`, `ALLOW_DEMO_EXECUTION`, `ALLOW_REAL_EXECUTION`
-  — all default false; parsed strictly (`=== 'true'`). REAL needs the master
-  switch **and** its own flag. Never settable at runtime.
+- Kill switches: `ALLOW_EXECUTION`, `ALLOW_DEMO_EXECUTION`, `ALLOW_REAL_EXECUTION`,
+  `ALLOW_AUTOMATIC_TRADING` — all default false; parsed strictly (`=== 'true'`).
+  REAL needs the master switch **and** its own flag. `ALLOW_AUTOMATIC_TRADING` is
+  independent of the others: it needs the master switch too, but turning manual
+  DEMO trading on never turns automatic trading on. Never settable at runtime.
 - `npm run test:isolation` covers cross-tenant IDOR, mode mismatch, kill
   switches and record durability. Keep it green.
 
@@ -709,15 +711,22 @@ has Markdown at `https://developers.deriv.com/llms/<endpoint>.md` (e.g. `buy.md`
   `MarketDataService.getTicks(symbol)`; it never asks Deriv for a price itself. A
   signal is built on a fresh snapshot, exactly as a manual one is.
 - Wired in `composition.ts` (bundled as `scanner`) and started in `index.ts` only
-  when `ALLOW_EXECUTION` and `ALLOW_DEMO_EXECUTION` are both on; stopped on
-  shutdown. `GET /api/execution/scanner` returns per-user status (`test:scanner`).
+  when `ALLOW_EXECUTION`, `ALLOW_DEMO_EXECUTION` **and** `ALLOW_AUTOMATIC_TRADING`
+  are all on; stopped on shutdown. `GET /api/execution/scanner` returns per-user
+  status (`test:scanner`).
+- **Automatic trading is off by default and stays off unless opted in.** The
+  scanner does not start, the gateway refuses any intent with no customer
+  approval (`approvedBy === null`, i.e. the runner's own shape) with
+  `automatic_disabled`, and `PUT /api/execution/preferences` refuses
+  `mode: 'automatic'`. Manual trading is unaffected — it is a separate switch.
 - **Local gotcha:** the switches live in the environment, and `.env` is
   git-ignored, so a fresh clone has them OFF — the scanner will not start and
   every trade is rejected. Set `ALLOW_EXECUTION=true` and
   `ALLOW_DEMO_EXECUTION=true` in `.env` and restart the backend (see
-  `.env.example`). The status endpoint reports `reason` (`execution_disabled` /
-  `demo_execution_disabled`) and the Trade panel shows it, so the cause is
-  visible rather than a silent "not running".
+  `.env.example`). Leave `ALLOW_AUTOMATIC_TRADING` unset for manual-only. The
+  status endpoint reports `reason` (`execution_disabled` / `demo_execution_disabled`
+  / `automatic_disabled`) and the Trade panel shows it, so the cause is visible
+  rather than a silent "not running".
 
 ## Contract monitoring and reconciliation (Phase 8)
 
@@ -906,4 +915,27 @@ balances)` now takes the process-wide instance from `server/index.ts`, and
 `TradeView` refreshes balances every 20s while the ticket is open to keep that
 cache inside its freshness window. Keep that sharing in place — a second
 `BalanceService` reintroduces the handshake.
+
+### Live positions and closing a trade
+
+The Trade panel mounts `src/components/views/ExecutionPositions.tsx` below the
+ticket. It polls `GET /api/execution/contracts` (every 15s) and shows, per
+DEMO/REAL and per account, the open P/L and realized P/L (`summarizeContracts`
+in `src/lib/positions.ts` — a missing profit makes the total "unavailable"
+rather than a misleading partial sum). Each open contract has a **Close** action:
+a confirm step, then `POST /api/execution/contracts/:contractId/close`, so a
+trader can cut a loss or take a favourable profit without leaving the panel.
+The server owns the close: `closePending` marks an unconfirmed sale and the
+monitor reconciles it, so the client never retries a close blindly.
+
+### Expired Deriv token
+
+A Deriv OAuth token lasts ~24h and **cannot be refreshed** (Deriv issues no
+refresh tokens). When `session.derivTokenExpiresAt` has passed, `tokenFor()`
+returns null, so `/place`, the balance read and the risk engine all fail — the
+risk engine fails closed on a null balance, which surfaced as a confusing
+`risk_rejected: min_balance`. `GET /api/balances` reports `tokenExpiresAt`, and
+the Trade panel shows a "Reconnect Deriv" banner and disables placing while it
+is in the past. Do not treat a `min_balance` rejection as a real balance problem
+until you have checked the token expiry.
 

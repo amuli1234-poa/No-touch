@@ -227,7 +227,7 @@ async function withScanner(
   const gateway = new ExecutionGateway({
     store,
     cfg,
-    flags: { allowExecution: true, allowDemoExecution: true, allowRealExecution: false },
+    flags: { allowExecution: true, allowDemoExecution: true, allowRealExecution: false, allowAutomaticTrading: true },
     broker,
     balanceProvider: async () => 1000,
     riskEvaluator: (user, accountId, stake, signal, balance, now, intentId) =>

@@ -137,7 +137,7 @@ async function harness(opts: { script?: any } = {}) {
   const store = new Store(tmpDir(), { unsafeDisableLock: true });
   await store.load();
   const broker = new FakeBroker({ script: opts.script });
-  const flags = { allowExecution: true, allowDemoExecution: true, allowRealExecution: false };
+  const flags = { allowExecution: true, allowDemoExecution: true, allowRealExecution: false, allowAutomaticTrading: true };
   const gateway = new ExecutionGateway({
     store,
     cfg: makeConfig(),

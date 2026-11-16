@@ -215,12 +215,16 @@ async function main(): Promise<void> {
   market.connect().catch((err) => {
     console.warn(`[server] Market data unavailable at boot: ${err instanceof Error ? err.message : err}`);
   });
-  // The automatic scanner only runs when execution is enabled. It has no
-  // authority of its own — it proposes signals; the gateway still decides.
-  if (execution.flags.allowExecution && execution.flags.allowDemoExecution) {
+  // The automatic scanner only runs when execution is enabled AND automatic
+  // trading is explicitly switched on. It has no authority of its own — it
+  // proposes signals; the gateway still decides. With automatic trading off
+  // (the default) the scanner never starts, so nothing trades itself.
+  if (execution.flags.allowExecution && execution.flags.allowDemoExecution && execution.flags.allowAutomaticTrading) {
     execution.scanner.start().catch((err) => {
       console.warn(`[server] Scanner could not start: ${err instanceof Error ? err.message : err}`);
     });
+  } else if (execution.flags.allowExecution && !execution.flags.allowAutomaticTrading) {
+    console.log('[server] Automatic trading is OFF (set ALLOW_AUTOMATIC_TRADING=true to enable the scanner).');
   }
   if (execution.flags.allowExecution) {
     console.log(

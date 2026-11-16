@@ -124,7 +124,7 @@ async function harness(opts: { risk?: { approved: boolean; reasons: string[] } }
   const store = new Store(tmpDir(), { unsafeDisableLock: true });
   await store.load();
   const broker = new FakeBroker();
-  const flags = { allowExecution: true, allowDemoExecution: true, allowRealExecution: false };
+  const flags = { allowExecution: true, allowDemoExecution: true, allowRealExecution: false, allowAutomaticTrading: true };
   const gateway = new ExecutionGateway({
     store,
     cfg: makeConfig(),
@@ -285,7 +285,7 @@ test('automatic execution is skipped when execution is disabled server-side', as
     const gateway = new ExecutionGateway({
       store,
       cfg: makeConfig(),
-      flags: { allowExecution: false, allowDemoExecution: false, allowRealExecution: false },
+      flags: { allowExecution: false, allowDemoExecution: false, allowRealExecution: false, allowAutomaticTrading: true },
       broker,
       balanceProvider: async () => 1000,
       riskEvaluator: () => ({ approved: true, reasons: [] }),

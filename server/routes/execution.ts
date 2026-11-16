@@ -519,18 +519,22 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
     const flags = deps.flags;
     const executionEnabled = flags ? flags.allowExecution : true;
     const demoEnabled = flags ? flags.allowDemoExecution : true;
+    const automaticEnabled = flags ? flags.allowAutomaticTrading : true;
     // Why the scanner is (not) running, so a client can tell the user what to do
     // rather than showing a bare "not running". The scanner needs both switches.
     const reason = !executionEnabled
       ? 'execution_disabled'
       : !demoEnabled
         ? 'demo_execution_disabled'
-        : null;
+        : !automaticEnabled
+          ? 'automatic_disabled'
+          : null;
     if (!scanner) {
       res.json({
         running: false,
         executionEnabled,
         demoEnabled,
+        automaticEnabled,
         reason,
         lastPassAt: null,
         recent: [],
@@ -559,6 +563,7 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
       running: scanner.isRunning,
       executionEnabled,
       demoEnabled,
+      automaticEnabled,
       reason,
       lastPassAt: scanner.lastPassTime,
       recent,
@@ -665,6 +670,16 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
       const result = normalisePreferences(req.body ?? {}, existing, user.id);
       if (!result.ok) {
         res.status(422).json({ error: result.error.code, message: result.error.message });
+        return;
+      }
+      // Automatic trading is switched off by default. A stored preference for it
+      // would only mislead the panel, so refuse to select it while the switch is
+      // off. (The gateway refuses an automatic purchase regardless.)
+      if (result.value.mode === 'automatic' && deps.flags && !deps.flags.allowAutomaticTrading) {
+        res.status(422).json({
+          error: 'automatic_disabled',
+          message: 'Automatic trading is switched off on this server. Place trades manually.'
+        });
         return;
       }
       // A preferred account must be one the user actually owns; the gateway

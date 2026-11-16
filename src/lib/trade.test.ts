@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   closeExecutionContract,
   fetchExecutionContracts,
+  fetchScannerStatus,
   placeTrade,
   resetDemoRiskSession,
   rejectionMessage,
@@ -233,6 +234,43 @@ test('an uncertain close response is surfaced as pending and not retried by the 
     assert.equal(result.ok, false);
     assert.equal(result.ok === false && result.pending, true);
     assert.equal(result.ok === false && result.message, 'Deriv has not confirmed the sale.');
+  } finally {
+    restore();
+  }
+});
+
+test('fetchScannerStatus surfaces the automatic-trading switch and its reason', async () => {
+  const restore = stubFetch({
+    status: 200,
+    body: {
+      running: false,
+      executionEnabled: true,
+      demoEnabled: true,
+      automaticEnabled: false,
+      reason: 'automatic_disabled',
+      lastPassAt: null,
+      watchedMarkets: [],
+      recent: []
+    }
+  });
+  try {
+    const status = await fetchScannerStatus();
+    assert.equal(status?.automaticEnabled, false);
+    assert.equal(status?.reason, 'automatic_disabled');
+  } finally {
+    restore();
+  }
+});
+
+test('fetchScannerStatus defaults automatic trading to on when the server omits the field', async () => {
+  const restore = stubFetch({
+    status: 200,
+    body: { running: true, executionEnabled: true, demoEnabled: true, reason: null, watchedMarkets: [], recent: [] }
+  });
+  try {
+    const status = await fetchScannerStatus();
+    assert.equal(status?.automaticEnabled, true);
+    assert.equal(status?.reason, null);
   } finally {
     restore();
   }

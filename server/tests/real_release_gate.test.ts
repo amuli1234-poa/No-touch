@@ -19,6 +19,18 @@ test('every flag is off with an empty environment', () => {
   assert.equal(flags.allowExecution, false);
   assert.equal(flags.allowDemoExecution, false);
   assert.equal(flags.allowRealExecution, false);
+  assert.equal(flags.allowAutomaticTrading, false);
+});
+
+test('automatic trading is off by default and never implied by the execution switches', () => {
+  // Its own flag without the master switch is not enough.
+  assert.equal(loadExecutionFlags({ ALLOW_AUTOMATIC_TRADING: 'true' }).allowAutomaticTrading, false);
+  // The manual switches do not turn it on.
+  const manual = loadExecutionFlags({ ALLOW_EXECUTION: 'true', ALLOW_DEMO_EXECUTION: 'true' });
+  assert.equal(manual.allowAutomaticTrading, false);
+  // Both are required.
+  const auto = loadExecutionFlags({ ALLOW_EXECUTION: 'true', ALLOW_AUTOMATIC_TRADING: 'true' });
+  assert.equal(auto.allowAutomaticTrading, true);
 });
 
 test('REAL is refused unless the master switch is ALSO on', () => {

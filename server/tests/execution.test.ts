@@ -120,7 +120,7 @@ async function harness(opts: {
   const store = new Store(tmpDir(), { unsafeDisableLock: true });
   await store.load();
   const broker = new FakeBroker({ script: opts.script });
-  const flags = { allowExecution: true, allowDemoExecution: true, allowRealExecution: false, ...opts.flags };
+  const flags = { allowExecution: true, allowDemoExecution: true, allowRealExecution: false, allowAutomaticTrading: true, ...opts.flags };
   const gateway = new ExecutionGateway({
     store,
     cfg: makeConfig(),
@@ -214,7 +214,7 @@ test('a manual DEMO trade executes with the REAL risk engine wired in', async ()
   const gateway = new ExecutionGateway({
     store,
     cfg: makeConfig(),
-    flags: { allowExecution: true, allowDemoExecution: true, allowRealExecution: false },
+    flags: { allowExecution: true, allowDemoExecution: true, allowRealExecution: false, allowAutomaticTrading: true },
     broker,
     balanceProvider: async () => 1000,
     riskEvaluator: (u, accountId, stake, sig, balance, now, intentId) =>
@@ -481,7 +481,7 @@ test('the account lock serialises submissions so a stateful risk check cannot be
   const gateway = new ExecutionGateway({
     store,
     cfg: makeConfig(),
-    flags: { allowExecution: true, allowDemoExecution: true, allowRealExecution: false },
+    flags: { allowExecution: true, allowDemoExecution: true, allowRealExecution: false, allowAutomaticTrading: true },
     broker,
     balanceProvider: async () => 1000,
     riskEvaluator: (u, accountId) => {
@@ -627,7 +627,7 @@ test('the Multipliers adapter requires a multiplier and a valid cancellation', (
 /* ------------------------------- defaults --------------------------------- */
 
 test('gateway defaults never allow REAL without both flag and authorisation', async () => {
-  const { store, gateway } = await harness({ flags: { allowRealExecution: false } });
+  const { store, gateway } = await harness({ flags: { allowRealExecution: false, allowAutomaticTrading: true } });
   try {
     const sig = await seedSignal(store, { accountId: 'REAL', accountMode: 'real' });
     const intent = await gateway.createIntent(intentInput(sig, { accountId: 'REAL' }));

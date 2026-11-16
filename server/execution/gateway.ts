@@ -55,6 +55,7 @@ import type { SignalRecord } from './types.js';
 
 export type ExecutionRejectionCode =
   | 'execution_disabled'
+  | 'automatic_disabled'
   | 'account_not_authorized'
   | 'account_mode_mismatch'
   | 'account_mode_invalid'
@@ -443,6 +444,23 @@ export class ExecutionGateway {
         detail: { reason: permitted.reason }
       });
       throw new ExecutionError('execution_disabled', 'Execution is disabled.', [permitted.reason ?? 'execution_disabled']);
+    }
+
+    // Automatic trading has its own switch, independent of manual trading. An
+    // automatic intent carries no customer approval, so `approvedBy === null`
+    // identifies it; the flag is re-read here rather than trusted from intent
+    // creation, so turning it off stops automatic trades immediately.
+    if (intent.approvedBy === null && !this.flags.allowAutomaticTrading) {
+      await this.transition(intent, 'REJECTED', 'automatic_disabled');
+      await this.auditor.record({
+        userId: user.id,
+        action: 'execution.submit',
+        outcome: 'denied',
+        accountId: intent.accountId,
+        intentId: intent.id,
+        detail: { reason: 'automatic_disabled' }
+      });
+      throw new ExecutionError('automatic_disabled', 'Automatic trading is disabled.', ['automatic_disabled']);
     }
 
     // (2) Ownership and mode, resolved from the user's own records.

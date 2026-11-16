@@ -360,6 +360,7 @@ export async function closeExecutionContract(contractId: string): Promise<CloseC
 const REJECTION_COPY: Record<string, string> = {
   unauthorized: 'Your session has expired. Sign in again before trading.',
   execution_disabled: 'Trading is switched off on the server right now.',
+  automatic_disabled: 'Automatic trading is switched off. Place this trade manually.',
   demo_execution_disabled: 'Demo trading is switched off on the server right now.',
   real_execution_disabled: 'Real-money trading is switched off on the server right now.',
   account_not_authorized: 'That account is not linked to your session.',
@@ -413,8 +414,10 @@ export interface ScannerStatus {
   executionEnabled: boolean;
   /** Whether the DEMO kill switch allows execution. */
   demoEnabled: boolean;
-  /** Why the scanner is off: 'execution_disabled' | 'demo_execution_disabled' | null. */
-  reason: 'execution_disabled' | 'demo_execution_disabled' | null;
+  /** Whether the server permits automatic (scanner-driven) trading at all. */
+  automaticEnabled: boolean;
+  /** Why the scanner is off: 'execution_disabled' | 'demo_execution_disabled' | 'automatic_disabled' | null. */
+  reason: 'execution_disabled' | 'demo_execution_disabled' | 'automatic_disabled' | null;
   lastPassAt: number | null;
   watchedMarkets: Array<{ symbol: string; displayName: string }>;
   recent: Array<{
@@ -446,8 +449,11 @@ export async function fetchScannerStatus(): Promise<ScannerStatus | null> {
       running: Boolean(data.running),
       executionEnabled: data.executionEnabled !== false,
       demoEnabled: data.demoEnabled !== false,
+      automaticEnabled: data.automaticEnabled !== false,
       reason:
-        data.reason === 'execution_disabled' || data.reason === 'demo_execution_disabled'
+        data.reason === 'execution_disabled' ||
+        data.reason === 'demo_execution_disabled' ||
+        data.reason === 'automatic_disabled'
           ? data.reason
           : null,
       lastPassAt: typeof data.lastPassAt === 'number' ? data.lastPassAt : null,
