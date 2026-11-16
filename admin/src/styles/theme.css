@@ -233,12 +233,12 @@ code, kbd, .mono { font-family: var(--font-mono); font-size: 0.86em; }
 }
 
 .sidebar-title { font-family: var(--font-sans); font-weight: 700; font-size: 14px; color: #f8fafc; line-height: 1.2; }
-.sidebar-subtitle { font-size: 10.5px; color: var(--sidebar-fg-muted); letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; }
+.sidebar-subtitle { font-size: 11px; color: var(--sidebar-fg-muted); letter-spacing: 0.06em; text-transform: uppercase; font-weight: 600; }
 
 .sidebar-nav { padding: 14px 12px; flex: 1; display: flex; flex-direction: column; gap: 2px; }
 
 .sidebar-group-label {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -294,7 +294,7 @@ code, kbd, .mono { font-family: var(--font-mono); font-size: 0.86em; }
 }
 .sidebar-user-meta { min-width: 0; }
 .sidebar-user-name { font-size: 12.5px; font-weight: 600; color: #f1f5f9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sidebar-user-role { font-size: 10.5px; color: var(--sidebar-fg-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+.sidebar-user-role { font-size: 11px; color: var(--sidebar-fg-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
 
 /* ================================ topbar ================================ */
 .topbar {
@@ -654,7 +654,7 @@ table.data .row-actions { display: flex; gap: 6px; justify-content: flex-end; }
 .spark-line { fill: none; stroke: var(--blue); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .spark-area { fill: rgba(var(--blue-rgb), 0.12); stroke: none; }
 .spark-grid { stroke: var(--border); stroke-width: 1; stroke-dasharray: 3 3; }
-.spark-label { fill: var(--text-faint); font-size: 9.5px; font-family: var(--font-mono); }
+.spark-label { fill: var(--text-faint); font-size: 11px; font-family: var(--font-mono); }
 .bar-track { height: 7px; border-radius: var(--radius-pill); background: var(--surface-3); overflow: hidden; }
 .bar-fill { height: 100%; border-radius: var(--radius-pill); background: linear-gradient(90deg, var(--blue) 0%, var(--blue-light) 100%); }
 .bar-fill.violet { background: linear-gradient(90deg, var(--violet) 0%, #a78bfa 100%); }
