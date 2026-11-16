@@ -510,6 +510,17 @@ remote-tracking ref. Do not open a pull request unless explicitly asked.
 Earlier notes here claimed the token was read-only and that pushes failed with
 `403 Resource not accessible by integration` — that is no longer accurate.
 
+When pushing a brand-new branch, prefer the plain remote once it exists. If you
+must push with an explicit token URL (`git push -u https://$GITHUB_TOKEN@…`),
+Git writes that URL — token and all — into `branch.<name>.remote`. Reset it
+afterwards so the credential is not left in `.git/config`:
+
+```sh
+git config branch.<name>.remote origin
+git config branch.<name>.merge refs/heads/<name>
+git fetch origin <name>   # populate the remote-tracking ref
+```
+
 ## Multi-AI analysis modules
 
 - The institutional restyle lives in the token layer, not in components:
