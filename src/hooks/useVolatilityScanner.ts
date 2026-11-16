@@ -93,17 +93,17 @@ export function useVolatilityScanner({
       const granularity = tfConfig.granularitySec;
 
       const readings: InstrumentMonitorReading[] = [];
-      const analyses = [];
+      const analyses: ReturnType<typeof analyzeInstrument>[] = [];
       const total = targetMarkets.length;
 
-      for (let i = 0; i < total; i++) {
-        if (scanAbortRef.current) break;
-        const market = targetMarkets[i];
-        setProgressMessage(
-          `Analysing ${market.displayName} [${market.family}]… (${i + 1}/${total})`
-        );
-        setScanProgress(Math.round(((i + 1) / total) * 100));
+      // Scan markets with bounded concurrency. The upstream socket serialises the
+      // actual requests, so a modest pool keeps Deriv within its limits while
+      // removing the round-trip latency that made a sequential sweep slow.
+      const SCAN_CONCURRENCY = 6;
+      let completed = 0;
+      let cursor = 0;
 
+      const scanOne = async (index: number, market: SyntheticMarket): Promise<void> => {
         try {
           const candles = await derivService.fetchHistoricalCandles(market.symbol, granularity, 160);
           const nowSec = Math.floor(Date.now() / 1000);
@@ -123,14 +123,16 @@ export function useVolatilityScanner({
           let rangeCandles: Candle[] | undefined;
           let entryCandles: Candle[] | undefined;
           try {
-            rangeCandles =
+            const [range, entry] = await Promise.all([
               granularity === rangeGranularity
-                ? candles
-                : await derivService.fetchHistoricalCandles(market.symbol, rangeGranularity, 160);
-            entryCandles =
+                ? Promise.resolve(candles)
+                : derivService.fetchHistoricalCandles(market.symbol, rangeGranularity, 160),
               granularity === entryGranularity
-                ? candles
-                : await derivService.fetchHistoricalCandles(market.symbol, entryGranularity, 160);
+                ? Promise.resolve(candles)
+                : derivService.fetchHistoricalCandles(market.symbol, entryGranularity, 160)
+            ]);
+            rangeCandles = range;
+            entryCandles = entry;
           } catch {
             rangeCandles = undefined;
             entryCandles = undefined;
@@ -150,7 +152,7 @@ export function useVolatilityScanner({
               entryCandles,
             },
           });
-          analyses.push(analysis);
+          analyses[index] = analysis;
 
           // Descriptive monitor reading — no direction, no confidence.
           const latest = candles.length > 0 ? candles[candles.length - 1] : null;
@@ -173,7 +175,7 @@ export function useVolatilityScanner({
                 ? 'Active'
                 : 'Quiet';
 
-          readings.push({
+          readings[index] = {
             symbol: market.symbol,
             displayName: market.displayName,
             marketFamily: market.family,
@@ -185,9 +187,9 @@ export function useVolatilityScanner({
             dataHealth,
             volatilityPercent,
             lastUpdated: nowSec * 1000,
-          });
+          };
         } catch {
-          readings.push({
+          readings[index] = {
             symbol: market.symbol,
             displayName: market.displayName,
             marketFamily: market.family,
@@ -199,24 +201,36 @@ export function useVolatilityScanner({
             dataHealth: 'DISCONNECTED',
             volatilityPercent: null,
             lastUpdated: Date.now(),
-          });
+          };
+        } finally {
+          completed += 1;
+          setProgressMessage(`Analysing Deriv indices… (${completed}/${total})`);
+          setScanProgress(Math.round((completed / total) * 100));
         }
+      };
 
-        await new Promise((r) => setTimeout(r, 70));
-      }
+      const workers = Array.from({ length: Math.min(SCAN_CONCURRENCY, total) }, async () => {
+        while (!scanAbortRef.current) {
+          const index = cursor++;
+          const next = targetMarkets[index];
+          if (!next) break;
+          await scanOne(index, next);
+        }
+      });
+      await Promise.all(workers);
 
       if (scanAbortRef.current) return;
 
       setMonitorSummary({
-        readings,
-        monitoredCount: readings.length,
-        activeCount: readings.filter((r) => r.activityLabel === 'Active').length,
-        staleCount: readings.filter((r) => r.dataHealth !== 'HEALTHY').length,
+        readings: readings.filter(Boolean),
+        monitoredCount: readings.filter(Boolean).length,
+        activeCount: readings.filter((r) => r?.activityLabel === 'Active').length,
+        staleCount: readings.filter((r) => r && r.dataHealth !== 'HEALTHY').length,
         scannedAt: Date.now(),
         timeframe,
       });
 
-      const summary = selectStrongestSignal(analyses, timeframe, familyCounts);
+      const summary = selectStrongestSignal(analyses.filter(Boolean), timeframe, familyCounts);
       setScanSummary(summary);
       setLastScannedAt(summary.scannedAt);
 

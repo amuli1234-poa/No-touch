@@ -16,6 +16,21 @@ export interface ServerConfig {
    * JSON otherwise; `sqlite`/`json` force one. Set STORAGE_ENGINE to pin it.
    */
   storageEngine: 'auto' | 'json' | 'sqlite';
+  /**
+   * Optional Redis cache. When REDIS_URL is set the server keeps a shared,
+   * in-memory cache in Redis for hot, recomputable data (the Deriv symbol
+   * catalogue, market snapshots and scanner readings) so repeated reads do not
+   * re-hit the upstream socket. It is a cache only: losing it never loses a
+   * trade, a session or a signal. When unset, an in-process fallback is used and
+   * the app behaves exactly as before.
+   */
+  redis?: {
+    url: string | null;
+    /** Prefix for every key, so several environments can share one server. */
+    keyPrefix: string;
+    /** Default entry TTL, in seconds, for cached values. */
+    ttlSeconds: number;
+  };
   /** Client telemetry retention and liveness. */
   telemetry: {
     /** Days of activity events to keep; older rows are pruned at boot. */
@@ -104,6 +119,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     isProduction,
     dataDir: env.DATA_DIR ? path.resolve(env.DATA_DIR) : path.resolve(process.cwd(), 'data'),
     storageEngine: parseEngine(env.STORAGE_ENGINE),
+    redis: {
+      // Redis is opt-in: no URL means the in-process cache is used and the
+      // server behaves exactly as before. A URL (redis:// or rediss://) turns on
+      // the shared cache. It is never required for correctness.
+      url: env.REDIS_URL?.trim() || null,
+      keyPrefix: env.REDIS_KEY_PREFIX?.trim() || 'wicksentinel:',
+      ttlSeconds: Math.max(1, int(env.REDIS_TTL_SECONDS, 60))
+    },
     telemetry: {
       // 90 days is enough to compute 30-day DAU/MAU with history to spare.
       retentionDays: Math.max(1, int(env.TELEMETRY_RETENTION_DAYS, 90)),

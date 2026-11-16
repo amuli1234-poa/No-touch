@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import os from 'node:os';
 
 import { MarketDataService, MarketDataError, isSnapshotFresh } from '../services/marketData.js';
+import { MemoryCache, CacheKeys } from '../services/cache.js';
 import type { ServerConfig } from '../config.js';
 import type { MinimalWebSocket } from '../lib/balance.js';
 
@@ -218,6 +219,86 @@ test('reconnect re-subscribes to every active symbol', async () => {
     sock().emit('open');
     const after = sock().sent.filter((m) => m.ticks).length;
     assert.equal(after, 4, 'both symbols re-subscribed after reopen');
+  } finally {
+    svc.close();
+  }
+});
+
+test('a silent (half-open) socket is force-reconnected by the watchdog', async () => {
+  const cfg = makeConfig();
+  let sock = fakeSocket();
+  let clock = 1_000;
+  const svc = new MarketDataService(cfg, {
+    wsFactory: () => sock as unknown as MinimalWebSocket,
+    pingIntervalMs: 0,
+    reconnectBaseMs: 5,
+    reconnectMaxMs: 5,
+    // Small window so the watchdog fires within the test's lifetime.
+    staleTimeoutMs: 1_000,
+    now: () => clock
+  });
+  try {
+    await svc.connect();
+    sock.emit('open');
+    svc.subscribeTicks('R_100', () => {});
+    assert.equal(svc.isConnected(), true);
+
+    // Advance the clock past the stale window without any inbound frame. The
+    // watchdog ticks on its own interval; give it a moment to observe the jump.
+    clock += 5_000;
+    await new Promise((r) => setTimeout(r, 60));
+
+    // The socket was torn down and a reconnect scheduled; the first message
+    // proves the new connection re-subscribes.
+    await new Promise((r) => setTimeout(r, 40));
+    assert.ok(svc.isConnected(), 'reconnected after the silent socket was detected');
+  } finally {
+    svc.close();
+  }
+});
+
+test('a pending request is failed immediately when the socket drops', async () => {
+  const { svc, sock } = await connectedService({ requestTimeoutMs: 5_000 });
+  try {
+    const p = svc.getTicksHistory('R_100', 5);
+    // Drop the socket instead of answering.
+    sock().emit('close');
+    await assert.rejects(p, (e: unknown) => e instanceof MarketDataError && e.code === 'socket_failed');
+  } finally {
+    svc.close();
+  }
+});
+
+test('the symbol catalogue is served from the shared cache when warm', async () => {
+  const cfg = makeConfig();
+  const memory = new MemoryCache(60);
+  await memory.set(
+    CacheKeys.activeSymbols(),
+    [
+      {
+        symbol: 'R_10',
+        displayName: 'Volatility 10 Index',
+        market: 'synthetic_index',
+        submarket: 'random_index',
+        pipSize: 3,
+        exchangeOpen: true,
+        tradingSuspended: false
+      }
+    ],
+    60
+  );
+  const sock = fakeSocket();
+  const svc = new MarketDataService(cfg, {
+    wsFactory: () => sock as unknown as MinimalWebSocket,
+    pingIntervalMs: 0,
+    cache: memory
+  });
+  try {
+    // No socket connection is opened: the warm cache answers directly.
+    const symbols = await svc.getActiveSymbols();
+    assert.equal(symbols.length, 1);
+    assert.equal(symbols[0].symbol, 'R_10');
+    assert.equal(sock.sent.length, 0, 'no upstream request was made');
   } finally {
     svc.close();
   }

@@ -374,6 +374,7 @@ const REJECTION_COPY: Record<string, string> = {
   broker_uncertain: 'The outcome is unknown and needs reconciliation.',
   approval_expired: 'The confirmation timed out — please try again.',
   no_price: 'No live price is available for this market yet.',
+  no_valid_signal: 'The scanner has no valid setup for this market right now. Wait for a signal.',
   invalid_preview: 'Those trade parameters are not valid.',
   preview_failed: 'Could not get a price from Deriv. Try again.',
   rate_limited: 'Too many requests — slow down for a moment.',
@@ -423,6 +424,14 @@ export interface ScannerStatus {
     confidence: number | null;
     executed: boolean;
   }>;
+  /** The live directional setups the scanner will trade right now. */
+  setups: Array<{
+    symbol: string;
+    displayName: string;
+    direction: SignalDirection;
+    confidence: number;
+    reason: string;
+  }>;
 }
 
 /** The automatic scanner's status for the signed-in user. */
@@ -450,7 +459,15 @@ export async function fetchScannerStatus(): Promise<ScannerStatus | null> {
               typeof market.displayName === 'string'
           )
         : [],
-      recent: Array.isArray(data.recent) ? data.recent : []
+      recent: Array.isArray(data.recent) ? data.recent : [],
+      setups: Array.isArray(data.setups)
+        ? data.setups.filter(
+            (s: any) =>
+              s &&
+              typeof s.symbol === 'string' &&
+              (s.direction === 'RISE' || s.direction === 'FALL')
+          )
+        : []
     };
   } catch {
     return null;
@@ -499,76 +516,55 @@ export type PlaceResult =
   | { ok: false; error: string; message: string; uncertain: boolean };
 
 /**
- * Places a trade: signal → intent → submit.
+ * Places a trade in a single request.
  *
- * Each step is explicit and the signal is single-use, so a retry after a partial
- * failure is refused rather than duplicating a purchase. A submission whose
- * outcome is unknown is reported as such and never retried here.
+ * The server runs the whole sequence — signal → intent → submit — behind one
+ * route, so the customer pays one network round-trip instead of three. The
+ * guarantees are unchanged: the signal is single-use, the manual gate and the
+ * risk engine still run, and a submission whose outcome is unknown is reported
+ * as such and never retried here.
  */
 export async function placeTrade(ticket: TradeTicket): Promise<PlaceResult> {
-  const post = async (path: string, body: unknown) => {
-    const res = await fetch(path, {
+  let res: Response;
+  let data: any;
+  try {
+    res = await fetch('/api/execution/place', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      body: JSON.stringify({
+        accountId: ticket.accountId,
+        symbol: ticket.symbol,
+        timeframe: ticket.timeframe,
+        direction: ticket.direction,
+        contractFamily: ticket.contractFamily,
+        stake: ticket.stake,
+        currency: ticket.currency,
+        parameters: ticket.parameters,
+        idempotencyKey: ticket.idempotencyKey,
+        analysisId: ticket.analysisId ?? '',
+        reason: ticket.reason ?? ''
+      })
     });
-    if (res.status === 401) expireAuth();
-    return { res, data: await res.json().catch(() => ({})) };
-  };
-
-  const signal = await post('/api/execution/signals', {
-    accountId: ticket.accountId,
-    symbol: ticket.symbol,
-    timeframe: ticket.timeframe,
-    direction: ticket.direction,
-    contractFamily: ticket.contractFamily,
-    analysisId: ticket.analysisId ?? '',
-    reason: ticket.reason ?? ''
-  });
-  if (!signal.res.ok || !signal.data?.signal?.id) {
-    const error = typeof signal.data?.error === 'string' ? signal.data.error : 'signal_failed';
-    return {
-      ok: false,
-      error,
-      message: responseRejectionMessage(signal.data, error),
-      uncertain: false
-    };
+    data = await res.json().catch(() => ({}));
+  } catch {
+    return { ok: false, error: 'network', message: 'The server could not be reached.', uncertain: false };
   }
 
-  const intent = await post('/api/execution/intents', {
-    signalId: signal.data.signal.id,
-    contractFamily: ticket.contractFamily,
-    stake: ticket.stake,
-    basis: 'stake',
-    currency: ticket.currency,
-    parameters: ticket.parameters,
-    idempotencyKey: ticket.idempotencyKey
-  });
-  if (!intent.res.ok || !intent.data?.intent?.id) {
-    const error = typeof intent.data?.error === 'string' ? intent.data.error : 'intent_failed';
-    return {
-      ok: false,
-      error,
-      message: responseRejectionMessage(intent.data, error),
-      uncertain: false
-    };
-  }
-
-  const submit = await post(`/api/execution/intents/${intent.data.intent.id}/submit`, {});
-  if (!submit.res.ok) {
-    const code = typeof submit.data?.error === 'string' ? submit.data.error : 'submit_failed';
+  if (res.status === 401) expireAuth();
+  if (!res.ok) {
+    const code = typeof data?.error === 'string' ? data.error : 'submit_failed';
     return {
       ok: false,
       error: code,
-      message: responseRejectionMessage(submit.data, code),
+      message: responseRejectionMessage(data, code),
       uncertain: code === 'broker_uncertain'
     };
   }
   return {
     ok: true,
-    contractId: submit.data?.contractId ?? null,
-    payout: submit.data?.buy?.payout ?? null,
-    buyPrice: submit.data?.buy?.buyPrice ?? null
+    contractId: data?.contractId ?? null,
+    payout: data?.buy?.payout ?? null,
+    buyPrice: data?.buy?.buyPrice ?? null
   };
 }

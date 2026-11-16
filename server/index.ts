@@ -15,6 +15,7 @@ import { MarketDataService } from './services/marketData.js';
 import { createExecution, type ExecutionBundle } from './execution/composition.js';
 import { createAdminApiRouter, adminCors } from './routes/admin/index.js';
 import { Telemetry, telemetryMiddleware } from './services/admin/telemetry.js';
+import { createCache, MemoryCache, type Cache } from './services/cache.js';
 import { attachSession, requireSession, type SessionContext, type AuthedRequest } from './lib/session.js';
 import { open } from './lib/crypto.js';
 
@@ -36,10 +37,12 @@ export interface AppBundle {
   market: MarketDataService;
   /** The execution layer (gateway + kill switches). */
   execution: ExecutionBundle;
+  /** The shared cache (Redis when configured, otherwise in-process). */
+  cache: Cache;
 }
 
 /** Builds the Express app. Exported separately so tests can drive it directly. */
-export function createApp(cfg: ServerConfig, store: Store): AppBundle {
+export function createApp(cfg: ServerConfig, store: Store, cache?: Cache): AppBundle {
   const ctx: SessionContext = { cfg, store };
   const telemetry = new Telemetry();
   // One balance service per process so the auth router and the balance router
@@ -47,8 +50,9 @@ export function createApp(cfg: ServerConfig, store: Store): AppBundle {
   const balances = new BalanceService(cfg);
   // Server-side market data on the public options gateway, plus the execution
   // layer. Kill switches default off, so nothing trades until explicitly enabled.
-  const market = new MarketDataService(cfg);
-  const execution = createExecution(cfg, store, market);
+  const resolvedCache = cache ?? new MemoryCache(cfg.redis?.ttlSeconds ?? 60);
+  const market = new MarketDataService(cfg, { cache: resolvedCache });
+  const execution = createExecution(cfg, store, market, resolvedCache, balances);
   const app = express();
   app.disable('x-powered-by');
 
@@ -133,7 +137,7 @@ export function createApp(cfg: ServerConfig, store: Store): AppBundle {
     res.status(404).json({ error: 'not_found' });
   });
 
-  return { app, cfg, store, telemetry, market, execution };
+  return { app, cfg, store, telemetry, market, execution, cache: resolvedCache };
 }
 
 /**
@@ -188,7 +192,16 @@ async function main(): Promise<void> {
     console.log(`[server] Telemetry retention: pruned ${prunedEvents} events, ${prunedSessions} scanner sessions.`);
   }
 
-  const { app, market, execution } = createApp(cfg, store);
+  // Build the shared cache before the app so market data and the scanner can use
+  // it from their first request. Redis is opt-in; this falls back to memory.
+  const cache = await createCache({
+    url: cfg.redis?.url ?? null,
+    keyPrefix: cfg.redis?.keyPrefix ?? 'wicksentinel:',
+    ttlSeconds: cfg.redis?.ttlSeconds ?? 60
+  });
+
+  const { app, market, execution } = createApp(cfg, store, cache);
+  console.log(`[server] Cache: ${cache.kind}`);
 
   // Reconcile any intent left UNKNOWN by a previous crash or lost response: ask
   // Deriv what actually happened rather than retrying a purchase. Best-effort —

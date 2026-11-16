@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -15,7 +15,7 @@ import {
 
 import { useWorkspace } from '../../context/WorkspaceContext';
 import { useAuth } from '../../lib/auth';
-import { useBalances, formatMoney, pickAccount } from '../../lib/balances';
+import { useBalances, formatMoney, pickAccount, refreshBalances } from '../../lib/balances';
 import {
   DEFAULT_DURATION_BOUNDS,
   fetchExecutionPreferences,
@@ -110,10 +110,11 @@ export function TradeView() {
   const authenticated = auth.status === 'authenticated';
   const accounts = balances.accounts;
 
-  // Poll the scanner's status while in automatic mode, so the customer can see
-  // it working rather than having to trust it blindly.
+  // Poll the scanner's status while signed in. In automatic mode this shows the
+  // loop working; in manual mode it is the source of truth for which setups may
+  // be traded, so the panel can gate the direction buttons on a live signal.
   useEffect(() => {
-    if (!authenticated || mode !== 'automatic') {
+    if (!authenticated) {
       setScanner(null);
       return;
     }
@@ -123,12 +124,24 @@ export function TradeView() {
       if (!cancelled) setScanner(status);
     };
     void poll();
-    const id = setInterval(() => void poll(), 15_000);
+    const id = setInterval(() => void poll(), 10_000);
     return () => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [authenticated, mode]);
+  }, [authenticated]);
+
+  // Keep the server's balance cache warm while the ticket is open. The risk
+  // engine reads the balance at submit time; without this the read can fall
+  // outside the cache window and the server opens a fresh Deriv OTP + WebSocket
+  // just to price the risk check, which is the slowest part of placing a trade.
+  // A non-forced read is served from that cache when it is still fresh.
+  useEffect(() => {
+    if (!authenticated) return;
+    void refreshBalances();
+    const id = setInterval(() => void refreshBalances(), 20_000);
+    return () => clearInterval(id);
+  }, [authenticated]);
 
   // A manual trade uses the account the customer has selected; automatic runs on
   // demo in this build. Either way the server re-checks ownership on submit.
@@ -139,6 +152,20 @@ export function TradeView() {
       pickAccount(accounts, 'demo', balances.selectedAccountId)
     );
   }, [accounts, balances.selectedAccountId, mode]);
+
+  /**
+   * The scanner's live setup for the instrument the customer is looking at.
+   * Manual trading defers to this: a direction can only be chosen when the
+   * scanner is signalling it, so a trade can never be placed outside a valid
+   * setup. In automatic mode the scanner trades on its own and this is only
+   * shown for context.
+   */
+  const liveSetup = useMemo(
+    () => scanner?.setups.find((s) => s.symbol === ws.selectedSymbol) ?? null,
+    [scanner, ws.selectedSymbol]
+  );
+  const scannerReady = !!scanner?.running;
+  const signalDirection = liveSetup?.direction ?? null;
 
   const realAccount = useMemo(() => pickAccount(accounts, 'real', balances.selectedAccountId), [
     accounts,
@@ -179,11 +206,83 @@ export function TradeView() {
     !!ws.selectedSymbol &&
     !placing;
 
+  // In manual mode the trade is only allowed when the scanner is signalling the
+  // selected direction on the selected market. This mirrors the server gate, so
+  // the button and the API agree.
+  const signalValid = mode === 'automatic' || (!!signalDirection && direction === signalDirection);
+  const canPlace = canTrade && signalValid;
+
   // Any change to the ticket invalidates a price that was quoted for the old one.
   useEffect(() => {
     setPreview(null);
     setPlaced(null);
   }, [stakeInput, durationMinutes, multiplierInput, family, direction, tradingAccount?.accountId]);
+
+  // In manual mode, arm the ticket the moment the scanner publishes a live setup
+  // on the viewed market: adopt its direction so the customer never has to pick
+  // one by hand. The gate itself is unchanged — the server still refuses a trade
+  // that does not match a live setup, and the customer still confirms the entry.
+  useEffect(() => {
+    if (mode !== 'manual' || !signalDirection) return;
+    setDirection((prev) => (prev === signalDirection ? prev : signalDirection));
+  }, [mode, signalDirection]);
+
+  // Auto-quote so the entry price is ready before the customer reaches for the
+  // button; "Place" then only has to submit. Quoting is idempotent and cheap on
+  // the server (a fresh snapshot), and every ticket change re-quotes.
+  const quoteKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (mode !== 'manual') return;
+    if (!tradingAccount || !direction || !canPlace) return;
+    if (!stakeValid || (family === 'multipliers' ? !multiplierValid : !durationValid)) return;
+    const key = [
+      tradingAccount.accountId,
+      ws.selectedSymbol,
+      direction,
+      family,
+      stake,
+      currency,
+      minutes,
+      multiplier
+    ].join('|');
+    if (quoteKeyRef.current === key) return;
+    quoteKeyRef.current = key;
+
+    let cancelled = false;
+    setPreviewing(true);
+    void previewTrade({
+      accountId: tradingAccount.accountId,
+      symbol: ws.selectedSymbol,
+      direction,
+      contractFamily: family,
+      stake,
+      currency,
+      parameters
+    }).then((result) => {
+      if (cancelled) return;
+      setPreviewing(false);
+      if (result.ok) setPreview(result.preview);
+      else setNotice({ tone: 'error', text: result.message });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    mode,
+    tradingAccount,
+    direction,
+    canPlace,
+    stakeValid,
+    multiplierValid,
+    durationValid,
+    ws.selectedSymbol,
+    family,
+    stake,
+    currency,
+    minutes,
+    multiplier,
+    parameters
+  ]);
 
   const save = useCallback(async (patch: Partial<ExecutionPreferences>) => {
     setSaving(true);
@@ -280,7 +379,7 @@ export function TradeView() {
   };
 
   const confirmTrade = async () => {
-    if (!tradingAccount || !direction || !canTrade) return;
+    if (!tradingAccount || !direction || !canPlace) return;
     setPlacing(true);
     setNotice(null);
     const result = await placeTrade({
@@ -558,13 +657,47 @@ export function TradeView() {
           {mode === 'manual' && (
             <Card className="p-3">
               <div className="text-[11px] font-bold uppercase tracking-wider text-faint mb-2">Direction</div>
+
+              {!scannerReady ? (
+                <div className="mb-2.5 flex items-start gap-2 rounded-lg border border-warn/30 bg-warn/8 px-2.5 py-2">
+                  <ShieldAlert className="w-3.5 h-3.5 text-warn shrink-0 mt-0.5" />
+                  <p className="text-[11.5px] text-muted leading-snug">
+                    {scanner?.reason === 'execution_disabled' || scanner?.reason === 'demo_execution_disabled'
+                      ? 'Trading is switched off on the server, so no signals are being generated.'
+                      : 'The scanner is not running, so there is no valid setup to trade yet.'}
+                  </p>
+                </div>
+              ) : !liveSetup ? (
+                <div className="mb-2.5 flex items-start gap-2 rounded-lg border border-line-soft bg-panel px-2.5 py-2">
+                  <Loader2 className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5 animate-spin" />
+                  <p className="text-[11.5px] text-muted leading-snug">
+                    Waiting for the scanner to confirm a setup on{' '}
+                    <span className="font-bold text-ink">{ws.marketName || ws.selectedSymbol || '—'}</span>. Trades
+                    can only be placed on a live signal.
+                  </p>
+                </div>
+              ) : (
+                <div className="mb-2.5 flex items-start gap-2 rounded-lg border border-accent/30 bg-accent/8 px-2.5 py-2">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5" />
+                  <p className="text-[11.5px] text-muted leading-snug">
+                    Live setup:{' '}
+                    <span className={`font-bold ${liveSetup.direction === 'RISE' ? 'text-success' : 'text-danger'}`}>
+                      {liveSetup.direction}
+                    </span>{' '}
+                    on <span className="font-bold text-ink">{liveSetup.displayName || liveSetup.symbol}</span>
+                    {liveSetup.confidence ? ` · confidence ${liveSetup.confidence.toFixed(2)}` : ''}. Place it below
+                    while it is still live.
+                  </p>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setDirection('RISE')}
-                  disabled={!authenticated}
+                  disabled={!authenticated || signalDirection !== 'RISE'}
                   aria-pressed={direction === 'RISE'}
-                  className={`flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-[13px] font-bold transition-colors cursor-pointer disabled:opacity-50 ${
+                  className={`flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-[13px] font-bold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                     direction === 'RISE'
                       ? 'border-success/45 bg-success/10 text-success'
                       : 'border-line bg-panel text-ink hover:border-success/30'
@@ -575,9 +708,9 @@ export function TradeView() {
                 <button
                   type="button"
                   onClick={() => setDirection('FALL')}
-                  disabled={!authenticated}
+                  disabled={!authenticated || signalDirection !== 'FALL'}
                   aria-pressed={direction === 'FALL'}
-                  className={`flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-[13px] font-bold transition-colors cursor-pointer disabled:opacity-50 ${
+                  className={`flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-[13px] font-bold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                     direction === 'FALL'
                       ? 'border-danger/45 bg-danger/10 text-danger'
                       : 'border-line bg-panel text-ink hover:border-danger/30'
@@ -590,7 +723,7 @@ export function TradeView() {
               <button
                 type="button"
                 onClick={getQuote}
-                disabled={!canTrade || !direction || previewing}
+                disabled={!canPlace || !direction || previewing}
                 className="mt-2.5 w-full flex items-center justify-center gap-1.5 rounded-lg border border-accent/40 bg-accent/8 text-accent px-3 py-2 text-[13px] font-bold hover:bg-accent/12 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {previewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
@@ -619,15 +752,17 @@ export function TradeView() {
               <button
                 type="button"
                 onClick={confirmTrade}
-                disabled={!canTrade || !direction || placing}
+                disabled={!canPlace || !direction || placing}
                 className="mt-2.5 w-full flex items-center justify-center gap-1.5 rounded-lg bg-accent text-on-accent px-3 py-2.5 text-[13.5px] font-extrabold hover:bg-accent-strong transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {placing ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUpRight className="w-4 h-4" />}
                 {placing
                   ? 'Placing…'
-                  : direction
-                    ? `Place ${direction === 'RISE' ? 'Rise' : 'Fall'} · ${stakeValid ? stake.toFixed(2) : '—'} ${currency}`
-                    : 'Choose a direction'}
+                  : !signalDirection
+                    ? 'No live signal'
+                    : direction
+                      ? `Place ${direction === 'RISE' ? 'Rise' : 'Fall'} · ${stakeValid ? stake.toFixed(2) : '—'} ${currency}`
+                      : 'Choose a direction'}
               </button>
 
               {placed && (

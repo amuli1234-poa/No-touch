@@ -10,6 +10,7 @@ import { AutoExecutionRunner } from './autoRunner.js';
 import { ContractMonitor } from './contractMonitor.js';
 import { MarketScanner } from '../services/marketScanner.js';
 import type { MarketDataService } from '../services/marketData.js';
+import type { Cache } from '../services/cache.js';
 import type { SignalRecord } from './types.js';
 
 /**
@@ -33,10 +34,19 @@ export interface ExecutionBundle {
   scanner: MarketScanner;
 }
 
-export function createExecution(cfg: ServerConfig, store: Store, market: MarketDataService): ExecutionBundle {
+export function createExecution(
+  cfg: ServerConfig,
+  store: Store,
+  market: MarketDataService,
+  cache?: Cache,
+  balances?: BalanceService
+): ExecutionBundle {
   const flags = loadExecutionFlags();
   const broker = new DerivBroker(cfg);
-  const balances = new BalanceService(cfg);
+  // Reuse the process-wide balance service when one is supplied, so the risk
+  // engine's balance read is served from the cache the balance routes keep warm
+  // instead of opening a fresh Deriv OTP + WebSocket on every submit.
+  const balanceService = balances ?? new BalanceService(cfg);
 
   const auditor = new ExecutionAuditor(store);
   const monitor = new ContractMonitor({ store, broker, auditor });
@@ -54,7 +64,7 @@ export function createExecution(cfg: ServerConfig, store: Store, market: MarketD
     },
     balanceProvider: async (user: UserRecord, accountId: string, accessToken: string) => {
       try {
-        const read = await balances.read(user, accountId, accessToken);
+        const read = await balanceService.read(user, accountId, accessToken);
         return read.balance;
       } catch {
         // An unreadable balance must not be treated as a healthy one; the risk
@@ -84,6 +94,6 @@ export function createExecution(cfg: ServerConfig, store: Store, market: MarketD
   });
 
   const runner = new AutoExecutionRunner({ store, gateway, auditor });
-  const scanner = new MarketScanner({ store, cfg, market, runner });
+  const scanner = new MarketScanner({ store, cfg, market, runner, cache });
   return { gateway, runner, monitor, flags, scanner };
 }

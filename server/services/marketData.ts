@@ -1,5 +1,6 @@
 import type { ServerConfig } from '../config.js';
 import type { MinimalWebSocket } from '../lib/balance.js';
+import { CacheKeys, type Cache } from './cache.js';
 
 /**
  * Server-side Deriv market data.
@@ -76,6 +77,14 @@ export interface MarketDataOptions {
   reconnectMaxMs?: number;
   /** Clock; injected in tests. */
   now?: () => number;
+  /**
+   * If no message of any kind arrives for this long, the socket is treated as
+   * half-open and forced to reconnect. Must exceed `pingIntervalMs` so a healthy
+   * idle connection (pong-only traffic) is never mistaken for a dead one.
+   */
+  staleTimeoutMs?: number;
+  /** Optional shared cache for recomputable reads (symbol catalogue). */
+  cache?: Cache;
 }
 
 const DEFAULT_URL = 'wss://api.derivws.com/trading/v1/options/ws/public';
@@ -84,6 +93,10 @@ const DEFAULT_REQUEST_TIMEOUT = 10_000;
 const DEFAULT_PING = 30_000;
 const DEFAULT_RECONNECT_BASE = 500;
 const DEFAULT_RECONNECT_MAX = 30_000;
+/** Two ping intervals without any inbound traffic means the socket is dead. */
+const DEFAULT_STALE_TIMEOUT = 90_000;
+/** How often the liveness watchdog checks the socket. */
+const WATCHDOG_INTERVAL = 15_000;
 
 type TickHandler = (tick: MarketSnapshot) => void;
 
@@ -109,7 +122,7 @@ function assertDerivPublicUrl(raw: string): void {
 
 export class MarketDataService {
   private readonly cfg: ServerConfig;
-  private readonly opts: Required<Omit<MarketDataOptions, 'wsFactory' | 'url' | 'now'>> & {
+  private readonly opts: Required<Omit<MarketDataOptions, 'wsFactory' | 'url' | 'now' | 'cache'>> & {
     wsFactory: (url: string) => MinimalWebSocket;
     url: string;
     now: () => number;
@@ -121,12 +134,18 @@ export class MarketDataService {
   private reconnectDelay: number;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private watchdogTimer: ReturnType<typeof setInterval> | null = null;
+  /** Epoch ms of the last inbound message of any kind; drives the watchdog. */
+  private lastMessageAt = 0;
+  /** Set while a reconnect is being attempted, to avoid overlapping attempts. */
+  private reconnecting = false;
 
   private nextReqId = 1;
   private readonly pending = new Map<number, Pending>();
 
   private activeSymbols: ActiveSymbol[] | null = null;
   private activeSymbolsWaiters: Array<(s: ActiveSymbol[]) => void> = [];
+  private readonly cache: Cache | null;
 
   private readonly snapshots = new Map<string, MarketSnapshot>();
   private readonly tickBuffers = new Map<string, MarketSnapshot[]>();
@@ -142,9 +161,11 @@ export class MarketDataService {
       pingIntervalMs: options.pingIntervalMs ?? DEFAULT_PING,
       reconnectBaseMs: options.reconnectBaseMs ?? DEFAULT_RECONNECT_BASE,
       reconnectMaxMs: options.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX,
+      staleTimeoutMs: options.staleTimeoutMs ?? DEFAULT_STALE_TIMEOUT,
       now: options.now ?? (() => Date.now())
     };
     this.reconnectDelay = this.opts.reconnectBaseMs;
+    this.cache = options.cache ?? null;
   }
 
   /* ------------------------------- lifecycle ------------------------------ */
@@ -173,6 +194,7 @@ export class MarketDataService {
     this.closed = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.pingTimer) clearInterval(this.pingTimer);
+    this.stopWatchdog();
     this.reconnectTimer = null;
     this.pingTimer = null;
     for (const [, p] of this.pending) {
@@ -191,7 +213,9 @@ export class MarketDataService {
 
   private onOpen(): void {
     this.connected = true;
+    this.reconnecting = false;
     this.reconnectDelay = this.opts.reconnectBaseMs;
+    this.lastMessageAt = this.opts.now();
     // Ask for the symbol catalogue once per connection.
     this.request({ active_symbols: 'brief' }).catch(() => {});
     // Restore every active subscription after a reconnect.
@@ -203,9 +227,49 @@ export class MarketDataService {
       // Do not keep the process alive solely for the ping timer.
       (this.pingTimer as any)?.unref?.();
     }
+    this.startWatchdog();
   }
 
-  private onSocketDown(): void {
+  /**
+   * A TCP socket can go half-open (a NAT rebind, a sleeping laptop, a dropped
+   * carrier route) without ever emitting `close`. The socket still looks open
+   * and writes still succeed, but nothing comes back — which is exactly the
+   * "it silently stops updating" symptom. The watchdog forces a reconnect when
+   * no inbound message has arrived within `staleTimeoutMs`, so recovery is
+   * automatic rather than requiring a restart.
+   */
+  private startWatchdog(): void {
+    if (this.watchdogTimer) return;
+    this.watchdogTimer = setInterval(() => {
+      if (this.closed || !this.connected) return;
+      const silentFor = this.opts.now() - this.lastMessageAt;
+      if (silentFor > this.opts.staleTimeoutMs) {
+        // Force the socket down; onSocketDown schedules a jittered reconnect and
+        // onOpen re-subscribes every symbol, so no caller has to notice.
+        this.forceReconnect(`no data for ${Math.round(silentFor / 1000)}s`);
+      }
+    }, WATCHDOG_INTERVAL);
+    (this.watchdogTimer as any)?.unref?.();
+  }
+
+  private stopWatchdog(): void {
+    if (this.watchdogTimer) clearInterval(this.watchdogTimer);
+    this.watchdogTimer = null;
+  }
+
+  /** Tears the socket down so the reconnect path runs, without marking closed. */
+  private forceReconnect(reason: string): void {
+    if (this.closed || this.reconnecting) return;
+    this.reconnecting = true;
+    try {
+      this.socket?.close();
+    } catch {
+      /* the socket may already be unusable */
+    }
+    this.onSocketDown(reason);
+  }
+
+  private onSocketDown(reason?: string): void {
     if (this.closed) return;
     this.connected = false;
     this.socket = null;
@@ -213,12 +277,24 @@ export class MarketDataService {
       clearInterval(this.pingTimer);
       this.pingTimer = null;
     }
+    this.stopWatchdog();
+    // Fail every in-flight request now: on reconnect it would otherwise hang
+    // until its own timeout, and the caller can retry against the new socket.
+    for (const [, p] of this.pending) {
+      clearTimeout(p.timer);
+      p.reject(new MarketDataError('socket_failed', `Market data connection lost${reason ? ` (${reason})` : ''}.`));
+    }
+    this.pending.clear();
     if (this.reconnectTimer) return;
-    const delay = this.reconnectDelay;
+    // Full jitter over the exponential ceiling: many clients dropped by the same
+    // event do not stampede the gateway at the same instant.
+    const ceiling = this.reconnectDelay;
+    const delay = Math.round(ceiling / 2 + Math.random() * (ceiling / 2));
     this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.opts.reconnectMaxMs);
+    this.reconnecting = true;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      if (!this.closed) this.connect().catch(() => this.onSocketDown());
+      if (!this.closed) this.connect().catch(() => this.onSocketDown('connect failed'));
     }, delay);
     (this.reconnectTimer as any)?.unref?.();
   }
@@ -234,6 +310,8 @@ export class MarketDataService {
   }
 
   private onMessage(event: any): void {
+    // Any inbound frame — a tick, a pong, an error — proves the socket is alive.
+    this.lastMessageAt = this.opts.now();
     let msg: any;
     try {
       msg = typeof event?.data === 'string' ? JSON.parse(event.data) : null;
@@ -263,6 +341,9 @@ export class MarketDataService {
         tradingSuspended: s.is_trading_suspended === 1
       }));
       this.activeSymbols = parsed;
+      // Publish the catalogue to the shared cache so a second process (or a
+      // restart) can serve it without another upstream request.
+      void this.cache?.set(CacheKeys.activeSymbols(), parsed, 300);
       const waiters = this.activeSymbolsWaiters;
       this.activeSymbolsWaiters = [];
       for (const w of waiters) w(parsed);
@@ -286,6 +367,9 @@ export class MarketDataService {
       receivedAt: this.opts.now()
     };
     this.snapshots.set(symbol, snapshot);
+    // Mirror the latest snapshot into the shared cache so a second process (or
+    // the HTTP layer) reads a price without its own subscription.
+    void this.cache?.set(CacheKeys.snapshot(symbol), snapshot, 15);
     const buf = this.tickBuffers.get(symbol) ?? [];
     buf.push(snapshot);
     if (buf.length > this.opts.maxTicksPerSymbol) buf.splice(0, buf.length - this.opts.maxTicksPerSymbol);
@@ -322,6 +406,14 @@ export class MarketDataService {
   /** The full active-symbol catalogue, fetched once and cached per connection. */
   async getActiveSymbols(): Promise<ActiveSymbol[]> {
     if (this.activeSymbols) return this.activeSymbols;
+    // A warm shared cache answers without touching the socket at all.
+    if (this.cache) {
+      const cached = await this.cache.get<ActiveSymbol[]>(CacheKeys.activeSymbols());
+      if (cached && cached.length > 0) {
+        this.activeSymbols = cached;
+        return cached;
+      }
+    }
     if (!this.socket) await this.connect();
     if (this.activeSymbols) return this.activeSymbols;
     // The catalogue request was already fired on open; wait for it to land.

@@ -5,6 +5,8 @@ import type { MarketDataService, MarketSnapshot, ActiveSymbol } from './marketDa
 import { createSignal, SignalError } from './signals.js';
 import type { AutoExecutionRunner, AutoRunResult } from '../execution/autoRunner.js';
 import type { SignalDirection, ContractFamily } from '../execution/types.js';
+import type { Cache } from './cache.js';
+import { CacheKeys } from './cache.js';
 
 /**
  * AUTOMATIC MARKET SCANNER.
@@ -64,6 +66,12 @@ export interface ScannerOptions {
   perSymbolCooldownSeconds: number;
   /** How often a full pass runs. */
   intervalMs: number;
+  /**
+   * How long a market's directional reading stays tradeable after it was last
+   * seen. A manual trade may only be placed against a live reading, so this is
+   * the window in which the Trade panel can act on a scanner signal.
+   */
+  candidateTtlMs: number;
 }
 
 export const DEFAULT_SCANNER_OPTIONS: ScannerOptions = {
@@ -76,7 +84,10 @@ export const DEFAULT_SCANNER_OPTIONS: ScannerOptions = {
   minEfficiency: 0.35,
   minTicks: 30,
   perSymbolCooldownSeconds: 120,
-  intervalMs: 30_000
+  intervalMs: 30_000,
+  // Two passes' worth: a reading stays actionable until the next pass would
+  // have replaced it, with a margin so a slow pass does not blink it out.
+  candidateTtlMs: 60_000
 };
 
 export interface ScanCandidate {
@@ -140,6 +151,8 @@ export interface MarketScannerDeps {
   runner: AutoExecutionRunner;
   options?: Partial<ScannerOptions>;
   now?: () => number;
+  /** Optional shared cache for the scanner's live readings. */
+  cache?: Cache;
 }
 
 export class MarketScanner {
@@ -149,6 +162,7 @@ export class MarketScanner {
   private readonly runner: AutoExecutionRunner;
   private readonly opts: ScannerOptions;
   private readonly now: () => number;
+  private readonly cache: Cache | null;
 
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly tickSubscriptions = new Map<string, () => void>();
@@ -158,6 +172,13 @@ export class MarketScanner {
   private readonly recentOutcomes: ScanOutcome[] = [];
   /** `${userId}:${symbol}` -> epoch ms of the last signal proposed. */
   private readonly lastProposedAt = new Map<string, number>();
+  /**
+   * The most recent directional reading per market, whether or not a signal was
+   * proposed for it. A manual trade is only allowed when it agrees with a live
+   * entry here, so the customer can never place a trade the scanner would not
+   * have generated itself.
+   */
+  private readonly liveCandidates = new Map<string, { candidate: ScanCandidate; seenAt: number }>();
 
   constructor(deps: MarketScannerDeps) {
     this.store = deps.store;
@@ -166,6 +187,7 @@ export class MarketScanner {
     this.runner = deps.runner;
     this.opts = { ...DEFAULT_SCANNER_OPTIONS, ...deps.options };
     this.now = deps.now ?? (() => Date.now());
+    this.cache = deps.cache ?? null;
   }
 
   get isRunning(): boolean {
@@ -184,6 +206,29 @@ export class MarketScanner {
   /** Markets with live tick subscriptions owned by this scanner. */
   get activeMarkets(): readonly ScannerMarket[] {
     return this.activeMarketList;
+  }
+
+  /**
+   * The live directional reading for a symbol, or null when the scanner has no
+   * fresh one. `stale` is true when the last reading has aged past the TTL, so a
+   * caller can tell "no setup right now" from "had one, it has passed".
+   */
+  liveReading(symbol: string): { candidate: ScanCandidate; stale: boolean } | null {
+    const entry = this.liveCandidates.get(symbol);
+    if (!entry) return null;
+    const age = this.now() - entry.seenAt;
+    return { candidate: entry.candidate, stale: age > this.opts.candidateTtlMs };
+  }
+
+  /**
+   * True when the scanner currently sees a fresh directional setup for the
+   * symbol in the given direction. This is the authority the manual Trade panel
+   * defers to: a trade is only allowed against a live, agreeing reading.
+   */
+  hasLiveSignal(symbol: string, direction: SignalDirection): boolean {
+    const reading = this.liveReading(symbol);
+    if (!reading || reading.stale) return false;
+    return reading.candidate.direction === direction;
   }
 
   /** The markets the scanner watches, from the live catalogue. */
@@ -236,6 +281,24 @@ export class MarketScanner {
       if (reading) {
         candidates.push({ symbol: m.symbol, displayName: m.displayName, ...reading });
       }
+    }
+
+    // Remember every directional reading, and forget the ones that have gone
+    // quiet, so a manual trade can be checked against what the scanner sees now.
+    const now = this.now();
+    const seenSymbols = new Set(candidates.map((c) => c.symbol));
+    for (const candidate of candidates) {
+      this.liveCandidates.set(candidate.symbol, { candidate, seenAt: now });
+      // Publish the reading so a second process can answer a manual-trade gate
+      // without running its own sweep. Short TTL: a reading is only useful live.
+      void this.cache?.set(
+        CacheKeys.scannerReading(candidate.symbol),
+        { candidate, seenAt: now },
+        Math.max(1, Math.round(this.opts.candidateTtlMs / 1000))
+      );
+    }
+    for (const symbol of [...this.liveCandidates.keys()]) {
+      if (!seenSymbols.has(symbol)) this.liveCandidates.delete(symbol);
     }
 
     const automaticUsers = this.store

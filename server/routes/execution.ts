@@ -10,7 +10,7 @@ import { ExecutionError } from '../execution/gateway.js';
 import { ExecutionAuditor } from '../execution/audit.js';
 import type { AutoExecutionRunner } from '../execution/autoRunner.js';
 import type { ContractMonitor } from '../execution/contractMonitor.js';
-import type { MarketScanner } from '../services/marketScanner.js';
+import type { MarketScanner, ScanCandidate } from '../services/marketScanner.js';
 import type { MarketDataService } from '../services/marketData.js';
 import type { ExecutionFlags } from '../config/flags.js';
 import { createSignal, SignalError } from '../services/signals.js';
@@ -29,6 +29,7 @@ import { CONTRACT_FAMILY_TYPES } from '../execution/types.js';
  * Execution routes.
  *
  *   POST /api/execution/signals              -> validate and record a signal
+ *   POST /api/execution/place                -> signal + intent + submit in one call
  *   POST /api/execution/intents              -> create a trade intent (no purchase)
  *   POST /api/execution/intents/:id/submit   -> submit the intent (the one purchase path)
  *   GET  /api/execution/intents              -> the user's intents
@@ -103,6 +104,48 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
   const router = Router();
   const json = express.json({ limit: '32kb' });
 
+  /**
+   * The manual-trade gate: a manual trade must be backed by a live scanner signal
+   * for the same market and direction, so a hand-placed trade can never exist
+   * outside a valid setup the scanner itself would have generated. Automatic
+   * users are exempt because the scanner is their signal source. The mode comes
+   * from the SERVER's stored preferences, never the request body: a client flag
+   * would let a hand-placed trade claim to be scanner-originated and skip the
+   * check. Returns the rejection to send, or null when the trade may proceed.
+   */
+  const manualSignalRejection = (
+    userId: string,
+    symbol: string,
+    direction: SignalDirection
+  ): { status: number; body: { error: string; message: string } } | null => {
+    if (!scanner) return null;
+    if (store.getExecutionPreferences(userId)?.mode === 'automatic') return null;
+    if (!scanner.isRunning) {
+      return {
+        status: 422,
+        body: {
+          error: 'no_signal',
+          message: 'The scanner is not running, so there is no valid setup to trade.'
+        }
+      };
+    }
+    if (!scanner.hasLiveSignal(symbol, direction)) {
+      const reading = scanner.liveReading(symbol);
+      return {
+        status: 422,
+        body: {
+          error: 'no_valid_signal',
+          message: reading
+            ? reading.stale
+              ? `The last ${reading.candidate.direction} setup on ${symbol} has passed. Wait for a fresh signal.`
+              : `The scanner is not signalling ${direction} on ${symbol} right now.`
+            : `The scanner has no active setup for ${symbol}. Wait for a valid signal.`
+        }
+      };
+    }
+    return null;
+  };
+
   router.post('/api/execution/signals', requireSession(ctx), json, async (req: AuthedRequest, res: Response) => {
     if (!limit(signalLimiter, req, res)) return;
     const body = req.body ?? {};
@@ -120,6 +163,14 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
       return;
     }
     const symbol = String(body.symbol ?? '');
+    // A manual trade must be backed by a live scanner signal for the same market
+    // and direction. This is the authority that stops a hand-placed trade from
+    // existing outside a valid setup the scanner itself would have generated.
+    const gate = manualSignalRejection(user.id, symbol, direction);
+    if (gate) {
+      res.status(gate.status).json(gate.body);
+      return;
+    }
     // A signal must be built on a fresh price. The backend does not otherwise
     // subscribe to ticks, so its snapshot can be stale or absent; wait briefly
     // for the next tick rather than trusting whatever happens to be cached.
@@ -305,6 +356,158 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
     }
   );
 
+  /**
+   * Places a manual trade end to end in ONE round-trip.
+   *
+   * The client used to drive signal -> intent -> submit as three sequential HTTP
+   * calls, so a single click paid three network round-trips before Deriv was even
+   * asked for a price. This route runs the identical sequence server-side, using
+   * the same helpers the individual routes use, so the safety properties are
+   * unchanged: the manual-signal gate, a fresh-price signal, single-use, risk and
+   * one purchase path all still apply. It only removes the client round-trips.
+   */
+  router.post('/api/execution/place', requireSession(ctx), json, async (req: AuthedRequest, res: Response) => {
+    if (!limit(submitLimiter, req, res)) return;
+    const body = req.body ?? {};
+    const direction = parseDirection(body.direction);
+    const contractFamily = parseFamily(body.contractFamily);
+    if (!direction || direction === 'NONE' || !contractFamily) {
+      res.status(400).json({ error: 'invalid_signal' });
+      return;
+    }
+    const idempotencyKey = typeof body.idempotencyKey === 'string' ? body.idempotencyKey : '';
+    if (!idempotencyKey) {
+      res.status(400).json({ error: 'missing_idempotency_key' });
+      return;
+    }
+    const user = req.user!;
+    // Idempotency before anything else: a repeated key (a double-click or a retry
+    // of the same ticket) must not create a second signal or a second purchase.
+    // The original result is replayed so the client sees the same trade.
+    const existingIntent = store.findTradeIntentByIdempotencyKey(user.id, idempotencyKey);
+    if (existingIntent) {
+      const contract = existingIntent.contractId
+        ? store.getContract(user.id, String(existingIntent.contractId))
+        : null;
+      res.status(200).json({
+        intent: existingIntent,
+        contractId: existingIntent.contractId,
+        buy: contract
+          ? {
+              contractId: Number(contract.id),
+              buyPrice: contract.buyPrice,
+              payout: contract.payout,
+              transactionId: contract.buyTransactionId
+            }
+          : null
+      });
+      return;
+    }
+    const account = user.accounts.find((a) => a.accountId === body.accountId);
+    if (!account) {
+      res.status(403).json({ error: 'account_not_authorized' });
+      return;
+    }
+    const symbol = String(body.symbol ?? '');
+
+    // Same gate as the signals route: a manual trade must be backed by a live
+    // scanner signal for the same market and direction.
+    const gate = manualSignalRejection(user.id, symbol, direction);
+    if (gate) {
+      res.status(gate.status).json(gate.body);
+      return;
+    }
+
+    const snapshot = await market.freshSnapshot(symbol);
+    if (!snapshot) {
+      res.status(422).json({ error: 'no_price', message: `No live price for ${symbol} yet.` });
+      return;
+    }
+
+    const parameters = normaliseParameters(body.parameters ?? {});
+    let signal;
+    try {
+      signal = await createSignal(store, market, {
+        userId: user.id,
+        accountId: account.accountId,
+        accountMode: account.type === 'real' ? 'real' : 'demo',
+        symbol,
+        timeframe: String(body.timeframe ?? '5m'),
+        direction,
+        contractFamily,
+        analysisId: String(body.analysisId ?? ''),
+        zone: body.zone ?? null,
+        confidence: typeof body.confidence === 'number' ? body.confidence : null,
+        reason: typeof body.reason === 'string' ? body.reason : ''
+      });
+    } catch (err) {
+      if (err instanceof SignalError) {
+        res.status(422).json({ error: err.code, message: err.message });
+        return;
+      }
+      res.status(500).json({ error: 'signal_failed' });
+      return;
+    }
+
+    const contractType = directionContractType(direction, contractFamily);
+    try {
+      // Validate the parameters against the family before persisting the intent.
+      adapterFor(contractFamily).buildProposal({
+        directionContractType: contractType,
+        amount: Number(body.stake ?? 0),
+        basis: body.basis === 'payout' ? 'payout' : 'stake',
+        currency: String(body.currency ?? 'USD'),
+        symbol,
+        parameters
+      });
+    } catch (err) {
+      if (err instanceof AdapterError) {
+        res.status(422).json({ error: err.code, message: err.message });
+        return;
+      }
+      throw err;
+    }
+
+    try {
+      const intent = await gateway.createIntent({
+        user,
+        accountId: account.accountId,
+        signal,
+        contractType,
+        contractFamily,
+        stake: Number(body.stake ?? 0),
+        basis: body.basis === 'payout' ? 'payout' : 'stake',
+        currency: String(body.currency ?? 'USD'),
+        parameters,
+        idempotencyKey,
+        manualApproval: { approvedAt: Date.now(), expiresAt: Date.now() + 15_000 }
+      });
+      const result = await gateway.submit(user, intent.id, tokenFor(deps, req));
+      res.status(200).json({
+        intent: result.intent,
+        contractId: result.contractId,
+        buy: result.buy
+          ? {
+              contractId: result.buy.contractId,
+              buyPrice: result.buy.buyPrice,
+              payout: result.buy.payout,
+              transactionId: result.buy.transactionId
+            }
+          : null
+      });
+    } catch (err) {
+      if (err instanceof AccountAccessError) {
+        res.status(403).json({ error: err.code });
+        return;
+      }
+      if (err instanceof ExecutionError) {
+        res.status(err.code === 'not_found' ? 404 : 409).json({ error: err.code, reasons: err.reasons });
+        return;
+      }
+      res.status(500).json({ error: 'submit_failed' });
+    }
+  });
+
   router.get('/api/execution/intents', requireSession(ctx), (req: AuthedRequest, res: Response) => {
     res.json({ intents: store.listTradeIntents(req.user!.id) });
   });
@@ -361,7 +564,20 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
       reason,
       lastPassAt: scanner.lastPassTime,
       recent,
-      watchedMarkets: scanner.activeMarkets
+      watchedMarkets: scanner.activeMarkets,
+      // The live directional readings, so the Trade panel can offer exactly the
+      // setups the scanner is willing to trade right now (and nothing else).
+      setups: scanner.activeMarkets
+        .map((m) => scanner.liveReading(m.symbol))
+        .filter((r): r is { candidate: ScanCandidate; stale: boolean } => r !== null)
+        .filter((r) => !r.stale)
+        .map((r) => ({
+          symbol: r.candidate.symbol,
+          displayName: r.candidate.displayName,
+          direction: r.candidate.direction,
+          confidence: r.candidate.confidence,
+          reason: r.candidate.reason
+        }))
     });
   });
 

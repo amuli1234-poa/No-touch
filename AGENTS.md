@@ -867,7 +867,29 @@ in the right panel beside the shared chart. The ticket sets the *intent*: mode
 ### Phase status
 
 1. Trade panel UI + preferences API — **done**.
-2. Manual execution (confirm → place) — next.
+2. Manual execution (confirm → place) — **done**.
 3. Raise the conservative risk caps (currently maxOpen=3, exposure=$30, freq=30s).
 4. Automatic scanning loop across the eligible volatility indices.
 5. Tests + demo verification, then an explicit real-execution release.
+
+### Manual trade placement — one round-trip
+
+`POST /api/execution/place` runs signal → intent → submit **server-side** so a
+clicked trade costs one HTTP round-trip, not the three the client used to make
+(`/signals` → `/intents` → `/intents/:id/submit`). It reuses the same helpers
+(`manualSignalRejection`, `createSignal`, `gateway.createIntent`, `gateway.submit`)
+so the safety properties are unchanged: the manual gate, a fresh-price signal,
+single-use, risk and the one purchase path all still apply. A repeated
+`idempotencyKey` replays the original result and never places a second purchase —
+so a double-click is a no-op. `src/lib/trade.ts` `placeTrade()` calls only this
+route.
+
+The other half of the latency was the risk engine's balance read: `createExecution`
+used to build its **own** `BalanceService`, so it never shared the cache the
+`/api/balances` routes keep warm and each submit opened a fresh Deriv OTP +
+WebSocket just to read a balance. `createExecution(cfg, store, market, cache,
+balances)` now takes the process-wide instance from `server/index.ts`, and
+`TradeView` refreshes balances every 20s while the ticket is open to keep that
+cache inside its freshness window. Keep that sharing in place — a second
+`BalanceService` reintroduces the handshake.
+

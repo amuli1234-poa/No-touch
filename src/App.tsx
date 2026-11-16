@@ -1082,11 +1082,11 @@ export default function App() {
   };
 
   // Exactly ONE chart in the whole app. Chart-centric modules render the shared canvas plus an
-  // intelligence panel beside it; data-heavy workspaces (dashboard, health, lab, history,
-  // alerts, settings) keep their original full-width layout.
+  // intelligence panel beside it (including Trade, which needs the chart in view to place an
+  // order against what the scanner is seeing); data-heavy workspaces (dashboard, health, lab,
+  // history, alerts, settings) keep their original full-width layout.
   const FULL_WIDTH_SECTIONS: AppSection[] = [
     'dashboard',
-    'trade',
     'health',
     'settings',
     'training',
@@ -1128,7 +1128,6 @@ export default function App() {
                 <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
                   <div key={section} className="animate-view-enter flex flex-col min-h-full">
                     {section === 'dashboard' && <DashboardView />}
-                    {section === 'trade' && <TradeView />}
                     {section === 'entrymodel' && <EntryModelAIView />}
                     {section === 'health' && <SystemHealthView health={health} />}
                     {section === 'settings' && <SettingsView />}
@@ -1210,6 +1209,11 @@ export default function App() {
                         section === 'performance') && (
                         <div className="h-full overflow-y-auto">
                           <AiTabView id={section} scanners={aiModules} journal={aiJournal} />
+                        </div>
+                      )}
+                      {section === 'trade' && (
+                        <div className="h-full overflow-y-auto">
+                          <TradeView />
                         </div>
                       )}
                       {section === 'risk' && (
