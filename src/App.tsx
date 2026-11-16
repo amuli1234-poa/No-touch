@@ -1086,6 +1086,7 @@ export default function App() {
   // alerts, settings) keep their original full-width layout.
   const FULL_WIDTH_SECTIONS: AppSection[] = [
     'dashboard',
+    'trade',
     'health',
     'settings',
     'training',
