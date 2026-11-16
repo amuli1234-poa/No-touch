@@ -872,17 +872,31 @@ in the right panel beside the shared chart. The ticket sets the *intent*: mode
 4. Automatic scanning loop across the eligible volatility indices.
 5. Tests + demo verification, then an explicit real-execution release.
 
+### Manual vs automatic: who decides
+
+Manual trading is the customer's own call. Any market, any direction, any time —
+bounded only by the risk engine, the kill switches and a fresh price. A live
+scanner setup is shown as *context* in the Trade panel, never as a gate, and the
+panel never picks the direction for the customer.
+
+Automatic trading is the scanner's domain: the customer has delegated the
+decision, so an entry is only allowed on a live scanner setup for that market and
+direction. That is enforced in two places — the scanner only ever offers
+candidates it has itself validated, and `automaticSignalRejection` in
+`server/routes/execution.ts` refuses a signal that would auto-execute outside a
+live setup. Do not move this requirement onto the manual path: the trader places
+their own trades, in their own direction, on their own judgement.
+
 ### Manual trade placement — one round-trip
 
 `POST /api/execution/place` runs signal → intent → submit **server-side** so a
 clicked trade costs one HTTP round-trip, not the three the client used to make
 (`/signals` → `/intents` → `/intents/:id/submit`). It reuses the same helpers
-(`manualSignalRejection`, `createSignal`, `gateway.createIntent`, `gateway.submit`)
-so the safety properties are unchanged: the manual gate, a fresh-price signal,
-single-use, risk and the one purchase path all still apply. A repeated
-`idempotencyKey` replays the original result and never places a second purchase —
-so a double-click is a no-op. `src/lib/trade.ts` `placeTrade()` calls only this
-route.
+(`createSignal`, `gateway.createIntent`, `gateway.submit`) so the safety
+properties are unchanged: a fresh-price signal, single-use, risk and the one
+purchase path all still apply. A repeated `idempotencyKey` replays the original
+result and never places a second purchase — so a double-click is a no-op.
+`src/lib/trade.ts` `placeTrade()` calls only this route.
 
 The other half of the latency was the risk engine's balance read: `createExecution`
 used to build its **own** `BalanceService`, so it never shared the cache the

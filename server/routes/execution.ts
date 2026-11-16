@@ -43,6 +43,12 @@ import { CONTRACT_FAMILY_TYPES } from '../execution/types.js';
  * A purchase is only ever reached through `submit`, which applies the kill
  * switches, ownership, risk and idempotency checks. Creating an intent does not
  * buy anything.
+ *
+ * Manual trading is the customer's own call: any market, any direction, any
+ * time, bounded only by the risk engine and the kill switches. The live-setup
+ * requirement is a property of AUTOMATIC mode alone — the scanner only ever
+ * offers candidates it has itself validated — and is never imposed on a
+ * hand-placed trade.
  */
 
 export interface ExecutionRouterDeps {
@@ -105,27 +111,26 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
   const json = express.json({ limit: '32kb' });
 
   /**
-   * The manual-trade gate: a manual trade must be backed by a live scanner signal
-   * for the same market and direction, so a hand-placed trade can never exist
-   * outside a valid setup the scanner itself would have generated. Automatic
-   * users are exempt because the scanner is their signal source. The mode comes
-   * from the SERVER's stored preferences, never the request body: a client flag
-   * would let a hand-placed trade claim to be scanner-originated and skip the
-   * check. Returns the rejection to send, or null when the trade may proceed.
+   * The automatic-trade gate: an automatic entry must be backed by a live scanner
+   * setup for the same market and direction. Automatic mode is the scanner's own
+   * domain — the customer has delegated the decision — so a signal that did not
+   * come from a live setup must never auto-execute. Manual trading is exempt:
+   * that is the trader's own call and is bounded only by the risk engine.
+   * Returns the rejection to send, or null when the entry may proceed.
    */
-  const manualSignalRejection = (
+  const automaticSignalRejection = (
     userId: string,
     symbol: string,
     direction: SignalDirection
   ): { status: number; body: { error: string; message: string } } | null => {
     if (!scanner) return null;
-    if (store.getExecutionPreferences(userId)?.mode === 'automatic') return null;
+    if (store.getExecutionPreferences(userId)?.mode !== 'automatic') return null;
     if (!scanner.isRunning) {
       return {
         status: 422,
         body: {
           error: 'no_signal',
-          message: 'The scanner is not running, so there is no valid setup to trade.'
+          message: 'The scanner is not running, so there is no valid setup to enter on.'
         }
       };
     }
@@ -163,13 +168,16 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
       return;
     }
     const symbol = String(body.symbol ?? '');
-    // A manual trade must be backed by a live scanner signal for the same market
-    // and direction. This is the authority that stops a hand-placed trade from
-    // existing outside a valid setup the scanner itself would have generated.
-    const gate = manualSignalRejection(user.id, symbol, direction);
-    if (gate) {
-      res.status(gate.status).json(gate.body);
-      return;
+    // An automatic entry may only run on a live scanner setup. Check before the
+    // signal is recorded, so a refused auto-entry leaves nothing behind. Manual
+    // users skip this entirely — the trader places their own trade.
+    const automaticEntry = !!runner && store.getExecutionPreferences(user.id)?.mode === 'automatic';
+    if (automaticEntry) {
+      const gate = automaticSignalRejection(user.id, symbol, direction);
+      if (gate) {
+        res.status(gate.status).json(gate.body);
+        return;
+      }
     }
     // A signal must be built on a fresh price. The backend does not otherwise
     // subscribe to ticks, so its snapshot can be stale or absent; wait briefly
@@ -195,13 +203,11 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
       });
       // An automatic user has pre-delegated submission: run the loop now. This
       // still passes through every gateway control (kill switches, risk,
-      // single-use); it only removes the manual click.
+      // single-use); it only removes the manual click. The live-setup gate above
+      // already ran for automatic users, so only a validated entry reaches here.
       let auto = null;
-      if (runner) {
-        const prefs = store.getExecutionPreferences(user.id);
-        if (prefs?.mode === 'automatic') {
-          auto = await runner.runForUser(user, signal, tokenFor(deps, req));
-        }
+      if (automaticEntry) {
+        auto = await runner!.runForUser(user, signal, tokenFor(deps, req));
       }
       res.status(201).json({ signal, auto });
     } catch (err) {
@@ -409,14 +415,6 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
       return;
     }
     const symbol = String(body.symbol ?? '');
-
-    // Same gate as the signals route: a manual trade must be backed by a live
-    // scanner signal for the same market and direction.
-    const gate = manualSignalRejection(user.id, symbol, direction);
-    if (gate) {
-      res.status(gate.status).json(gate.body);
-      return;
-    }
 
     const snapshot = await market.freshSnapshot(symbol);
     if (!snapshot) {

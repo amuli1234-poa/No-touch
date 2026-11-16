@@ -155,16 +155,14 @@ export function TradeView() {
 
   /**
    * The scanner's live setup for the instrument the customer is looking at.
-   * Manual trading defers to this: a direction can only be chosen when the
-   * scanner is signalling it, so a trade can never be placed outside a valid
-   * setup. In automatic mode the scanner trades on its own and this is only
-   * shown for context.
+   * This is DISPLAY ONLY: manual trading is the customer's own call, so a live
+   * setup is shown as context but never gates or picks the direction. Automatic
+   * mode is the scanner's own domain, where the live setup is the entry reason.
    */
   const liveSetup = useMemo(
     () => scanner?.setups.find((s) => s.symbol === ws.selectedSymbol) ?? null,
     [scanner, ws.selectedSymbol]
   );
-  const scannerReady = !!scanner?.running;
   const signalDirection = liveSetup?.direction ?? null;
 
   const realAccount = useMemo(() => pickAccount(accounts, 'real', balances.selectedAccountId), [
@@ -206,10 +204,11 @@ export function TradeView() {
     !!ws.selectedSymbol &&
     !placing;
 
-  // In manual mode the trade is only allowed when the scanner is signalling the
-  // selected direction on the selected market. This mirrors the server gate, so
-  // the button and the API agree.
-  const signalValid = mode === 'automatic' || (!!signalDirection && direction === signalDirection);
+  // A manual trade is the customer's own decision — any direction, at any time,
+  // bounded only by the risk engine and the kill switches. Automatic mode is the
+  // scanner's domain, so a live setup is required there; it is never required to
+  // place a trade by hand.
+  const signalValid = mode !== 'automatic' || (!!signalDirection && direction === signalDirection);
   const canPlace = canTrade && signalValid;
 
   // Any change to the ticket invalidates a price that was quoted for the old one.
@@ -217,15 +216,6 @@ export function TradeView() {
     setPreview(null);
     setPlaced(null);
   }, [stakeInput, durationMinutes, multiplierInput, family, direction, tradingAccount?.accountId]);
-
-  // In manual mode, arm the ticket the moment the scanner publishes a live setup
-  // on the viewed market: adopt its direction so the customer never has to pick
-  // one by hand. The gate itself is unchanged — the server still refuses a trade
-  // that does not match a live setup, and the customer still confirms the entry.
-  useEffect(() => {
-    if (mode !== 'manual' || !signalDirection) return;
-    setDirection((prev) => (prev === signalDirection ? prev : signalDirection));
-  }, [mode, signalDirection]);
 
   // Auto-quote so the entry price is ready before the customer reaches for the
   // button; "Place" then only has to submit. Quoting is idempotent and cheap on
@@ -658,35 +648,17 @@ export function TradeView() {
             <Card className="p-3">
               <div className="text-[11px] font-bold uppercase tracking-wider text-faint mb-2">Direction</div>
 
-              {!scannerReady ? (
-                <div className="mb-2.5 flex items-start gap-2 rounded-lg border border-warn/30 bg-warn/8 px-2.5 py-2">
-                  <ShieldAlert className="w-3.5 h-3.5 text-warn shrink-0 mt-0.5" />
-                  <p className="text-[11.5px] text-muted leading-snug">
-                    {scanner?.reason === 'execution_disabled' || scanner?.reason === 'demo_execution_disabled'
-                      ? 'Trading is switched off on the server, so no signals are being generated.'
-                      : 'The scanner is not running, so there is no valid setup to trade yet.'}
-                  </p>
-                </div>
-              ) : !liveSetup ? (
+              {liveSetup && (
                 <div className="mb-2.5 flex items-start gap-2 rounded-lg border border-line-soft bg-panel px-2.5 py-2">
-                  <Loader2 className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5 animate-spin" />
+                  <Info className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5" />
                   <p className="text-[11.5px] text-muted leading-snug">
-                    Waiting for the scanner to confirm a setup on{' '}
-                    <span className="font-bold text-ink">{ws.marketName || ws.selectedSymbol || '—'}</span>. Trades
-                    can only be placed on a live signal.
-                  </p>
-                </div>
-              ) : (
-                <div className="mb-2.5 flex items-start gap-2 rounded-lg border border-accent/30 bg-accent/8 px-2.5 py-2">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5" />
-                  <p className="text-[11.5px] text-muted leading-snug">
-                    Live setup:{' '}
+                    The scanner currently favours{' '}
                     <span className={`font-bold ${liveSetup.direction === 'RISE' ? 'text-success' : 'text-danger'}`}>
                       {liveSetup.direction}
                     </span>{' '}
                     on <span className="font-bold text-ink">{liveSetup.displayName || liveSetup.symbol}</span>
-                    {liveSetup.confidence ? ` · confidence ${liveSetup.confidence.toFixed(2)}` : ''}. Place it below
-                    while it is still live.
+                    {liveSetup.confidence ? ` · confidence ${liveSetup.confidence.toFixed(2)}` : ''}. That is a
+                    suggestion, not a restriction — trade whichever way you see it.
                   </p>
                 </div>
               )}
@@ -695,7 +667,7 @@ export function TradeView() {
                 <button
                   type="button"
                   onClick={() => setDirection('RISE')}
-                  disabled={!authenticated || signalDirection !== 'RISE'}
+                  disabled={!authenticated}
                   aria-pressed={direction === 'RISE'}
                   className={`flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-[13px] font-bold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                     direction === 'RISE'
@@ -708,7 +680,7 @@ export function TradeView() {
                 <button
                   type="button"
                   onClick={() => setDirection('FALL')}
-                  disabled={!authenticated || signalDirection !== 'FALL'}
+                  disabled={!authenticated}
                   aria-pressed={direction === 'FALL'}
                   className={`flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-[13px] font-bold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                     direction === 'FALL'
@@ -758,11 +730,9 @@ export function TradeView() {
                 {placing ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUpRight className="w-4 h-4" />}
                 {placing
                   ? 'Placing…'
-                  : !signalDirection
-                    ? 'No live signal'
-                    : direction
-                      ? `Place ${direction === 'RISE' ? 'Rise' : 'Fall'} · ${stakeValid ? stake.toFixed(2) : '—'} ${currency}`
-                      : 'Choose a direction'}
+                  : direction
+                    ? `Place ${direction === 'RISE' ? 'Rise' : 'Fall'} · ${stakeValid ? stake.toFixed(2) : '—'} ${currency}`
+                    : 'Choose a direction'}
               </button>
 
               {placed && (

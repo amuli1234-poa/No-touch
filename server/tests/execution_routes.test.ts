@@ -116,13 +116,15 @@ async function withServer(
     /** When set, an automatic runner is wired and these preferences are stored. */
     automatic?: boolean;
     limits?: { signalsPerMinute?: number; submitsPerMinute?: number };
+    /** When set, the risk evaluator rejects with these reasons. */
+    riskRejected?: string[];
     /** When set, a fake scanner is passed to the router for status tests. */
     scanner?: {
       isRunning: boolean;
       lastPassTime: number | null;
       recent: unknown[];
       activeMarkets?: Array<{ symbol: string; displayName: string }>;
-      /** Live readings, so the manual-signal gate can be exercised. */
+      /** Live readings, so the scanner's setup surface can be exercised. */
       readings?: Array<{ symbol: string; direction: 'RISE' | 'FALL'; stale?: boolean; confidence?: number }>;
     };
   } = {}
@@ -153,7 +155,8 @@ async function withServer(
     broker,
     auditor,
     balanceProvider: async () => 1000,
-    riskEvaluator: () => ({ approved: true, reasons: [] }),
+    riskEvaluator: () =>
+      opts.riskRejected ? { approved: false, reasons: opts.riskRejected } : { approved: true, reasons: [] },
     onContractOpened: (user, contract, accessToken) => monitor.monitor(user, contract, accessToken),
     onContractClosed: async (user, contract, sale) => {
       await monitor.recordSale(user, contract.id, sale);
@@ -192,7 +195,7 @@ async function withServer(
     });
   }
   const app = express();
-  // The scanner fake exposes the live-reading API the manual gate uses.
+  // The scanner fake exposes the live-reading API the status surface uses.
   const scannerFake = opts.scanner
     ? {
         ...opts.scanner,
@@ -378,7 +381,7 @@ test('POST /place is idempotent: the same key buys only once', async () => {
   });
 });
 
-test('POST /place is refused when a manual trade contradicts the live setup', async () => {
+test('POST /place still enforces the risk engine on a free manual trade', async () => {
   await withServer(
     async ({ post, broker }) => {
       const res = await post('/api/execution/place', {
@@ -390,20 +393,13 @@ test('POST /place is refused when a manual trade contradicts the live setup', as
         stake: 1,
         currency: 'USD',
         parameters: { duration: 5, durationUnit: 'm' },
-        idempotencyKey: 'place-gate'
+        idempotencyKey: 'place-risk'
       });
-      assert.equal(res.status, 422);
-      assert.equal(res.body.error, 'no_valid_signal');
+      assert.equal(res.status, 409);
+      assert.equal(res.body.error, 'risk_rejected');
       assert.equal(broker.buys.length, 0);
     },
-    {
-      scanner: {
-        isRunning: true,
-        lastPassTime: 1,
-        recent: [],
-        readings: [{ symbol: 'R_100', direction: 'RISE', confidence: 0.6 }]
-      }
-    }
+    { riskRejected: ['max_open_contracts'] }
   );
 });
 
@@ -745,6 +741,53 @@ test('an automatic user\'s signal is executed on creation through the runner', a
   );
 });
 
+test('an automatic user\'s signal is refused when it is not backed by a live setup', async () => {
+  await withServer(
+    async ({ post, broker }) => {
+      const res = await post('/api/execution/signals', {
+        symbol: 'R_100',
+        direction: 'RISE',
+        contractFamily: 'rise_fall',
+        accountId: 'DEMO',
+        timeframe: '5m'
+      });
+      assert.equal(res.status, 422);
+      assert.equal(res.body.error, 'no_valid_signal');
+      assert.equal(broker.buys.length, 0, 'automatic must not enter outside a live setup');
+    },
+    {
+      automatic: true,
+      scanner: { isRunning: true, lastPassTime: 1, recent: [], readings: [] }
+    }
+  );
+});
+
+test('an automatic user\'s signal executes when it matches a live setup', async () => {
+  await withServer(
+    async ({ post, broker }) => {
+      const res = await post('/api/execution/signals', {
+        symbol: 'R_100',
+        direction: 'RISE',
+        contractFamily: 'rise_fall',
+        accountId: 'DEMO',
+        timeframe: '5m'
+      });
+      assert.equal(res.status, 201, JSON.stringify(res.body));
+      assert.equal(res.body.auto?.outcome, 'executed', JSON.stringify(res.body));
+      assert.equal(broker.buys.length, 1);
+    },
+    {
+      automatic: true,
+      scanner: {
+        isRunning: true,
+        lastPassTime: 1,
+        recent: [],
+        readings: [{ symbol: 'R_100', direction: 'RISE', confidence: 0.6 }]
+      }
+    }
+  );
+});
+
 test('a manual user\'s signal is NOT auto-executed', async () => {
   await withServer(async ({ post, broker }) => {
     const res = await post('/api/execution/signals', {
@@ -1035,9 +1078,9 @@ test('GET /scanner explains the demo switch is off', async () => {
   );
 });
 
-/* ------------------ manual trades require a live scanner signal ------------------ */
+/* ------------------ manual trades are the trader's own call ------------------ */
 
-test('a manual signal is refused when the scanner is not running', async () => {
+test('a manual signal is accepted with no live scanner setup at all', async () => {
   await withServer(
     async ({ post }) => {
       const res = await post('/api/execution/signals', {
@@ -1047,31 +1090,14 @@ test('a manual signal is refused when the scanner is not running', async () => {
         contractFamily: 'rise_fall',
         source: 'manual'
       });
-      assert.equal(res.status, 422);
-      assert.equal(res.body.error, 'no_signal');
+      assert.equal(res.status, 201, JSON.stringify(res.body));
+      assert.ok(res.body.signal?.id);
     },
-    { scanner: { isRunning: false, lastPassTime: null, recent: [] } }
+    { scanner: { isRunning: false, lastPassTime: null, recent: [], readings: [] } }
   );
 });
 
-test('a manual signal is refused when the scanner has no live setup for the market', async () => {
-  await withServer(
-    async ({ post }) => {
-      const res = await post('/api/execution/signals', {
-        accountId: 'DEMO',
-        symbol: 'R_100',
-        direction: 'RISE',
-        contractFamily: 'rise_fall',
-        source: 'manual'
-      });
-      assert.equal(res.status, 422);
-      assert.equal(res.body.error, 'no_valid_signal');
-    },
-    { scanner: { isRunning: true, lastPassTime: 1, recent: [], readings: [] } }
-  );
-});
-
-test('a manual signal is refused when it contradicts the live setup', async () => {
+test('a manual signal may contradict the scanner\'s live setup', async () => {
   await withServer(
     async ({ post }) => {
       const res = await post('/api/execution/signals', {
@@ -1081,8 +1107,8 @@ test('a manual signal is refused when it contradicts the live setup', async () =
         contractFamily: 'rise_fall',
         source: 'manual'
       });
-      assert.equal(res.status, 422);
-      assert.equal(res.body.error, 'no_valid_signal');
+      assert.equal(res.status, 201, JSON.stringify(res.body));
+      assert.ok(res.body.signal?.id);
     },
     {
       scanner: {
@@ -1095,7 +1121,7 @@ test('a manual signal is refused when it contradicts the live setup', async () =
   );
 });
 
-test('a manual signal is refused when the live setup has gone stale', async () => {
+test('a manual signal may target a market the scanner is not watching', async () => {
   await withServer(
     async ({ post }) => {
       const res = await post('/api/execution/signals', {
@@ -1105,46 +1131,35 @@ test('a manual signal is refused when the live setup has gone stale', async () =
         contractFamily: 'rise_fall',
         source: 'manual'
       });
-      assert.equal(res.status, 422);
-      assert.equal(res.body.error, 'no_valid_signal');
-      assert.match(res.body.message, /passed/);
+      assert.equal(res.status, 201, JSON.stringify(res.body));
     },
-    {
-      scanner: {
-        isRunning: true,
-        lastPassTime: 1,
-        recent: [],
-        readings: [{ symbol: 'R_100', direction: 'RISE', stale: true }]
-      }
-    }
+    { scanner: { isRunning: true, lastPassTime: 1, recent: [], readings: [] } }
   );
 });
 
-test('a manual signal is accepted when it matches a live scanner setup', async () => {
+test('a manual place succeeds without a live setup and still buys once', async () => {
   await withServer(
-    async ({ post }) => {
-      const res = await post('/api/execution/signals', {
+    async ({ post, broker }) => {
+      const res = await post('/api/execution/place', {
         accountId: 'DEMO',
         symbol: 'R_100',
-        direction: 'RISE',
+        timeframe: '5m',
+        direction: 'FALL',
         contractFamily: 'rise_fall',
-        source: 'manual'
+        stake: 1,
+        currency: 'USD',
+        parameters: { duration: 5, durationUnit: 'm' },
+        idempotencyKey: 'manual-free'
       });
-      assert.equal(res.status, 201);
-      assert.ok(res.body.signal?.id);
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.equal(res.body.intent.state, 'OPEN');
+      assert.equal(broker.buys.length, 1);
     },
-    {
-      scanner: {
-        isRunning: true,
-        lastPassTime: 1,
-        recent: [],
-        readings: [{ symbol: 'R_100', direction: 'RISE', confidence: 0.6 }]
-      }
-    }
+    { scanner: { isRunning: false, lastPassTime: null, recent: [], readings: [] } }
   );
 });
 
-test('GET /scanner exposes the live setups the Trade panel may act on', async () => {
+test('GET /scanner exposes the live setups the Trade panel may show', async () => {
   await withServer(
     async ({ get }) => {
       const res = await get('/api/execution/scanner');
