@@ -35,8 +35,10 @@ import {
 } from '../types/trendline';
 import { formatPrice } from '../utils/derivParser';
 import { ModuleChartSlot } from './chart/ModuleChartSlot';
+import { ConnectionBadge } from './ConnectionBadge';
 import type { TrendlineChartOverlay } from './chart/TrendlineChartPrimitive';
 import { Card, MeterBar, SectionCard, StatTile, StatusPill } from './ui/primitives';
+import { scoreColor, toneClass } from '../utils/signalVisuals';
 
 interface TrendlineScannerViewProps {
   scanner: TrendlineScannerValue;
@@ -57,12 +59,6 @@ const MODEL_ICON: Record<TrendlineEntryModelId, typeof TrendingUp> = {
   TRENDLINE_LIQUIDITY_SWEEP_RECLAIM: Crosshair,
 };
 
-function scoreColor(score: number): string {
-  if (score >= 92) return 'text-emerald-400';
-  if (score >= 85) return 'text-accent';
-  if (score >= 70) return 'text-warn';
-  return 'text-muted';
-}
 
 function SignalCard({
   signal,
@@ -120,7 +116,7 @@ function SignalCard({
           className="bg-elevated text-muted border-line"
         />
         <StatusPill
-          label={`${signal.structureTimeframe}→${signal.entryTimeframe}`}
+          label={`${signal.structureTimeframe}→${signal.trendTimeframe}→${signal.setupTimeframe}→${signal.confirmTimeframe}→${signal.entryTimeframe}`}
           className="bg-elevated text-muted border-line"
         />
       </div>
@@ -393,7 +389,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
   const dark = ws.settings.theme === 'dark';
 
   return (
-    <div className="flex flex-col gap-3 p-3 @sm:p-5 max-w-[1400px] w-full mx-auto">
+    <div className="flex flex-col gap-3 p-3 sm:p-5 max-w-[1400px] w-full mx-auto">
       {/* Header */}
       <Card className="p-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -403,13 +399,17 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
           <div className="min-w-0">
             <h1 className="text-lg font-extrabold tracking-tight text-ink">Trendline AI</h1>
             <p className="text-xs text-faint">
-              Complete multi-market trendline intelligence — M15 structure, M5 rejection setup, M1
-              precise entry. Four models, mandatory confirmation, minimum 85/100 quality. Every
-              Volatility Index scanned independently (Boom &amp; Crash excluded).
+              Complete multi-market trendline intelligence — the full top-down ladder
+              (M30 → M15 → M10 → M7 → M6 → M5 → M4 → M3 → M2 → M1): M15 structure, M7 trend &amp;
+              structure, M5 rejection setup, M3 confirmation, M1 precise entry, with M30/M10/M6/M4/M2
+              framing the higher- and lower-timeframe context. Four models, mandatory confirmation,
+              minimum 85/100 quality. Every Volatility Index scanned independently (Boom &amp; Crash
+              excluded).
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
+        <div className="flex items-center gap-2">
+          <ConnectionBadge status={ws.connectionStatus} onReconnect={ws.reconnect} />
           <button
             type="button"
             onClick={() => setShowSettings((v) => !v)}
@@ -466,7 +466,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
             {scanner.progressMessage}
           </div>
           <div className="text-[10px] text-faint">
-            {scanner.targetMarketCount} markets · M15 structure → M5 entries
+            {scanner.targetMarketCount} markets · M30 → M15 → M10 → M7 → M6 → M5 → M4 → M3 → M2 → M1
             {scanner.lastScannedAt
               ? ` · last scan ${new Date(scanner.lastScannedAt).toLocaleTimeString()}`
               : ''}
@@ -490,7 +490,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
           title="Trendline Models & Filters"
           subtitle="Enable entry models, set the score gate and restrict direction"
         >
-          <div className="grid grid-cols-1 @sm:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {TRENDLINE_MODEL_IDS.map((id) => {
               const Icon = MODEL_ICON[id];
               const enabled = scanner.settings.enabledModels[id];
@@ -627,10 +627,35 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
       )}
 
       {/* Main grid: chart + structure / scanner results */}
-      <div className="grid grid-cols-1 @3xl:grid-cols-[1.6fr_1fr] gap-3">
+      <div className="grid grid-cols-1 xl:grid-cols-[1.6fr_1fr] gap-3">
         {/* Chart column */}
         <div className="flex flex-col gap-3 min-w-0">
           <ModuleChartSlot trendlineOverlay={trendlineOverlay} />
+
+          {/* Top-down timeframe reads */}
+          <SectionCard
+            title="Top-Down Timeframe Reads"
+            subtitle="M15 bias → M7 trend & structure → M5 setup → M3 confirmation → M1 entry"
+            icon={<Layers className="w-3.5 h-3.5" aria-hidden="true" />}
+          >
+            {!chartAnalysis || chartAnalysis.timeframes.length === 0 ? (
+              <div className="text-[11px] text-faint py-4 text-center">
+                Awaiting trendline analysis for this instrument…
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {chartAnalysis.timeframes.map((tf) => (
+                  <div key={tf.timeframe} className="rounded-lg border border-line bg-panel px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-ink">{tf.label}</span>
+                      <span className="text-[10px] font-mono text-faint">{tf.timeframe}</span>
+                    </div>
+                    <p className={`text-[11px] leading-snug mt-1 ${toneClass(tf.tone)}`}>{tf.detail}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </SectionCard>
 
           {/* Trend-aligned future setup zones */}
           <SectionCard
@@ -821,7 +846,8 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
         <p className="text-[11px] text-faint leading-snug">
           The Trendline AI runs independently of the price-action engine and reuses the same live
           Deriv feed. Structure, swings and trendlines are built on confirmed M15 candles; the
-          rejection setup develops on M5; the precise entry is confirmed on M1 and must agree with
+          trend and market structure are read on M7; the rejection setup develops on M5; the M3
+          series confirms the entry setup; the precise entry is confirmed on M1 and must agree with
           the higher-timeframe direction. Every Volatility Index is analysed independently on its
           own feed (never just Volatility 75), Boom &amp; Crash are excluded, and a setup is
           published only when it clears the module's score gate with a real confirmation — the

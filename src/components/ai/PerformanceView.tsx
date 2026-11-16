@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { AlertTriangle, Award, BarChart3, Download, Filter, GraduationCap, Trash2 } from 'lucide-react';
+import { AlertTriangle, Award, BarChart3, Download, Filter, GraduationCap, Target, Trash2 } from 'lucide-react';
+import { useWorkspace } from '../../context/WorkspaceContext';
 import type { AiJournalHookValue } from '../../hooks/useAiJournal';
 import type { SegmentedPerformance, StrategyRating } from '../../analysis/aiPerformance';
 import { Card, EmptyState, SectionCard, StatTile } from '../ui/primitives';
@@ -62,7 +63,10 @@ function SegmentTable({ rows, emptyLabel }: { rows: SegmentedPerformance[]; empt
  */
 export function PerformanceView({ journal }: PerformanceViewProps) {
   const [showFilters, setShowFilters] = useState(false);
+  const ws = useWorkspace();
   const s = journal.summary;
+  const entryModelPerformance = ws.entryModelAI.performance;
+  const settledModelSetups = entryModelPerformance.reduce((n, p) => n + p.sampleSize, 0);
 
   const downloadCsv = () => {
     const csv = journal.exportCsv();
@@ -76,7 +80,7 @@ export function PerformanceView({ journal }: PerformanceViewProps) {
   };
 
   return (
-    <div className="flex flex-col gap-3 p-3 @sm:p-5 max-w-[1400px] w-full mx-auto">
+    <div className="flex flex-col gap-3 p-3 sm:p-5 max-w-[1400px] w-full mx-auto">
       <div className="flex flex-wrap items-center gap-2">
         <span className="w-8 h-8 rounded-lg bg-accent/15 text-accent border border-accent/30 flex items-center justify-center">
           <GraduationCap className="w-4 h-4" aria-hidden="true" />
@@ -117,7 +121,7 @@ export function PerformanceView({ journal }: PerformanceViewProps) {
 
       {showFilters && (
         <SectionCard title="Filters" subtitle="All performance views respect these filters" icon={<Filter className="w-3.5 h-3.5" aria-hidden="true" />}>
-          <div className="grid grid-cols-2 @md:grid-cols-3 @xl:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             {(['symbol', 'module', 'model', 'direction', 'condition'] as const).map((field) => {
               const options = Array.from(new Set(journal.records.map((r) => String(r[field === 'model' ? 'modelId' : field]))));
               return (
@@ -150,7 +154,7 @@ export function PerformanceView({ journal }: PerformanceViewProps) {
       )}
 
       {/* Summary */}
-      <div className="grid grid-cols-2 @lg:grid-cols-4 @2xl:grid-cols-6 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2">
         <StatTile label="Total signals" value={s.total} />
         <StatTile label="Settled" value={s.settled} />
         <StatTile label="Pending" value={s.pending} />
@@ -165,7 +169,7 @@ export function PerformanceView({ journal }: PerformanceViewProps) {
         <StatTile label="Max loss streak" value={s.maxConsecutiveLosses} valueClass="text-bear" />
       </div>
 
-      <div className="grid grid-cols-2 @lg:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <StatTile label="TP1 rate" value={fmtPct(s.tp1Rate)} hint={`n=${s.total}`} />
         <StatTile label="TP2 rate" value={fmtPct(s.tp2Rate)} />
         <StatTile label="TP3 rate" value={fmtPct(s.tp3Rate)} />
@@ -196,7 +200,7 @@ export function PerformanceView({ journal }: PerformanceViewProps) {
       )}
 
       {/* Segmented performance */}
-      <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
         <SectionCard title="By AI Module" subtitle="Independent module reliability" icon={<BarChart3 className="w-3.5 h-3.5" aria-hidden="true" />}>
           <SegmentTable rows={journal.byModule} emptyLabel="No recorded signals yet." />
         </SectionCard>
@@ -210,6 +214,52 @@ export function PerformanceView({ journal }: PerformanceViewProps) {
           <SegmentTable rows={journal.byCondition} emptyLabel="No recorded signals yet." />
         </SectionCard>
       </div>
+
+      <SectionCard
+        title="Entry-Model AI Performance"
+        subtitle={`Universal entry-model ledger · ${settledModelSetups} settled setup${settledModelSetups === 1 ? '' : 's'} · win rates withheld until the sample is meaningful`}
+        icon={<Target className="w-3.5 h-3.5" aria-hidden="true" />}
+      >
+        {entryModelPerformance.length === 0 ? (
+          <EmptyState
+            title="No settled entry-model setups yet"
+            description="As ranked setups reach TP or SL, the Entry Model AI records the outcome against the model it selected."
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr className="text-faint text-left">
+                  <th className="py-1.5 pr-2 font-semibold">Entry model</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">Settled</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">Wins</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">Losses</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">Missed</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">Win rate</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">Avg R:R</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entryModelPerformance.map((p) => (
+                  <tr key={p.model} className="border-t border-line-soft">
+                    <td className="py-1.5 pr-2 text-ink font-semibold truncate max-w-[200px]">{p.label}</td>
+                    <td className="py-1.5 pr-2 text-right font-mono text-muted">{p.sampleSize}</td>
+                    <td className="py-1.5 pr-2 text-right font-mono text-emerald-400">{p.wins}</td>
+                    <td className="py-1.5 pr-2 text-right font-mono text-bear">{p.losses}</td>
+                    <td className="py-1.5 pr-2 text-right font-mono text-muted">{p.missed}</td>
+                    <td className="py-1.5 pr-2 text-right font-mono text-muted">
+                      {p.winRatePercent === null ? '—' : `${p.winRatePercent}%`}
+                    </td>
+                    <td className="py-1.5 pr-2 text-right font-mono text-muted">
+                      {p.avgRiskReward === null ? '—' : `1:${p.avgRiskReward.toFixed(2)}`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </SectionCard>
 
       {/* Recent journal */}
       <SectionCard title="Signal Journal" subtitle={`${journal.filtered.length} records · history is preserved across strategy updates`}>

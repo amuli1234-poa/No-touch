@@ -132,8 +132,8 @@ export function SignalFeedCard({
 }
 
 /**
- * The unified, clickable signal feed. Every entry deep-links to the exact chart
- * that produced it (via openAnalyser).
+ * The unified, clickable signal feed. Every entry deep-links to the dedicated full-screen
+ * Chart tab for the exact market/timeframe that produced it (via openChart).
  */
 export function SignalFeedList({ limit }: { limit?: number }) {
   const ws = useWorkspace();
@@ -153,7 +153,7 @@ export function SignalFeedList({ limit }: { limit?: number }) {
   return (
     <div className="flex flex-col gap-2.5">
       {items.map((item) => (
-        <SignalFeedCard key={item.id} item={item} onOpen={ws.openAnalyser} />
+        <SignalFeedCard key={item.id} item={item} onOpen={ws.openChart} />
       ))}
     </div>
   );

@@ -3,7 +3,8 @@ import { useAiScanner, type AiScannerValue } from './useAiScanner';
 import type { AiEngine } from './useAiScanner';
 import type { PeerEvidence } from '../analysis/peerValidation';
 import type { DerivWebSocketService } from '../services/derivWebSocket';
-import type { SyntheticMarket } from '../types/market';
+import type { ConnectionStatus, SyntheticMarket } from '../types/market';
+import type { IndexLearningPlan } from '../types/learning';
 import { analyzeBosChochInstrument, BOS_CHOCH_PUBLICATION_MIN_SCORE } from '../analysis/bosChochEngine';
 import { analyzeTechnicalInstrument, TECHNICAL_PUBLICATION_MIN_SCORE } from '../analysis/technicalEngine';
 import { analyzeSmcInstrument, SMC_PUBLICATION_MIN_SCORE } from '../analysis/smcEngine';
@@ -14,6 +15,14 @@ import { analyzeMomentumInstrument, MOMENTUM_PUBLICATION_MIN_SCORE } from '../an
 import { analyzeMarketRegimeInstrument, REGIME_PUBLICATION_MIN_SCORE } from '../analysis/marketRegimeEngine';
 import { analyzeConfluenceInstrument, CONFLUENCE_PUBLICATION_MIN_SCORE } from '../analysis/confluenceEngine';
 import { analyzeLiveInstrument, LIVE_SCANNER_PUBLICATION_MIN_SCORE } from '../analysis/liveScannerEngine';
+import {
+  analyzeTimeframeAlignmentInstrument,
+  TIMEFRAME_ALIGNMENT_PUBLICATION_MIN_SCORE,
+} from '../analysis/timeframeAlignmentEngine';
+import {
+  analyzeConsolidationInstrument,
+  CONSOLIDATION_PUBLICATION_MIN_SCORE,
+} from '../analysis/consolidationEngine';
 
 /**
  * Central registry for the independent AI strategy modules. Every entry owns its OWN
@@ -29,6 +38,8 @@ export interface AiModuleDefinition {
   progressLabel: string;
   /** True for decision engines that consume peer evidence from sibling modules. */
   consumesPeers?: boolean;
+  /** True for modules that consume the Timeframe Learner's verified per-index plan. */
+  consumesLearner?: boolean;
 }
 
 export const AI_MODULE_DEFINITIONS: readonly AiModuleDefinition[] = [
@@ -38,7 +49,7 @@ export const AI_MODULE_DEFINITIONS: readonly AiModuleDefinition[] = [
     engine: analyzeBosChochInstrument,
     publicationGate: BOS_CHOCH_PUBLICATION_MIN_SCORE,
     defaultMinScore: BOS_CHOCH_PUBLICATION_MIN_SCORE,
-    progressLabel: 'M15 structure · M5 setup · M1 entry',
+    progressLabel: 'M15 structure · M7 trend · M5 setup · M3 confirmation · M1 entry',
   },
   {
     id: 'technical',
@@ -113,20 +124,51 @@ export const AI_MODULE_DEFINITIONS: readonly AiModuleDefinition[] = [
     defaultMinScore: LIVE_SCANNER_PUBLICATION_MIN_SCORE,
     progressLabel: 'multi-market opportunity ranking',
   },
+  {
+    id: 'timeframealignment',
+    label: 'Timeframe Alignment AI',
+    engine: analyzeTimeframeAlignmentInstrument,
+    publicationGate: TIMEFRAME_ALIGNMENT_PUBLICATION_MIN_SCORE,
+    defaultMinScore: TIMEFRAME_ALIGNMENT_PUBLICATION_MIN_SCORE,
+    progressLabel: 'M30 bias → M15/M10 structure → M7/M5 setup → M3/M1 entry',
+    consumesLearner: true,
+  },
+  {
+    id: 'consolidation',
+    label: 'Consolidation & Momentum AI',
+    engine: analyzeConsolidationInstrument,
+    publicationGate: CONSOLIDATION_PUBLICATION_MIN_SCORE,
+    defaultMinScore: CONSOLIDATION_PUBLICATION_MIN_SCORE,
+    progressLabel: 'consolidation · compression · momentum · breakout confirmation',
+  },
 ];
 
 export interface AiModulesHookProps {
   derivService: DerivWebSocketService;
   markets: SyntheticMarket[];
+  /** Live connection status — gates the automatic background sweep. */
+  connectionStatus?: ConnectionStatus;
+  /** When false no module auto-scans (default: true). */
+  autoStart?: boolean;
+  /** The Learning AI's learned per-index timeframe plans (consumed by the Alignment AI). */
+  learnerPlans?: ReadonlyMap<string, IndexLearningPlan>;
 }
 
 export type AiModuleScanners = Record<string, AiScannerValue>;
+
+/** Stagger sibling modules so ten sweeps never hit the socket at once. */
+const MODULE_START_STAGGER_MS = 5_000;
+const MODULE_REFRESH_MS = 180_000;
 
 function scannerProps(
   def: AiModuleDefinition,
   derivService: DerivWebSocketService,
   markets: SyntheticMarket[],
-  getPeers?: (symbol: string) => PeerEvidence[]
+  index: number,
+  connectionStatus: ConnectionStatus,
+  autoStart: boolean,
+  getPeers?: (symbol: string) => PeerEvidence[],
+  getLearnerPlan?: (symbol: string) => IndexLearningPlan | null
 ) {
   return {
     derivService,
@@ -136,6 +178,11 @@ function scannerProps(
     defaultMinScore: def.defaultMinScore,
     progressLabel: def.progressLabel,
     getPeers,
+    getLearnerPlan,
+    connectionStatus,
+    autoStart,
+    autoStartDelayMs: index * MODULE_START_STAGGER_MS,
+    autoRefreshMs: MODULE_REFRESH_MS,
   };
 }
 
@@ -144,16 +191,43 @@ function scannerProps(
  * runs its own engine and keeps its own settings, history and results. The Confluence
  * module additionally receives peer signals (never decisions) from every sibling scanner.
  */
-export function useAiModules({ derivService, markets }: AiModulesHookProps): AiModuleScanners {
-  const boschoch = useAiScanner(scannerProps(AI_MODULE_DEFINITIONS[0], derivService, markets));
-  const technical = useAiScanner(scannerProps(AI_MODULE_DEFINITIONS[1], derivService, markets));
-  const smc = useAiScanner(scannerProps(AI_MODULE_DEFINITIONS[2], derivService, markets));
-  const liquidity = useAiScanner(scannerProps(AI_MODULE_DEFINITIONS[3], derivService, markets));
-  const fvg = useAiScanner(scannerProps(AI_MODULE_DEFINITIONS[4], derivService, markets));
-  const orderblock = useAiScanner(scannerProps(AI_MODULE_DEFINITIONS[5], derivService, markets));
-  const momentum = useAiScanner(scannerProps(AI_MODULE_DEFINITIONS[6], derivService, markets));
-  const regime = useAiScanner(scannerProps(AI_MODULE_DEFINITIONS[7], derivService, markets));
-  const live = useAiScanner(scannerProps(AI_MODULE_DEFINITIONS[9], derivService, markets));
+export function useAiModules({
+  derivService,
+  markets,
+  connectionStatus = 'connected',
+  autoStart = true,
+  learnerPlans,
+}: AiModulesHookProps): AiModuleScanners {
+  const learnerPlansRef = useRef(learnerPlans);
+  learnerPlansRef.current = learnerPlans;
+  const getLearnerPlan = useMemo(
+    () => (symbol: string): IndexLearningPlan | null => learnerPlansRef.current?.get(symbol) ?? null,
+    []
+  );
+
+  const p = (i: number, getPeers?: (symbol: string) => PeerEvidence[]) =>
+    scannerProps(
+      AI_MODULE_DEFINITIONS[i],
+      derivService,
+      markets,
+      i,
+      connectionStatus,
+      autoStart,
+      getPeers,
+      getLearnerPlan
+    );
+
+  const boschoch = useAiScanner(p(0));
+  const technical = useAiScanner(p(1));
+  const smc = useAiScanner(p(2));
+  const liquidity = useAiScanner(p(3));
+  const fvg = useAiScanner(p(4));
+  const orderblock = useAiScanner(p(5));
+  const momentum = useAiScanner(p(6));
+  const regime = useAiScanner(p(7));
+  const live = useAiScanner(p(9));
+  const timeframealignment = useAiScanner(p(10));
+  const consolidation = useAiScanner(p(11));
 
   // Peer evidence is read live from each module's latest published signal (per index only).
   const peerScanners: { module: string; scanner: AiScannerValue }[] = [
@@ -165,6 +239,8 @@ export function useAiModules({ derivService, markets }: AiModulesHookProps): AiM
     { module: AI_MODULE_DEFINITIONS[5].label, scanner: orderblock },
     { module: AI_MODULE_DEFINITIONS[6].label, scanner: momentum },
     { module: AI_MODULE_DEFINITIONS[7].label, scanner: regime },
+    { module: AI_MODULE_DEFINITIONS[10].label, scanner: timeframealignment },
+    { module: AI_MODULE_DEFINITIONS[11].label, scanner: consolidation },
   ];
   const peersRef = useRef(peerScanners);
   peersRef.current = peerScanners;
@@ -182,10 +258,36 @@ export function useAiModules({ derivService, markets }: AiModulesHookProps): AiM
     []
   );
 
-  const confluence = useAiScanner(scannerProps(AI_MODULE_DEFINITIONS[8], derivService, markets, getPeers));
+  const confluence = useAiScanner(p(8, getPeers));
 
   return useMemo(
-    () => ({ boschoch, technical, smc, liquidity, fvg, orderblock, momentum, regime, confluence, live }),
-    [boschoch, technical, smc, liquidity, fvg, orderblock, momentum, regime, confluence, live]
+    () => ({
+      boschoch,
+      technical,
+      smc,
+      liquidity,
+      fvg,
+      orderblock,
+      momentum,
+      regime,
+      confluence,
+      live,
+      timeframealignment,
+      consolidation,
+    }),
+    [
+      boschoch,
+      technical,
+      smc,
+      liquidity,
+      fvg,
+      orderblock,
+      momentum,
+      regime,
+      confluence,
+      live,
+      timeframealignment,
+      consolidation,
+    ]
   );
 }

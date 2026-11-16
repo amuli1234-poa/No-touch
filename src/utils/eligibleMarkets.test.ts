@@ -6,7 +6,9 @@ import {
   eligibleMarkets,
   isBoomOrCrash,
   isEligibleMarket,
+  isJumpMarket,
   isOneSecondMarket,
+  isStepMarket,
 } from './eligibleMarkets';
 
 /** Minimal market builder — mirrors what `parseActiveSymbols` produces. */
@@ -58,24 +60,40 @@ const EXCLUDED = [
   mk('BOOM1000', 'Boom 1000 Index', 'crash_index', 'OTHER'),
   mk('CRASH500', 'Crash 500 Index', 'crash_index', 'OTHER'),
   mk('CRASH1000', 'Crash 1000 Index', 'crash_index', 'OTHER'),
-  mk('JD10', 'Jump 10 Index', 'jump_index', 'JUMP'),
-  mk('JD100', 'Jump 100 Index', 'jump_index', 'JUMP'),
-  mk('stpRNG', 'Step Index', 'step_index', 'STEP'),
-  mk('stpRNG5', 'Step Index 500', 'step_index', 'STEP'),
   mk('RB100', 'Range Break 100 Index', 'range_index', 'RANGE_BREAK'),
   mk('RB200', 'Range Break 200 Index', 'range_index', 'RANGE_BREAK'),
   mk('RDBULL', 'Bull Market Index', 'random_daily', 'OTHER'),
   mk('WLDAUD', 'AUD Basket', 'forex_basket', 'OTHER'),
 ];
 
-const UNIVERSE = [...STANDARD, ...ONE_SECOND, ...EXCLUDED];
+/** Jump and Step indices — now analysed by every scanner (Boom/Crash stay excluded). */
+const JUMP_STEP = [
+  mk('JD10', 'Jump 10 Index', 'jump_index', 'JUMP'),
+  mk('JD25', 'Jump 25 Index', 'jump_index', 'JUMP'),
+  mk('JD50', 'Jump 50 Index', 'jump_index', 'JUMP'),
+  mk('JD75', 'Jump 75 Index', 'jump_index', 'JUMP'),
+  mk('JD100', 'Jump 100 Index', 'jump_index', 'JUMP'),
+  mk('stpRNG', 'Step Index', 'step_index', 'STEP'),
+];
+
+const UNIVERSE = [...STANDARD, ...ONE_SECOND, ...JUMP_STEP, ...EXCLUDED];
 
 test('eligibility: every standard + 1-second Volatility Index is included', () => {
   const eligible = eligibleMarkets(UNIVERSE);
-  const symbols = eligible.map((m) => m.symbol).sort();
-  const expected = [...STANDARD, ...ONE_SECOND].map((m) => m.symbol).sort();
-  assert.deepEqual(symbols, expected);
-  assert.equal(eligible.length, 13);
+  const symbols = eligible.map((m) => m.symbol);
+  const expected = [...STANDARD, ...ONE_SECOND].map((m) => m.symbol);
+  for (const s of expected) assert.ok(symbols.includes(s), `${s} must be eligible`);
+});
+
+test('eligibility: Jump and Step indices are included', () => {
+  const symbols = eligibleMarkets(UNIVERSE).map((m) => m.symbol);
+  for (const s of ['JD10', 'JD25', 'JD50', 'JD75', 'JD100', 'stpRNG']) {
+    assert.ok(symbols.includes(s), `${s} must be eligible`);
+  }
+  const jump = JUMP_STEP.find((m) => m.symbol === 'JD10')!;
+  assert.equal(isJumpMarket(jump), true);
+  const step = JUMP_STEP.find((m) => m.symbol === 'stpRNG')!;
+  assert.equal(isStepMarket(step), true);
 });
 
 test('eligibility: Boom and Crash are always excluded', () => {
@@ -87,9 +105,9 @@ test('eligibility: Boom and Crash are always excluded', () => {
   assert.equal(eligible.some((s) => /BOOM|CRASH/.test(s)), false);
 });
 
-test('eligibility: Jump, Step, Range Break and Daily Reset are excluded', () => {
+test('eligibility: Range Break, Daily Reset and baskets are excluded', () => {
   const eligible = eligibleMarkets(UNIVERSE).map((m) => m.symbol);
-  for (const m of ['JD10', 'JD100', 'stpRNG', 'stpRNG5', 'RB100', 'RB200', 'RDBULL', 'WLDAUD']) {
+  for (const m of ['RB100', 'RB200', 'RDBULL', 'WLDAUD']) {
     assert.equal(eligible.includes(m), false, `${m} must not be eligible`);
   }
 });
@@ -104,22 +122,30 @@ test('eligibility: 1-second detection recognises every 1HZ symbol', () => {
   for (const m of STANDARD) assert.equal(isOneSecondMarket(m), false, m.symbol);
 });
 
-test('eligibility: standard indices are ordered before 1-second indices, ascending volatility', () => {
-  const ordered = eligibleMarkets(UNIVERSE);
-  assert.deepEqual(
-    ordered.slice(0, 5).map((m) => m.symbol),
-    ['R_10', 'R_25', 'R_50', 'R_75', 'R_100']
-  );
-  assert.deepEqual(
-    ordered.slice(5).map((m) => m.symbol),
-    ['1HZ10V', '1HZ15V', '1HZ25V', '1HZ30V', '1HZ50V', '1HZ75V', '1HZ90V', '1HZ100V']
-  );
+test('eligibility: standard → 1-second → Jump → Step display ordering', () => {
+  const ordered = eligibleMarkets(UNIVERSE).map((m) => m.symbol);
+  const firstFive = ordered.slice(0, 5);
+  assert.deepEqual(firstFive, ['R_10', 'R_25', 'R_50', 'R_75', 'R_100']);
+  const oneSecondSlice = ordered.slice(5, 13);
+  assert.deepEqual(oneSecondSlice, [
+    '1HZ10V',
+    '1HZ15V',
+    '1HZ25V',
+    '1HZ30V',
+    '1HZ50V',
+    '1HZ75V',
+    '1HZ90V',
+    '1HZ100V',
+  ]);
+  assert.deepEqual(ordered.slice(13, 18), ['JD10', 'JD25', 'JD50', 'JD75', 'JD100']);
+  assert.deepEqual(ordered.slice(18), ['stpRNG']);
 });
 
 test('eligibility: include1Sec=false drops only the 1-second variants', () => {
   const standardOnly = eligibleMarkets(UNIVERSE, { include1Sec: false });
-  assert.equal(standardOnly.length, 5);
   assert.equal(standardOnly.some(isOneSecondMarket), false);
+  // Standard + Jump + Step remain.
+  assert.equal(standardOnly.length, 5 + JUMP_STEP.length);
 });
 
 test('eligibility: requireOpen=true (default) skips closed markets', () => {
@@ -133,7 +159,7 @@ test('eligibility: requireOpen=true (default) skips closed markets', () => {
 
 test('eligibility: eligibleMarketMap indexes every eligible market by symbol', () => {
   const map = eligibleMarketMap(UNIVERSE);
-  assert.equal(map.size, 13);
+  assert.equal(map.size, 13 + JUMP_STEP.length);
   assert.equal(map.get('R_100')?.displayName, 'Volatility 100 Index');
   assert.equal(map.has('BOOM500'), false);
 });

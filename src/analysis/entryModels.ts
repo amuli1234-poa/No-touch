@@ -970,6 +970,9 @@ export function detectModel(
   ctx: ModelDetectionContext,
   model: EntryModelId
 ): EntryModelCandidate | null {
+  // Every detector indexes the last candle, so an empty series must short-circuit here
+  // rather than throw a TypeError deep inside a model.
+  if (ctx.candles.length === 0) return null;
   const raw = MODEL_DETECTORS[model](ctx);
   if (!raw) return null;
   const entryPrice = ctx.candles[ctx.candles.length - 1].close;

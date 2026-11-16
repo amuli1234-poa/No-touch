@@ -6,6 +6,7 @@ import type {
   TrendlineStructure,
 } from '../types/analysis';
 import { formatPrice } from '../utils/derivParser';
+import { resolveTargets } from './aiCommon';
 
 interface SignalCalculationsParams {
   direction: 'RISE' | 'FALL';
@@ -56,75 +57,49 @@ export function computeTradeTargetsAndStopLoss({
 
   const risk = Math.abs(entryPrice - stopLoss);
 
-  // Take Profit calculation from actual opposing structures
-  let tp1Candidate: number | null = null;
-  let tp2Candidate: number | null = null;
+  // Take Profit calculation from actual opposing structures. The ladder is anchored to the
+  // ACTUAL entry and filtered to the reward side, so a nearby opposing level can never place
+  // TP1 back across the entry.
+  const opposingLevels = supportResistance
+    .filter((l) =>
+      isRise
+        ? l.status === 'active' && l.type === 'resistance' && l.price > entryPrice
+        : l.status === 'active' && l.type === 'support' && l.price < entryPrice
+    )
+    .sort((a, b) => (isRise ? a.price - b.price : b.price - a.price));
 
-  if (isRise) {
-    const opposingLevels = supportResistance
-      .filter((l) => l.status === 'active' && l.type === 'resistance' && l.price > entryPrice)
-      .sort((a, b) => a.price - b.price);
+  const opposingZones = supplyDemand
+    .filter((z) =>
+      isRise
+        ? z.status !== 'invalidated' && z.type === 'supply' && z.lowerPrice > entryPrice
+        : z.status !== 'invalidated' && z.type === 'demand' && z.upperPrice < entryPrice
+    )
+    .sort((a, b) => (isRise ? a.lowerPrice - b.lowerPrice : b.upperPrice - a.upperPrice));
 
-    const opposingZones = supplyDemand
-      .filter((z) => z.status !== 'invalidated' && z.type === 'supply' && z.lowerPrice > entryPrice)
-      .sort((a, b) => a.lowerPrice - b.lowerPrice);
+  const patternTarget = patterns.find(
+    (p) =>
+      p.confirmed &&
+      p.bias === (isRise ? 'bullish' : 'bearish') &&
+      p.necklinePrice != null &&
+      (isRise ? p.necklinePrice > entryPrice : p.necklinePrice < entryPrice)
+  )?.necklinePrice;
 
-    const patternTarget = patterns.find(
-      (p) => p.confirmed && p.bias === 'bullish' && p.necklinePrice && p.necklinePrice > entryPrice
-    )?.necklinePrice;
+  // A bearish, unbroken trendline sits overhead and is a long target only (unchanged from the
+  // original RISE-only behaviour).
+  const trendlineTarget = isRise
+    ? trendlines.find((t) => t.direction === 'bearish' && !t.broken)?.endPrice
+    : undefined;
 
-    const trendlineTarget = trendlines.find(
-      (t) => t.direction === 'bearish' && !t.broken
-    )?.endPrice;
+  const candidates = [
+    opposingLevels[0]?.price,
+    isRise ? opposingZones[0]?.lowerPrice : opposingZones[0]?.upperPrice,
+    patternTarget,
+    trendlineTarget,
+  ];
 
-    const candidates = [
-      opposingLevels[0]?.price,
-      opposingZones[0]?.lowerPrice,
-      patternTarget,
-      trendlineTarget,
-    ].filter((p): p is number => typeof p === 'number' && p > entryPrice);
-
-    candidates.sort((a, b) => a - b);
-
-    if (candidates.length > 0) {
-      tp1Candidate = candidates[0] - buffer;
-      tp2Candidate = candidates.length > 1 ? candidates[1] - buffer : tp1Candidate + risk * 2.2;
-    } else {
-      tp1Candidate = entryPrice + Math.max(risk * 1.6, atr * 2.2);
-      tp2Candidate = entryPrice + Math.max(risk * 2.8, atr * 3.8);
-    }
-  } else {
-    const opposingLevels = supportResistance
-      .filter((l) => l.status === 'active' && l.type === 'support' && l.price < entryPrice)
-      .sort((a, b) => b.price - a.price);
-
-    const opposingZones = supplyDemand
-      .filter((z) => z.status !== 'invalidated' && z.type === 'demand' && z.upperPrice < entryPrice)
-      .sort((a, b) => b.upperPrice - a.upperPrice);
-
-    const patternTarget = patterns.find(
-      (p) => p.confirmed && p.bias === 'bearish' && p.necklinePrice && p.necklinePrice < entryPrice
-    )?.necklinePrice;
-
-    const candidates = [
-      opposingLevels[0]?.price,
-      opposingZones[0]?.upperPrice,
-      patternTarget,
-    ].filter((p): p is number => typeof p === 'number' && p < entryPrice);
-
-    candidates.sort((a, b) => b - a);
-
-    if (candidates.length > 0) {
-      tp1Candidate = candidates[0] + buffer;
-      tp2Candidate = candidates.length > 1 ? candidates[1] + buffer : tp1Candidate - risk * 2.2;
-    } else {
-      tp1Candidate = entryPrice - Math.max(risk * 1.6, atr * 2.2);
-      tp2Candidate = entryPrice - Math.max(risk * 2.8, atr * 3.8);
-    }
-  }
-
-  const takeProfit1 = Number(tp1Candidate.toFixed(precision));
-  const takeProfit2 = Number(tp2Candidate.toFixed(precision));
+  const ladder = resolveTargets(direction, entryPrice, candidates, risk > 0 ? risk : atr);
+  const takeProfit1 = Number(ladder[0].toFixed(precision));
+  const takeProfit2 = Number(ladder[1].toFixed(precision));
   const roundedStopLoss = Number(stopLoss.toFixed(precision));
 
   const reward = Math.abs(takeProfit1 - entryPrice);

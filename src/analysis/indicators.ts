@@ -1,7 +1,7 @@
 import type { IndicatorSnapshot } from '../types/engine';
 import type { Candle } from '../types/market';
 
-function ema(values: readonly number[], period: number): (number | null)[] {
+export function ema(values: readonly number[], period: number): (number | null)[] {
   const out: (number | null)[] = new Array(values.length).fill(null);
   if (values.length < period || period <= 0) return out;
   const k = 2 / (period + 1);

@@ -145,7 +145,7 @@ export function ManagedSignalsPanel({ limit = 6 }: { limit?: number }) {
         <ManagedSignalRow
           key={signal.id}
           signal={signal}
-          onOpen={() => ws.openAnalyser(signal.symbol, signal.timeframe)}
+          onOpen={() => ws.openChart(signal.symbol, signal.timeframe)}
         />
       ))}
       <div className="flex items-center gap-1.5 mt-2 text-[10px] text-faint">

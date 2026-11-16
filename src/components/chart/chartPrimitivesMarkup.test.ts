@@ -93,6 +93,7 @@ function makeTarget(rec: Recording) {
   const chart = {
     timeScale: () => ({
       timeToCoordinate: (t: number) => 100 + (Number(t) % 700),
+      options: () => ({ barSpacing: 10 }),
     }),
   };
   const series = {
@@ -320,7 +321,7 @@ test('TrendlineChartPrimitive paints thin setup zones and level badges', () => {
   const renderer = prim.paneViews()[0].renderer();
   assert.ok(renderer);
   renderer.draw(target as never);
-  assert.ok(rec.texts.some((t) => t.startsWith('E ')), 'expected an E label');
+  assert.ok(rec.texts.some((t) => t.startsWith('ENTRY ')), 'expected an entry label');
   assertMinimal(rec, 'trendline');
 });
 
@@ -343,6 +344,6 @@ test('SignalAnnotationPrimitive paints thin E/SL/TP lines and a small marker', (
   const renderer = prim.paneViews()[0].renderer();
   assert.ok(renderer);
   renderer.draw(target as never);
-  assert.ok(rec.texts.some((t) => t.startsWith('E ')), 'expected an entry label');
+  assert.ok(rec.texts.some((t) => t.startsWith('ENTRY ')), 'expected an entry label');
   assertMinimal(rec, 'signal');
 });

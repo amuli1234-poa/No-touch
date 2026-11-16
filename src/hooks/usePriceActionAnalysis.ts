@@ -18,7 +18,7 @@ import type {
 } from '../types/market';
 import type { LiveCandleTick } from './useDerivChartData';
 
-const ALL_TIMEFRAMES: readonly TimeframeKey[] = ['H4', 'H1', 'M15', 'M5', 'M1'];
+const ALL_TIMEFRAMES: readonly TimeframeKey[] = ['H4', 'H1', 'M15', 'M7', 'M5', 'M3', 'M1'];
 const HTF_CACHE_TTL_MS = 60_000;
 
 interface CachedTfSnapshot {

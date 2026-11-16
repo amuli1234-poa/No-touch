@@ -8,7 +8,7 @@ export interface DirectionSummary {
   tone: DirectionTone;
   /** Plain-English justification drawn only from the report. */
   reason: string;
-  /** Timeframe ladder, e.g. "H1 → M15 → M5 → M1". */
+  /** Timeframe ladder, e.g. "H4 → H1 → M30 → M15 → M10 → M7 → M6 → M5 → M4 → M3 → M2 → M1". */
   ladder: string;
   macroTf: string;
   setupTf: string;

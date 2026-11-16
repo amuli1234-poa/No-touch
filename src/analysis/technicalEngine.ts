@@ -2,18 +2,22 @@ import {
   aiAtr,
   buildAiSignal,
   buildTimeframeReads,
+  ladderTimeframeReads,
+  timeframeConditionRead,
   clamp,
+  structurallyValidDrafts,
   emaLast,
   makeZone,
-  orderTargets,
+  resolveTargets,
   readAiCondition,
   rsiLast,
   smaLast,
   stdevLast,
   statusForScore,
+  scanM1Confirmation,
 } from './aiCommon';
 import { computeAdxSeries, computeMacdSeries, computeRsiSeries } from './indicators';
-import { detectSwings, getCandleStats } from './swings';
+import { detectSwings } from './swings';
 import { confirmedOnly } from './trendlineDetection';
 import type {
   AiDirection,
@@ -23,7 +27,7 @@ import type {
   AiTimeframeRead,
   AiZone,
 } from '../types/aiModule';
-import type { Candle, MarketFamily } from '../types/market';
+import type { Candle, MarketFamily, TimeframeKey } from '../types/market';
 import { formatPrice } from '../utils/derivParser';
 
 /**
@@ -57,6 +61,12 @@ export interface TechnicalEngineParams {
   structureCandles: readonly Candle[];
   setupCandles: readonly Candle[];
   entryCandles: readonly Candle[];
+  /** M7 (trend & structure) candles — optional. */
+  trendCandles?: readonly Candle[];
+  /** M3 (entry confirmation) candles — optional. */
+  confirmCandles?: readonly Candle[];
+  /** ALL TEN analysis timeframes for this index (M30/M15/M10/M7/M6/M5/M4/M3/M2/M1). */
+  candlesByTimeframe?: Partial<Record<TimeframeKey, readonly Candle[]>>;
   dataHealth: 'HEALTHY' | 'STALE' | 'DISCONNECTED';
 }
 
@@ -168,24 +178,21 @@ function m1TechConfirm(
   direction: AiDirection,
   atr: number
 ): { confirmed: boolean; time: number; detail: string } {
-  const bars = confirmedOnly(entry);
-  for (let i = bars.length - 1; i >= Math.max(0, bars.length - 5); i--) {
-    const bar = bars[i];
-    const stats = getCandleStats(bar);
-    const dirOk = direction === 'RISE' ? stats.isBullish : stats.isBearish;
-    if (dirOk && stats.body >= atr * 0.35 && stats.closePosition > 0.55 === (direction === 'RISE')) {
-      return {
-        confirmed: true,
-        time: bar.time,
-        detail: `M1 confirmed with a ${
-          direction === 'RISE' ? 'bullish' : 'bearish'
-        } body (${(stats.body / atr).toFixed(2)}× ATR) and a ${
-          direction === 'RISE' ? 'strong' : 'weak'
-        } close.`,
-      };
-    }
-  }
-  return { confirmed: false, time: 0, detail: 'M1 entry confirmation pending.' };
+  return scanM1Confirmation(
+    entry,
+    (bar, stats) => {
+      const dirOk = direction === 'RISE' ? stats.isBullish : stats.isBearish;
+      if (!(dirOk && stats.body >= atr * 0.35 && stats.closePosition > 0.55 === (direction === 'RISE'))) {
+        return null;
+      }
+      return `M1 confirmed with a ${
+        direction === 'RISE' ? 'bullish' : 'bearish'
+      } body (${(stats.body / atr).toFixed(2)}× ATR) and a ${
+        direction === 'RISE' ? 'strong' : 'weak'
+      } close.`;
+    },
+    'M1 entry confirmation pending.'
+  );
 }
 
 export function analyzeTechnicalInstrument(params: TechnicalEngineParams): AiInstrumentAnalysis {
@@ -258,9 +265,13 @@ export function analyzeTechnicalInstrument(params: TechnicalEngineParams): AiIns
 
   if (trending && (bullStack || bearStack)) {
     const direction: AiDirection = bullStack ? 'RISE' : 'FALL';
-    const pullbackLevel = direction === 'RISE' ? read.ema20 ?? price : read.ema20 ?? price;
+    // A pullback entry must sit on the retracement side of price: at or below for a long,
+    // at or above for a short. Without the clamp an EMA20 on the far side of price would
+    // publish an entry whose stop lands on the wrong side of the trade.
+    const emaPullback = read.ema20 ?? price;
+    const pullbackLevel = direction === 'RISE' ? Math.min(emaPullback, price) : Math.max(emaPullback, price);
     const conf = m1TechConfirm(entry, direction, aiAtr(entry));
-    const targets = orderTargets(direction, price, direction === 'RISE' ? highs : lows).slice(0, 3);
+    const targets = resolveTargets(direction, pullbackLevel, direction === 'RISE' ? highs : lows, atr);
     const aligned = (direction === 'RISE' ? momentumUp : momentumDown) && (read.adx ?? 0) >= 20;
     const score = clamp(
       55 +
@@ -295,7 +306,7 @@ export function analyzeTechnicalInstrument(params: TechnicalEngineParams): AiIns
   if (expansion && read.bbUpper !== null && read.bbLower !== null) {
     const direction: AiDirection = price > read.bbUpper ? 'RISE' : price < read.bbLower ? 'FALL' : 'RISE';
     const conf = m1TechConfirm(entry, direction, aiAtr(entry));
-    const targets = orderTargets(direction, price, direction === 'RISE' ? highs : lows).slice(0, 3);
+    const targets = resolveTargets(direction, price, direction === 'RISE' ? highs : lows, atr);
     drafts.push({
       modelId: 'TECH_VOLATILITY_EXPANSION',
       direction,
@@ -318,7 +329,7 @@ export function analyzeTechnicalInstrument(params: TechnicalEngineParams): AiIns
   if (ranging && read.bbUpper !== null && read.bbLower !== null && read.rsi !== null) {
     if (price >= read.bbUpper - atr * 0.2 && read.rsi >= 60) {
       const conf = m1TechConfirm(entry, 'FALL', aiAtr(entry));
-      const targets = orderTargets('FALL', price, [read.bbLower, ...lows]).slice(0, 3);
+      const targets = resolveTargets('FALL', price, [read.bbLower, ...lows], atr);
       drafts.push({
         modelId: 'TECH_BB_MEAN_REVERSION',
         direction: 'FALL',
@@ -338,7 +349,7 @@ export function analyzeTechnicalInstrument(params: TechnicalEngineParams): AiIns
       });
     } else if (price <= read.bbLower + atr * 0.2 && read.rsi <= 40) {
       const conf = m1TechConfirm(entry, 'RISE', aiAtr(entry));
-      const targets = orderTargets('RISE', price, [read.bbUpper, ...highs]).slice(0, 3);
+      const targets = resolveTargets('RISE', price, [read.bbUpper, ...highs], atr);
       drafts.push({
         modelId: 'TECH_BB_MEAN_REVERSION',
         direction: 'RISE',
@@ -367,7 +378,7 @@ export function analyzeTechnicalInstrument(params: TechnicalEngineParams): AiIns
       if (flippedUp || flippedDown) {
         const direction: AiDirection = flippedUp ? 'RISE' : 'FALL';
         const conf = m1TechConfirm(entry, direction, aiAtr(entry));
-        const targets = orderTargets(direction, price, direction === 'RISE' ? highs : lows).slice(0, 3);
+        const targets = resolveTargets(direction, price, direction === 'RISE' ? highs : lows, atr);
         drafts.push({
           modelId: 'TECH_MACD_SHIFT',
           direction,
@@ -388,12 +399,23 @@ export function analyzeTechnicalInstrument(params: TechnicalEngineParams): AiIns
     }
   }
 
-  const best = drafts.sort((a, b) => b.score - a.score)[0] ?? null;
+  const best = structurallyValidDrafts(drafts).sort((a, b) => b.score - a.score)[0] ?? null;
   const bestScore = best?.score ?? 0;
   const gate = TECHNICAL_PUBLICATION_MIN_SCORE;
-  const status = statusForScore(bestScore, gate);
+  const status = statusForScore(bestScore, gate, best?.confirmed === true);
+
+  const trendRead = params.trendCandles
+    ? timeframeConditionRead(params.trendCandles, 'M7 trend & structure')
+    : null;
+  const confirmRead = params.confirmCandles
+    ? timeframeConditionRead(params.confirmCandles, 'M3 confirmation')
+    : null;
 
   const timeframes: AiTimeframeRead[] = buildTimeframeReads({
+    m7: trendRead?.detail,
+    m7Tone: trendRead?.tone,
+    m3: confirmRead?.detail,
+    m3Tone: confirmRead?.tone,
     m15: `${conditionLabel.replace(/_/g, ' ').toLowerCase()} — ${condition.detail}`,
     m15Tone: condition.bias === 'bullish' ? 'bull' : condition.bias === 'bearish' ? 'bear' : 'neutral',
     m5: best
@@ -404,6 +426,7 @@ export function analyzeTechnicalInstrument(params: TechnicalEngineParams): AiIns
     m5Tone: best ? (best.confirmed ? 'bull' : 'warn') : 'neutral',
     m1: best ? (best.confirmed ? 'M1 entry confirmed.' : 'M1 entry confirmation pending.') : 'No M1 confirmation.',
     m1Tone: best?.confirmed ? 'bull' : 'neutral',
+    ladder: ladderTimeframeReads(params.candlesByTimeframe),
   });
 
   const zones: AiZone[] = [];

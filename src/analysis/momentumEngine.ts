@@ -2,17 +2,22 @@ import {
   aiAtr,
   buildAiSignal,
   buildTimeframeReads,
+  ladderTimeframeReads,
+  timeframeConditionRead,
   clamp,
+  structurallyValidDrafts,
   emaLast,
   makeZone,
-  orderTargets,
+  confluenceBonus,
+  resolveTargets,
   rsiLast,
   smaLast,
   stdevLast,
   statusForScore,
+  m1BodyConfirm,
 } from './aiCommon';
 import { computeAdxSeries, computeMacdSeries } from './indicators';
-import { detectSwings, getCandleStats } from './swings';
+import { detectSwings } from './swings';
 import { confirmedOnly } from './trendlineDetection';
 import type {
   AiDirection,
@@ -22,7 +27,7 @@ import type {
   AiTimeframeRead,
   AiZone,
 } from '../types/aiModule';
-import type { Candle, MarketFamily } from '../types/market';
+import type { Candle, MarketFamily, TimeframeKey } from '../types/market';
 import { formatPrice } from '../utils/derivParser';
 
 /**
@@ -63,6 +68,12 @@ export interface MomentumEngineParams {
   structureCandles: readonly Candle[];
   setupCandles: readonly Candle[];
   entryCandles: readonly Candle[];
+  /** M7 (trend & structure) candles — optional. */
+  trendCandles?: readonly Candle[];
+  /** M3 (entry confirmation) candles — optional. */
+  confirmCandles?: readonly Candle[];
+  /** ALL TEN analysis timeframes for this index (M30/M15/M10/M7/M6/M5/M4/M3/M2/M1). */
+  candlesByTimeframe?: Partial<Record<TimeframeKey, readonly Candle[]>>;
   dataHealth: 'HEALTHY' | 'STALE' | 'DISCONNECTED';
 }
 
@@ -165,22 +176,17 @@ function m1Confirm(
   direction: AiDirection,
   atr: number
 ): { confirmed: boolean; time: number; detail: string } {
-  const bars = confirmedOnly(entry);
-  for (let i = bars.length - 1; i >= Math.max(0, bars.length - 5); i--) {
-    const bar = bars[i];
-    const stats = getCandleStats(bar);
-    const dirOk = direction === 'RISE' ? stats.isBullish : stats.isBearish;
-    if (dirOk && stats.body >= atr * 0.35) {
-      return {
-        confirmed: true,
-        time: bar.time,
-        detail: `M1 confirmed the ${direction === 'RISE' ? 'bullish' : 'bearish'} momentum with a ${
-          (stats.body / atr).toFixed(2)
-        }× ATR body.`,
-      };
-    }
-  }
-  return { confirmed: false, time: 0, detail: 'M1 momentum confirmation pending.' };
+  return m1BodyConfirm(
+    entry,
+    direction,
+    atr,
+    0.35,
+    (stats) =>
+      `M1 confirmed the ${direction === 'RISE' ? 'bullish' : 'bearish'} momentum with a ${(
+        stats.body / atr
+      ).toFixed(2)}× ATR body.`,
+    'M1 momentum confirmation pending.'
+  );
 }
 
 export function analyzeMomentumInstrument(params: MomentumEngineParams): AiInstrumentAnalysis {
@@ -258,7 +264,7 @@ export function analyzeMomentumInstrument(params: MomentumEngineParams): AiInstr
   const drafts: Draft[] = [];
 
   const targetFor = (direction: AiDirection): number[] =>
-    orderTargets(direction, price, direction === 'RISE' ? highs : lows).slice(0, 3);
+    resolveTargets(direction, price, direction === 'RISE' ? highs : lows, atr);
 
   const bullStack =
     read.ema9 !== null && read.ema20 !== null && read.ema50 !== null && read.ema9 > read.ema20 && read.ema20 > read.ema50;
@@ -271,14 +277,18 @@ export function analyzeMomentumInstrument(params: MomentumEngineParams): AiInstr
     const conf = m1Confirm(entry, dir, aiAtr(entry));
     const targets = targetFor(dir);
     const volatilityOk = volRegime === 'NORMAL' || volRegime === 'HIGH' || volRegime === 'EXPANSION';
+    // The EMA pullback stop must stay on the invalidation side of the market entry; when
+    // the EMA sits beyond price the stop is clamped so it can never invert the trade.
+    const emaStop = dir === 'RISE' ? (read.ema20 ?? price - atr * 1.5) - atr * 0.5 : (read.ema20 ?? price + atr * 1.5) + atr * 0.5;
+    const stop = dir === 'RISE' ? Math.min(emaStop, price - atr * 0.5) : Math.max(emaStop, price + atr * 0.5);
     drafts.push({
       modelId: volRegime === 'EXPANSION' ? 'MOM_EXPANSION_CONTINUATION' : 'MOM_CONTINUATION',
       direction: dir,
       entry: price,
-      stop: dir === 'RISE' ? (read.ema20 ?? price - atr * 1.5) - atr * 0.5 : (read.ema20 ?? price + atr * 1.5) + atr * 0.5,
+      stop,
       targets,
       score: clamp(
-        56 + (volatilityOk ? 10 : 0) + (conf.confirmed ? 12 : 0) + (targets.length >= 2 ? 8 : 0) + ((read.adx ?? 0) >= 25 ? 6 : 0),
+        56 + (volatilityOk ? 10 : 0) + (conf.confirmed ? 12 : 0) + (targets.length >= 2 ? 8 : 0) + ((read.adx ?? 0) >= 25 ? 6 : 0) + confluenceBonus({ trendAligned: bullStack || bearStack, momentumConfirmed: true, displacement: volRegime === 'EXPANSION' }),
         0,
         100
       ),
@@ -302,7 +312,11 @@ export function analyzeMomentumInstrument(params: MomentumEngineParams): AiInstr
       entry: price,
       stop: dir === 'RISE' ? price - atr * 1.6 : price + atr * 1.6,
       targets,
-      score: clamp(55 + (strongBody ? 12 : 4) + (conf.confirmed ? 12 : 0) + (targets.length >= 2 ? 6 : 0), 0, 100),
+      score: clamp(
+        55 + (strongBody ? 12 : 4) + (conf.confirmed ? 12 : 0) + (targets.length >= 2 ? 6 : 0) + confluenceBonus({ displacement: strongBody }),
+        0,
+        100
+      ),
       reasons: [
         'Volatility is compressing — a breakout is developing.',
         strongBody ? 'The latest candle shows expansion out of the compression.' : 'Awaiting displacement out of compression.',
@@ -332,7 +346,7 @@ export function analyzeMomentumInstrument(params: MomentumEngineParams): AiInstr
       entry: price,
       stop: dir === 'RISE' ? price - atr * 1.4 : price + atr * 1.4,
       targets,
-      score: clamp(54 + (conf.confirmed ? 14 : 0), 0, 100),
+      score: clamp(54 + (conf.confirmed ? 14 : 0) + confluenceBonus({ displacement: true }), 0, 100),
       reasons: [
         `Momentum is weakening while RSI ${(read.rsi ?? 0).toFixed(1)} diverges from price — exhaustion.`,
         conf.detail,
@@ -344,10 +358,10 @@ export function analyzeMomentumInstrument(params: MomentumEngineParams): AiInstr
     });
   }
 
-  const best = drafts.sort((a, b) => b.score - a.score)[0] ?? null;
+  const best = structurallyValidDrafts(drafts).sort((a, b) => b.score - a.score)[0] ?? null;
   const bestScore = best?.score ?? 0;
   const gate = MOMENTUM_PUBLICATION_MIN_SCORE;
-  const status = statusForScore(bestScore, gate);
+  const status = statusForScore(bestScore, gate, best?.confirmed === true);
 
   const zones: AiZone[] = [];
   if (read.ema20 !== null) {
@@ -366,13 +380,25 @@ export function analyzeMomentumInstrument(params: MomentumEngineParams): AiInstr
     );
   }
 
+  const trendRead = params.trendCandles
+    ? timeframeConditionRead(params.trendCandles, 'M7 trend & structure')
+    : null;
+  const confirmRead = params.confirmCandles
+    ? timeframeConditionRead(params.confirmCandles, 'M3 confirmation')
+    : null;
+
   const timeframes: AiTimeframeRead[] = buildTimeframeReads({
+    m7: trendRead?.detail,
+    m7Tone: trendRead?.tone,
+    m3: confirmRead?.detail,
+    m3Tone: confirmRead?.tone,
     m15: `${condition.replace(/_/g, ' ').toLowerCase()} · volatility ${volRegime.toLowerCase()}`,
     m15Tone: mom.direction === 'bullish' ? 'bull' : mom.direction === 'bearish' ? 'bear' : 'neutral',
     m5: `${mom.state.replace(/_/g, ' ').toLowerCase()} — ${mom.detail}`,
     m5Tone: mom.direction === 'bullish' ? 'bull' : mom.direction === 'bearish' ? 'bear' : 'neutral',
     m1: best ? (best.confirmed ? 'M1 momentum confirmed.' : 'M1 momentum confirmation pending.') : 'No M1 confirmation.',
     m1Tone: best?.confirmed ? 'bull' : 'neutral',
+    ladder: ladderTimeframeReads(params.candlesByTimeframe),
   });
 
   let signal: AiSignal | null = null;

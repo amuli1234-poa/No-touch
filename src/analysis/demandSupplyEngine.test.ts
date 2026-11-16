@@ -417,10 +417,47 @@ test('analyzeDsInstrument returns a well-formed analysis for a live instrument',
   assert.equal(analysis.symbol, 'R_100');
   assert.equal(analysis.dataHealth, 'HEALTHY');
   assert.ok(analysis.status in DS_STATUS_LABELS);
-  assert.equal(analysis.timeframes.length, 3);
-  assert.equal(analysis.timeframes[0].timeframe, 'M15');
-  assert.equal(analysis.timeframes[2].timeframe, 'M1');
+  // The engine always surfaces the full ten-timeframe ladder — insufficient timeframes are
+  // reported as "awaiting data", never omitted and never faked.
+  assert.equal(analysis.timeframes.length, 10);
+  assert.deepEqual(
+    analysis.timeframes.map((t) => t.timeframe),
+    ['M30', 'M15', 'M10', 'M7', 'M6', 'M5', 'M4', 'M3', 'M2', 'M1']
+  );
   assert.ok(analysis.zones.every((z) => z.type === 'demand' || z.type === 'supply'));
+});
+
+test('analyzeDsInstrument reads the whole ten-timeframe ladder when all series are supplied', () => {
+  const analysis = analyzeDsInstrument({
+    symbol: 'R_100',
+    displayName: 'Volatility 100',
+    precision: 2,
+    marketFamily: 'VOLATILITY',
+    structureCandles: dbrStructure(),
+    trendCandles: dbrStructure(1_700_000_000, 420),
+    setupCandles: setupAtZone(1_700_000_000, M5_STEP, 24),
+    confirmCandles: setupAtZone(1_700_000_000, 180, 24),
+    entryCandles: m1BullishRejection(),
+    candlesByTimeframe: {
+      M30: dbrStructure(1_700_000_000, 1800),
+      M15: dbrStructure(),
+      M10: dbrStructure(1_700_000_000, 600),
+      M7: dbrStructure(1_700_000_000, 420),
+      M6: dbrStructure(1_700_000_000, 360),
+      M5: setupAtZone(1_700_000_000, M5_STEP, 24),
+      M4: dbrStructure(1_700_000_000, 240),
+      M3: setupAtZone(1_700_000_000, 180, 24),
+      M2: dbrStructure(1_700_000_000, 120),
+      M1: m1BullishRejection(),
+    },
+  });
+  assert.deepEqual(
+    analysis.timeframes.map((t) => t.timeframe),
+    ['M30', 'M15', 'M10', 'M7', 'M6', 'M5', 'M4', 'M3', 'M2', 'M1']
+  );
+  for (const tf of analysis.timeframes) {
+    assert.ok(tf.detail.length > 0, `${tf.timeframe}: empty detail`);
+  }
 });
 
 test('analyzeDsInstrument withholds a signal when the data feed is stale', () => {
@@ -466,7 +503,9 @@ function makeSignal(overrides: Partial<DsSignal> = {}): DsSignal {
     model: 'DS_FRESH_REJECTION',
     modelLabel: 'Fresh Zone Rejection',
     structureTimeframe: 'M15',
+    trendTimeframe: 'M7',
     setupTimeframe: 'M5',
+    confirmTimeframe: 'M3',
     entryTimeframe: 'M1',
     score: 90,
     zoneQuality: zone.score.total,

@@ -10,6 +10,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import type { HealthCheck, HealthStatus } from '../../analysis/systemHealth';
+import { HEALTH_TIMEFRAMES } from '../../analysis/systemHealth';
 import type { HealthReport } from '../../hooks/useSystemHealth';
 import { Card, StatTile } from '../ui/primitives';
 
@@ -215,8 +216,8 @@ export function SystemHealthView({ health }: { health: HealthReport }) {
 
           <Card className="p-4">
             <h2 className="text-[13px] font-semibold text-ink">Timeframe synchronisation</h2>
-            <div className="grid grid-cols-3 gap-2 mt-2">
-              {(['M1', 'M5', 'M15'] as const).map((tf) => (
+            <div className="grid grid-cols-5 gap-2 mt-2">
+              {HEALTH_TIMEFRAMES.map((tf) => (
                 <StatTile
                   key={tf}
                   label={tf}
@@ -226,18 +227,18 @@ export function SystemHealthView({ health }: { health: HealthReport }) {
               ))}
             </div>
             <p className="text-[10px] text-faint mt-2 leading-snug">
-              The shared chart loads one timeframe at a time; the health centre fetches M1/M5/M15
-              internally to verify synchronisation without cluttering the visible chart.
+              The shared chart loads one timeframe at a time; the health centre fetches all ten
+              (M30/M15/M10/M7/M6/M5/M4/M3/M2/M1) internally to verify synchronisation without cluttering the
+              visible chart. M7 is built internally from M1; M3 is native 180s.
             </p>
           </Card>
 
           <Card className="p-4">
             <h2 className="text-[13px] font-semibold text-ink">Fixed in this build</h2>
             <ul className="mt-1.5 space-y-1 text-[11px] text-muted list-disc pl-4">
-              <li>Enforced a single shared candlestick chart across every module (module panels now publish overlays instead of rendering their own chart).</li>
-              <li>Grouped navigation so no module is buried; added mobile “More” sheet for the full module list.</li>
-              <li>Fixed a grid-overflow issue where the chart column was removed from module layouts.</li>
-              <li>Applied the Inter typography scale and one consistent colour system with reduced-motion support.</li>
+              {health.fixedIssues.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
             </ul>
           </Card>
         </div>

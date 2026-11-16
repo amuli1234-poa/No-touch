@@ -12,22 +12,22 @@ import type { CanvasRenderingTarget2D } from 'fancy-canvas';
 import type { DsSignal, DsZone } from '../../types/demandSupply';
 import { formatPrice } from '../../utils/derivParser';
 import {
-  MARKUP,
   MARKUP_ALPHA,
-  MARKUP_LABEL,
-  MARKUP_WIDTH,
-  drawHLine,
-  drawLabel,
-  drawZoneBox,
-} from './chartMarkupStyle';
+  MARKUP_COLORS,
+  MARKUP_DASH,
+  MARKUP_LINE,
+  drawTag,
+  hexToRgba,
+} from './markupStyle';
 
 /**
  * DEMAND & SUPPLY AI chart overlay.
  *
- * Draws only the current valid demand (blue) and supply (red) zones with their proximal /
- * distal boundaries and, when a signal is confirmed, the entry / TP / invalidation levels.
- * Everything is lightly shaded with thin edges and short labels (DZ, SZ, E, TP, SL) so the
- * candles stay the focus. Fully-mitigated / invalidated / historical zones are never drawn.
+ * Draws ONLY the current valid demand (blue) and supply (red) zones with their proximal /
+ * distal boundaries and — when a signal is confirmed — TP1 / TP2 and the invalidation
+ * level. Fully-mitigated / invalidated / historical zones are never drawn.
+ *
+ * Minimalist styling: transparent zone fills, hairline boundaries, short DZ / SZ labels.
  */
 export interface DsChartOverlay {
   zones: DsZone[];
@@ -57,79 +57,93 @@ class DsRenderer implements IPrimitivePaneRenderer {
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'left';
 
+      // ---- Current valid zones: demand = blue, supply = red ----
       const drawZone = (zone: DsZone, isWatch: boolean) => {
         // A zone that is fully mitigated or invalidated is history — unless it has been
         // role-flipped (a broken demand zone now acting as supply is a current level).
-        if ((zone.state === 'INVALIDATED' || zone.state === 'FULLY_MITIGATED') && !zone.flipped) return;
+        if ((zone.state === 'INVALIDATED' || zone.state === 'FULLY_MITIGATED') && !zone.flipped) {
+          return;
+        }
         const isDemand = zone.type === 'demand';
-        const color = isDemand ? MARKUP.support : MARKUP.bear;
+        const color = isDemand ? MARKUP_COLORS.support : MARKUP_COLORS.resistance;
 
         const yUpper = series.priceToCoordinate(zone.upperPrice);
         const yLower = series.priceToCoordinate(zone.lowerPrice);
         if (yUpper === null || yLower === null) return;
         const top = Math.min(yUpper, yLower);
-        const h = Math.max(2, Math.abs(yLower - yUpper));
+        const zoneH = Math.max(2, Math.abs(yLower - yUpper));
 
-        drawZoneBox(ctx, {
-          x: 0,
-          y: top,
-          w: width,
-          h,
-          color,
-          fillAlpha: isWatch ? MARKUP_ALPHA.fillFaint : MARKUP_ALPHA.fill,
-          edgeAlpha: MARKUP_ALPHA.edge,
-          edgesOnly: true,
-          dash: isWatch ? [6, 5] : [],
-        });
+        // Barely-there band fill; watch zones a touch lighter still.
+        ctx.fillStyle = hexToRgba(color, isWatch ? MARKUP_ALPHA.fill : MARKUP_ALPHA.fillActive);
+        ctx.fillRect(0, top, width, zoneH);
 
-        // Proximal (solid) / distal (dashed) edges — thin.
+        // Proximal edge (firmer) and distal edge (fainter) boundaries.
         const yProx = series.priceToCoordinate(zone.proximalPrice);
         const yDist = series.priceToCoordinate(zone.distalPrice);
         if (yProx !== null) {
-          drawHLine(ctx, yProx, width, color, {
-            width: MARKUP_WIDTH.line,
-            alpha: MARKUP_ALPHA.edgeStrong,
-            dash: isWatch ? [6, 5] : [],
-          });
+          ctx.strokeStyle = hexToRgba(color, isWatch ? MARKUP_ALPHA.edgeSoft : MARKUP_ALPHA.edge);
+          ctx.lineWidth = MARKUP_LINE.hair;
+          ctx.setLineDash(isWatch ? MARKUP_DASH.subtle : MARKUP_DASH.solid);
+          ctx.beginPath();
+          ctx.moveTo(0, yProx);
+          ctx.lineTo(width, yProx);
+          ctx.stroke();
         }
         if (yDist !== null) {
-          drawHLine(ctx, yDist, width, color, {
-            width: MARKUP_WIDTH.hairline,
-            alpha: MARKUP_ALPHA.edge,
-            dash: [5, 4],
-          });
+          ctx.strokeStyle = hexToRgba(color, MARKUP_ALPHA.edgeSoft);
+          ctx.lineWidth = MARKUP_LINE.hair;
+          ctx.setLineDash(MARKUP_DASH.subtle);
+          ctx.beginPath();
+          ctx.moveTo(0, yDist);
+          ctx.lineTo(width, yDist);
+          ctx.stroke();
         }
+        ctx.setLineDash([]);
 
-        const code = isDemand ? MARKUP_LABEL.demand : MARKUP_LABEL.supply;
-        const ly = Math.max(9, Math.min(height - 9, top + h / 2));
-        drawLabel(ctx, `${code}${isWatch ? ` ${MARKUP_LABEL.watch}` : ''}`, 6, ly, color, {
-          size: 9,
-          weight: 700,
+        // One short label: DZ (demand) / SZ (supply), + WATCH when ahead of price.
+        const token = isDemand ? 'DZ' : 'SZ';
+        const text = isWatch ? `${token} · WATCH` : token;
+        drawTag(ctx, {
+          x: 6,
+          y: Math.max(7, Math.min(height - 7, top + zoneH / 2)),
+          text,
+          color,
         });
       };
 
       for (const zone of overlay.watchZones ?? []) drawZone(zone, true);
       for (const zone of overlay.zones) drawZone(zone, false);
 
-      // ---- Confirmed signal: entry / TP / invalidation + a small directional marker ----
+      // ---- Confirmed signal: entry + TP1 / TP2 + invalidation ----
       const signal = overlay.signal;
       if (signal) {
         const isRise = signal.direction === 'RISE';
-        const dirColor = isRise ? MARKUP.support : MARKUP.bear;
+        const dirColor = isRise ? MARKUP_COLORS.rise : MARKUP_COLORS.fall;
 
-        this.drawLevel(ctx, series, width, signal.entryPrice, MARKUP.entry, MARKUP_LABEL.entry, []);
-        this.drawLevel(ctx, series, width, signal.takeProfit1, MARKUP.target, MARKUP_LABEL.target, [7, 5]);
-        this.drawLevel(ctx, series, width, signal.takeProfit2, MARKUP.target, MARKUP_LABEL.target, [7, 5]);
-        this.drawLevel(ctx, series, width, signal.stopLoss, MARKUP.stop, MARKUP_LABEL.stop, []);
+        this.drawLevel(ctx, series, width, signal.entryPrice, MARKUP_COLORS.entry, 'ENTRY', MARKUP_DASH.solid);
+        this.drawLevel(ctx, series, width, signal.takeProfit1, MARKUP_COLORS.target, 'TP1', MARKUP_DASH.dashed);
+        this.drawLevel(ctx, series, width, signal.takeProfit2, MARKUP_COLORS.target, 'TP2', MARKUP_DASH.dashed);
+        this.drawLevel(ctx, series, width, signal.stopLoss, MARKUP_COLORS.stop, 'SL', MARKUP_DASH.solid);
 
         const xEntry = timeScale.timeToCoordinate(signal.confirmedBarTime as UTCTimestamp);
         const yEntry = series.priceToCoordinate(signal.entryPrice);
-        if (xEntry !== null && yEntry !== null && xEntry >= 0 && xEntry <= width) {
-          drawBreakMarker(ctx, xEntry, yEntry, dirColor, isRise);
-          drawLabel(ctx, isRise ? 'RISE' : 'FALL', xEntry + 7, yEntry - 10, dirColor, {
-            size: 9,
-            weight: 700,
-          });
+        if (xEntry !== null && yEntry !== null) {
+          const markerY = isRise ? yEntry + 12 : yEntry - 12;
+          ctx.fillStyle = dirColor;
+          ctx.beginPath();
+          if (isRise) {
+            ctx.moveTo(xEntry, markerY - 6);
+            ctx.lineTo(xEntry - 4, markerY + 3);
+            ctx.lineTo(xEntry + 4, markerY + 3);
+          } else {
+            ctx.moveTo(xEntry, markerY + 6);
+            ctx.lineTo(xEntry - 4, markerY - 3);
+            ctx.lineTo(xEntry + 4, markerY - 3);
+          }
+          ctx.closePath();
+          ctx.fill();
+
+          drawTag(ctx, { x: xEntry + 6, y: markerY, text: isRise ? 'RISE' : 'FALL', color: dirColor });
         }
       }
 
@@ -148,35 +162,24 @@ class DsRenderer implements IPrimitivePaneRenderer {
   ): void {
     const y = series.priceToCoordinate(price);
     if (y === null) return;
-    drawHLine(ctx, y, width, color, { dash, width: MARKUP_WIDTH.line, alpha: MARKUP_ALPHA.line });
-    const text = `${badge} ${formatPrice(price, this.source.overlay?.precision ?? 2)}`;
-    drawLabel(ctx, text, 6, y - 9, color, { size: 9, weight: 700 });
-  }
-}
+    ctx.save();
+    ctx.setLineDash(dash);
+    ctx.strokeStyle = hexToRgba(color, MARKUP_ALPHA.edge);
+    ctx.lineWidth = MARKUP_LINE.hair;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
 
-function drawBreakMarker(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  color: string,
-  bullish: boolean
-): void {
-  const s = 4;
-  ctx.save();
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  if (bullish) {
-    ctx.moveTo(x, y - s);
-    ctx.lineTo(x - s, y + s);
-    ctx.lineTo(x + s, y + s);
-  } else {
-    ctx.moveTo(x, y + s);
-    ctx.lineTo(x - s, y - s);
-    ctx.lineTo(x + s, y - s);
+    drawTag(ctx, {
+      x: 6,
+      y,
+      text: `${badge} ${formatPrice(price, this.source.overlay?.precision ?? 2)}`,
+      color,
+    });
   }
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
 }
 
 class DsPaneView implements IPrimitivePaneView {
@@ -194,7 +197,7 @@ class DsPaneView implements IPrimitivePaneView {
 
 /**
  * Renders the Demand & Supply AI's current zones and the confirmed signal's entry /
- * TP / invalidation on the candle canvas.
+ * TP1 / TP2 / invalidation on the candle canvas.
  */
 export class DsChartPrimitive implements ISeriesPrimitive<Time> {
   chart: SeriesAttachedParameter<Time, SeriesType>['chart'] | null = null;

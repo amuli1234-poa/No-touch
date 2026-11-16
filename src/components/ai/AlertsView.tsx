@@ -679,32 +679,35 @@ export function AlertsView({ manager }: AlertsViewProps) {
           title="Accuracy by module"
           subtitle="Generated alerts vs. resolved outcomes (never conflated with executed trades)."
           icon={<History className="w-4 h-4" aria-hidden="true" />}
+          className="min-w-0"
         >
           {manager.byModule.length === 0 ? (
             <div className="text-[11px] text-faint py-3 text-center">No alerts yet.</div>
           ) : (
-            <table className="w-full text-[11px]">
-              <thead>
-                <tr className="text-faint text-left">
-                  <th className="py-1.5 pr-2 font-semibold">Module</th>
-                  <th className="py-1.5 pr-2 font-semibold text-right">Alerts</th>
-                  <th className="py-1.5 pr-2 font-semibold text-right">Resolved</th>
-                  <th className="py-1.5 pr-2 font-semibold text-right">Accuracy</th>
-                </tr>
-              </thead>
-              <tbody>
-                {manager.byModule.map((r) => (
-                  <tr key={r.key} className="border-t border-line-soft">
-                    <td className="py-1.5 pr-2 text-ink font-semibold truncate max-w-[180px]">{r.key}</td>
-                    <td className="py-1.5 pr-2 text-right font-mono text-muted">{r.total}</td>
-                    <td className="py-1.5 pr-2 text-right font-mono text-muted">{r.resolved}</td>
-                    <td className="py-1.5 pr-2 text-right font-mono text-muted">
-                      {r.accuracyPercent === null ? 'n/a' : `${r.accuracyPercent}%`}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="text-faint text-left">
+                    <th className="py-1.5 pr-2 font-semibold">Module</th>
+                    <th className="py-1.5 pr-2 font-semibold text-right">Alerts</th>
+                    <th className="py-1.5 pr-2 font-semibold text-right">Resolved</th>
+                    <th className="py-1.5 pr-2 font-semibold text-right">Accuracy</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {manager.byModule.map((r) => (
+                    <tr key={r.key} className="border-t border-line-soft">
+                      <td className="py-1.5 pr-2 text-ink font-semibold truncate max-w-[180px]">{r.key}</td>
+                      <td className="py-1.5 pr-2 text-right font-mono text-muted">{r.total}</td>
+                      <td className="py-1.5 pr-2 text-right font-mono text-muted">{r.resolved}</td>
+                      <td className="py-1.5 pr-2 text-right font-mono text-muted">
+                        {r.accuracyPercent === null ? 'n/a' : `${r.accuracyPercent}%`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </SectionCard>
 

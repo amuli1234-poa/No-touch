@@ -1,22 +1,41 @@
-import type { SyntheticMarket } from '../types/market';
+import type { MarketFamily, SyntheticMarket } from '../types/market';
 
 /**
  * GLOBAL ALL-MARKETS COVERAGE — the single source of truth for "which markets may this app
  * analyse?".
  *
  * Eligibility rule (applied everywhere):
- *  - INCLUDE every standard Volatility Index and every 1-second Volatility Index that Deriv
- *    currently publishes (discovered dynamically via `active_symbols`, so a newly listed
- *    eligible index is picked up automatically).
+ *  - INCLUDE every standard Volatility Index and every 1-second Volatility Index Deriv
+ *    currently publishes (discovered dynamically via `active_symbols`).
+ *  - INCLUDE every Jump Index (JD*) and the Step Index (stpRNG*) — they are analysed by
+ *    every scanner/AI module with their own market-specific logic.
  *  - EXCLUDE Boom and Crash indices completely.
- *  - EXCLUDE every non-Volatility synthetic family (Jump, Step, Range Break, Daily Reset,
- *    Drift/DEX/Trek/Skew, baskets).
+ *  - EXCLUDE every other synthetic family (Range Break, Daily Reset, Drift/DEX/Trek/Skew,
+ *    baskets).
  *
- * The list is never hardcoded: `eligibleMarkets` filters whatever Deriv returned.
+ * The list is never hardcoded: `eligibleMarkets` filters whatever Deriv returned, so a
+ * newly listed eligible index is picked up automatically.
  */
 
 const BOOM_CRASH_TOKENS = ['BOOM', 'CRASH'];
-const EXCLUDED_NAME_TOKENS = ['JUMP', 'STEP', 'RANGE BREAK', 'DAILY RESET', 'DRIFT', 'TREK', 'SKEW'];
+/** Families that are analysed. Everything else is structurally excluded. */
+const ELIGIBLE_FAMILIES: ReadonlySet<MarketFamily> = new Set<MarketFamily>([
+  'VOLATILITY',
+  'JUMP',
+  'STEP',
+]);
+/**
+ * Non-Volatility name tokens that must NEVER be analysed, even if a record is mislabelled
+ * with an eligible family. Jump and Step are intentionally absent — they are eligible.
+ */
+const EXCLUDED_NAME_TOKENS = [
+  'RANGE BREAK',
+  'DAILY RESET',
+  'DRIFT',
+  'TREK',
+  'SKEW',
+  'MULTI STEP',
+];
 
 function haystack(market: SyntheticMarket): string {
   return `${market.symbol} ${market.displayName} ${market.submarket}`.toUpperCase();
@@ -29,16 +48,26 @@ export function isBoomOrCrash(market: SyntheticMarket): boolean {
 }
 
 /**
- * True for a genuine Volatility Index (standard or 1-second) that the app may analyse.
- * Family-based first, then a defensive name/symbol check so Boom/Crash and other synthetic
- * families can never slip in through a mislabelled record.
+ * True for a genuine analysable index: a standard or 1-second Volatility Index, a Jump
+ * Index, or the Step Index. Family-based first, then a defensive name/symbol check so
+ * Boom/Crash and the other excluded synthetic families can never slip in through a
+ * mislabelled record.
  */
 export function isEligibleMarket(market: SyntheticMarket): boolean {
   if (isBoomOrCrash(market)) return false;
-  if (market.family !== 'VOLATILITY') return false;
+  if (!ELIGIBLE_FAMILIES.has(market.family)) return false;
   const name = market.displayName.toUpperCase();
   if (EXCLUDED_NAME_TOKENS.some((t) => name.includes(t))) return false;
   return true;
+}
+
+/** Jump Index (JD*) or the Step Index. */
+export function isJumpMarket(market: SyntheticMarket): boolean {
+  return market.family === 'JUMP';
+}
+
+export function isStepMarket(market: SyntheticMarket): boolean {
+  return market.family === 'STEP';
 }
 
 /** 1-second Volatility Index (1HZ*). */
@@ -66,9 +95,22 @@ function volatilityRank(market: SyntheticMarket): number {
   return match ? Number(match[1]) : Number.POSITIVE_INFINITY;
 }
 
+/** Display ordering: standard volatility → 1-second volatility → Jump → Step. */
+function familyRank(market: SyntheticMarket): number {
+  if (market.family === 'JUMP') return 2;
+  if (market.family === 'STEP') return 3;
+  return isOneSecondMarket(market) ? 1 : 0;
+}
+
+function jumpStepRank(market: SyntheticMarket): number {
+  const match = market.displayName.match(/(\d+)/);
+  return match ? Number(match[1]) : Number.POSITIVE_INFINITY;
+}
+
 /**
- * Every eligible market, open first, standard indices before 1-second, then ascending
- * volatility. Pure and deterministic — used by every AI module, the scanner and the analyser.
+ * Every eligible market — standard and 1-second Volatility Indices first, then Jump
+ * Indices, then the Step Index. Pure and deterministic — used by every AI module, the
+ * scanner and the analyser.
  */
 export function eligibleMarkets(
   markets: readonly SyntheticMarket[],
@@ -80,12 +122,13 @@ export function eligibleMarkets(
     .filter((m) => (requireOpen ? m.isOpen : true))
     .filter((m) => (include1Sec ? true : !isOneSecondMarket(m)))
     .sort((a, b) => {
-      const aOne = isOneSecondMarket(a);
-      const bOne = isOneSecondMarket(b);
-      if (aOne !== bOne) return aOne ? 1 : -1;
+      const rankDiff = familyRank(a) - familyRank(b);
+      if (rankDiff !== 0) return rankDiff;
       const diff = volatilityRank(a) - volatilityRank(b);
       if (diff !== 0) return diff;
-      return a.displayName.localeCompare(b.displayName);
+      const jsDiff = jumpStepRank(a) - jumpStepRank(b);
+      if (jsDiff !== 0) return jsDiff;
+      return a.displayName.localeCompare(b.displayName, undefined, { numeric: true });
     });
 }
 

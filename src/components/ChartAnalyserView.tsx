@@ -7,6 +7,7 @@ import {
   stageIndex,
 } from '../utils/analysisStages';
 import { AnalysisPanel } from './AnalysisPanel';
+import { AnalyserCyclePanel } from './AnalyserCyclePanel';
 import { MarketIntelligencePanel } from './MarketIntelligencePanel';
 import { EngineFindingsPanel } from './EngineFindingsPanel';
 import { StructureOpportunitiesPanel } from './StructureOpportunitiesPanel';
@@ -104,6 +105,7 @@ export function ChartAnalyserView() {
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto">
           <div className="p-3 space-y-3 border-b border-line">
+            <AnalyserCyclePanel cycle={ws.analyserCycle} />
             <MarketIntelligencePanel
               intelligence={ws.report?.intelligence ?? null}
               precision={ws.precision}

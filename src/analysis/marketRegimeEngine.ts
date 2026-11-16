@@ -2,14 +2,20 @@ import {
   aiAtr,
   buildAiSignal,
   buildTimeframeReads,
+  ladderTimeframeReads,
+  timeframeConditionRead,
   clamp,
+  structurallyValidDrafts,
+  confluenceBonus,
   emaLast,
   makeZone,
   readAiCondition,
+  resolveTargets,
   statusForScore,
+  m1BodyConfirm,
 } from './aiCommon';
 import { computeAdxSeries, computeMacdSeries } from './indicators';
-import { detectSwings, getCandleStats, computeAtrSeries } from './swings';
+import { detectSwings, computeAtrSeries } from './swings';
 import { analyzeMarketStructure } from './structure';
 import { detectLiquidityPools, detectSweeps } from './smcTools';
 import { confirmedOnly } from './trendlineDetection';
@@ -21,7 +27,7 @@ import type {
   AiTimeframeRead,
   AiZone,
 } from '../types/aiModule';
-import type { Candle, MarketFamily } from '../types/market';
+import type { Candle, MarketFamily, TimeframeKey } from '../types/market';
 import { formatPrice } from '../utils/derivParser';
 
 /**
@@ -52,6 +58,12 @@ export interface MarketRegimeEngineParams {
   structureCandles: readonly Candle[];
   setupCandles: readonly Candle[];
   entryCandles: readonly Candle[];
+  /** M7 (trend & structure) candles — optional. */
+  trendCandles?: readonly Candle[];
+  /** M3 (entry confirmation) candles — optional. */
+  confirmCandles?: readonly Candle[];
+  /** ALL TEN analysis timeframes for this index (M30/M15/M10/M7/M6/M5/M4/M3/M2/M1). */
+  candlesByTimeframe?: Partial<Record<TimeframeKey, readonly Candle[]>>;
   dataHealth: 'HEALTHY' | 'STALE' | 'DISCONNECTED';
 }
 
@@ -185,16 +197,17 @@ function m1Confirm(
   direction: AiDirection,
   atr: number
 ): { confirmed: boolean; time: number; detail: string } {
-  const bars = confirmedOnly(entry);
-  for (let i = bars.length - 1; i >= Math.max(0, bars.length - 5); i--) {
-    const bar = bars[i];
-    const stats = getCandleStats(bar);
-    const dirOk = direction === 'RISE' ? stats.isBullish : stats.isBearish;
-    if (dirOk && stats.body >= atr * 0.35) {
-      return { confirmed: true, time: bar.time, detail: `M1 confirmed the ${direction === 'RISE' ? 'bullish' : 'bearish'} transition with a ${(stats.body / atr).toFixed(2)}× ATR body.` };
-    }
-  }
-  return { confirmed: false, time: 0, detail: 'M1 transition confirmation pending.' };
+  return m1BodyConfirm(
+    entry,
+    direction,
+    atr,
+    0.35,
+    (stats) =>
+      `M1 confirmed the ${direction === 'RISE' ? 'bullish' : 'bearish'} transition with a ${(
+        stats.body / atr
+      ).toFixed(2)}× ATR body.`,
+    'M1 transition confirmation pending.'
+  );
 }
 
 export function analyzeMarketRegimeInstrument(params: MarketRegimeEngineParams): AiInstrumentAnalysis {
@@ -264,14 +277,25 @@ export function analyzeMarketRegimeInstrument(params: MarketRegimeEngineParams):
       const dir: AiDirection = brokeUp ? 'RISE' : 'FALL';
       const level = brokeUp ? rangeHigh : rangeLow;
       const conf = m1Confirm(entry, dir, aiAtr(entry));
-      const targets = dir === 'RISE' ? [rangeHigh + (rangeHigh - rangeLow)] : [rangeLow - (rangeHigh - rangeLow)];
+      // The retest enters at market, so the invalidation must stay on the correct side of
+      // price (a wick back through the broken level) and the measured move is projected
+      // from the ACTUAL entry, not from the level.
+      const structuralStop = dir === 'RISE' ? level - atr * 0.8 : level + atr * 0.8;
+      const stop =
+        dir === 'RISE' ? Math.min(structuralStop, price - atr * 0.2) : Math.max(structuralStop, price + atr * 0.2);
+      const measuredMove = brokeUp ? level + (rangeHigh - rangeLow) : level - (rangeHigh - rangeLow);
+      const targets = resolveTargets(dir, price, [measuredMove], atr);
       drafts.push({
         modelId: 'REGIME_BREAKOUT_RETEST',
         direction: dir,
         entry: price,
-        stop: dir === 'RISE' ? rangeHigh - atr * 0.8 : rangeLow + atr * 0.8,
+        stop,
         targets,
-        score: clamp(58 + (conf.confirmed ? 14 : 0) + (targets.length ? 8 : 0), 0, 100),
+        score: clamp(
+          56 + (conf.confirmed ? 14 : 0) + (targets.length ? 8 : 0) + confluenceBonus({ momentumConfirmed: latestBreak?.momentumConfirmed, trendAligned: dir === (regime.condition === 'STRONG_BEARISH' ? 'FALL' : 'RISE'), displacement: latestBreak?.momentumConfirmed === true }),
+          0,
+          100
+        ),
         reasons: [
           `Range ${brokeUp ? 'high' : 'low'} at ${formatPrice(level, precision)} broken with a body close.`,
           regime.transition,
@@ -290,14 +314,18 @@ export function analyzeMarketRegimeInstrument(params: MarketRegimeEngineParams):
     const dir: AiDirection = regime.condition === 'STRONG_BULLISH' ? 'RISE' : 'FALL';
     const conf = m1Confirm(entry, dir, aiAtr(entry));
     const levels = swings.filter((s) => (dir === 'RISE' ? s.type === 'high' : s.type === 'low')).map((s) => s.price);
-    const targets = levels.filter((p) => (dir === 'RISE' ? p > price : p < price)).sort((a, b) => (dir === 'RISE' ? a - b : b - a)).slice(0, 3);
+    const targets = resolveTargets(dir, price, levels, atr);
     drafts.push({
       modelId: 'REGIME_TREND_CONTINUATION',
       direction: dir,
       entry: price,
       stop: dir === 'RISE' ? price - atr * 1.8 : price + atr * 1.8,
       targets,
-      score: clamp(60 + (conf.confirmed ? 12 : 0) + (targets.length >= 2 ? 6 : 0), 0, 100),
+      score: clamp(
+        58 + (conf.confirmed ? 12 : 0) + (targets.length >= 2 ? 6 : 0) + confluenceBonus({ trendAligned: regime.rating === 'EXCELLENT' || regime.rating === 'GOOD', momentumConfirmed: latestBreak?.momentumConfirmed, displacement: latestBreak?.momentumConfirmed === true }),
+        0,
+        100
+      ),
       reasons: [`${regime.label} regime — pullback continuation is the priority.`, conf.detail],
       confirmations: ['Trend-regime continuation'],
       confirmed: conf.confirmed,
@@ -310,13 +338,19 @@ export function analyzeMarketRegimeInstrument(params: MarketRegimeEngineParams):
   if (regime.condition === 'VOLATILITY_CONTRACTION' || regime.label === 'Tight consolidation') {
     const dir: AiDirection = price >= (equilibrium ?? price) ? 'RISE' : 'FALL';
     const conf = m1Confirm(entry, dir, aiAtr(entry));
+    // Compression release breaks toward the far range edge; keep at least one ATR of
+    // invalidation on the correct side of the market entry.
+    const structuralStop = dir === 'RISE' ? (rangeLow ?? price - atr * 1.6) - atr * 0.2 : (rangeHigh ?? price + atr * 1.6) + atr * 0.2;
+    const stop =
+      dir === 'RISE' ? Math.min(structuralStop, price - atr * 0.2) : Math.max(structuralStop, price + atr * 0.2);
+    const targets = resolveTargets(dir, price, dir === 'RISE' ? [rangeHigh ?? price + atr * 2] : [rangeLow ?? price - atr * 2], atr);
     drafts.push({
       modelId: 'REGIME_COMPRESSION_RELEASE',
       direction: dir,
       entry: price,
-      stop: dir === 'RISE' ? (rangeLow ?? price - atr * 1.6) - atr * 0.2 : (rangeHigh ?? price + atr * 1.6) + atr * 0.2,
-      targets: dir === 'RISE' ? [rangeHigh ?? price + atr * 2] : [rangeLow ?? price - atr * 2],
-      score: clamp(55 + (conf.confirmed ? 12 : 0), 0, 100),
+      stop,
+      targets,
+      score: clamp(55 + (conf.confirmed ? 12 : 0) + confluenceBonus({ displacement: true }), 0, 100),
       reasons: [regime.transition, conf.detail],
       confirmations: ['Compression release'],
       confirmed: conf.confirmed,
@@ -325,10 +359,10 @@ export function analyzeMarketRegimeInstrument(params: MarketRegimeEngineParams):
     });
   }
 
-  const best = drafts.sort((a, b) => b.score - a.score)[0] ?? null;
+  const best = structurallyValidDrafts(drafts).sort((a, b) => b.score - a.score)[0] ?? null;
   const bestScore = best?.score ?? 0;
   const gate = REGIME_PUBLICATION_MIN_SCORE;
-  const status = statusForScore(bestScore, gate);
+  const status = statusForScore(bestScore, gate, best?.confirmed === true);
 
   // ---- Chart zones: range boundaries + equilibrium ----
   const zones: AiZone[] = [];
@@ -370,7 +404,18 @@ export function analyzeMarketRegimeInstrument(params: MarketRegimeEngineParams):
     );
   }
 
+  const trendRead = params.trendCandles
+    ? timeframeConditionRead(params.trendCandles, 'M7 trend & structure')
+    : null;
+  const confirmRead = params.confirmCandles
+    ? timeframeConditionRead(params.confirmCandles, 'M3 confirmation')
+    : null;
+
   const timeframes: AiTimeframeRead[] = buildTimeframeReads({
+    m7: trendRead?.detail,
+    m7Tone: trendRead?.tone,
+    m3: confirmRead?.detail,
+    m3Tone: confirmRead?.tone,
     m15: `${regime.label} · ${regime.detail}`,
     m15Tone: regime.bias === 'bullish' ? 'bull' : regime.bias === 'bearish' ? 'bear' : 'neutral',
     m5: regime.rangeHigh !== null && regime.rangeLow !== null
@@ -379,6 +424,7 @@ export function analyzeMarketRegimeInstrument(params: MarketRegimeEngineParams):
     m5Tone: 'neutral',
     m1: best ? (best.confirmed ? 'M1 transition confirmed.' : 'M1 transition pending.') : 'No M1 confirmation.',
     m1Tone: best?.confirmed ? 'bull' : 'neutral',
+    ladder: ladderTimeframeReads(params.candlesByTimeframe),
   });
 
   let signal: AiSignal | null = null;

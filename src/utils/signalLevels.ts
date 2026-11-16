@@ -1,6 +1,7 @@
 import type { FullAnalysisReport, SignalSnapshot } from '../types/analysis';
 import type { SignalFeedItem } from '../types/signals';
 import type { ManagedSignal } from '../types/training';
+import type { EntryModelDecision } from '../types/entryModelAI';
 import type { SignalLevels } from '../components/chart/SignalAnnotationPrimitive';
 
 export interface DeriveSignalLevelsInput {
@@ -8,6 +9,12 @@ export interface DeriveSignalLevelsInput {
   snapshot: SignalSnapshot | null;
   managed: ManagedSignal | null;
   feedItem: SignalFeedItem | null;
+  /**
+   * The universal Entry Model AI's decision for the setup currently open in Chart Analysis.
+   * When present (and the setup is not invalidated/missed) it supplies the clean entry-model
+   * markings — watching zone, entry area, stop-loss and take-profit levels.
+   */
+  entryModel?: EntryModelDecision | null;
   tpAnimating?: boolean;
 }
 
@@ -26,8 +33,31 @@ export function deriveSignalLevels({
   snapshot,
   managed,
   feedItem,
+  entryModel,
   tpAnimating,
 }: DeriveSignalLevelsInput): SignalLevels | null {
+  // A selected entry model for the open setup takes precedence while it is still actionable
+  // (never for an INVALIDATED / MISSED setup, so a dead setup is never drawn as an entry).
+  if (
+    entryModel &&
+    entryModel.state !== 'INVALIDATED' &&
+    entryModel.state !== 'MISSED' &&
+    entryModel.entryPrice !== null &&
+    entryModel.stopLoss !== null
+  ) {
+    return {
+      direction: entryModel.direction,
+      entry: entryModel.entryPrice,
+      stopLoss: entryModel.stopLoss,
+      takeProfit: entryModel.targets.tp1 ?? entryModel.entryPrice,
+      confirmationTime: entryModel.confirmedBarTime,
+      entryTime: entryModel.confirmedBarTime,
+      modelLabel: entryModel.modelLabel,
+      quality: entryModel.qualityScore,
+      tpAnimating,
+    };
+  }
+
   if (managed) {
     return {
       direction: managed.direction,

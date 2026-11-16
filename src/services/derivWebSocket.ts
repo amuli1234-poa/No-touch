@@ -1,10 +1,18 @@
 import {
   DERIV_WS_URL,
+  DERIVED_GRANULARITY_SOURCE,
+  DERIVED_SOURCE_MAX_COUNT,
+  WS_CANDLE_CACHE_TTL_MS,
   WS_HEALTH_TIMEOUT_MS,
+  WS_HISTORY_MAX_PER_WINDOW,
+  WS_HISTORY_QUEUE_TIMEOUT_MS,
+  WS_HISTORY_WINDOW_MS,
+  WS_MAX_IN_FLIGHT,
   WS_MAX_RECONNECT_ATTEMPTS,
-  WS_MAX_RECONNECT_DELAY_MS,
+  WS_MIN_REQUEST_INTERVAL_MS,
   WS_PING_INTERVAL_MS,
   WS_REQUEST_TIMEOUT_MS,
+  WS_STALE_TICK_MS,
 } from '../config/deriv';
 import type {
   Candle,
@@ -13,16 +21,47 @@ import type {
   SyntheticMarket,
 } from '../types/market';
 import {
+  candleEquals,
   parseActiveSymbols,
   parseHistoricalCandles,
   parseOhlcUpdate,
   parseTick,
 } from '../utils/derivParser';
+import {
+  confirmedDerivedCandles,
+  aggregateCandles,
+  foldDerivedCandle,
+} from '../utils/timeframeCandles';
+import {
+  isRateLimitError,
+  nextReconnectDelay,
+  nextSendDelayMs,
+  rateLimitBackoffMs,
+  SlidingWindowLimiter,
+} from '../utils/connectionPacing';
 
 interface PendingRequest {
   resolve: (payload: Record<string, unknown>) => void;
   reject: (err: Error) => void;
   timer: ReturnType<typeof setTimeout>;
+}
+
+/** A request waiting for a send slot in the pacing queue. */
+interface PendingQueueItem {
+  payload: Record<string, unknown>;
+  resolve: (payload: Record<string, unknown>) => void;
+  reject: (err: Error) => void;
+  /** Epoch ms after which the queued request is abandoned (history only). */
+  deadlineAt?: number;
+  /** Foreground requests (health diagnostics) jump ahead of background sweeps. */
+  priority?: boolean;
+}
+
+/** A cached candle series for one symbol+granularity. */
+interface CandleCacheEntry {
+  candles: Candle[];
+  /** Epoch ms the series was fetched (used for the TTL). */
+  at: number;
 }
 
 export interface OhlcStreamEvent {
@@ -57,6 +96,10 @@ export interface ConnectionDiagnostics {
   lastTickAt: number | null;
   /** Number of live subscriptions currently registered. */
   activeSubscriptions: number;
+  /** Requests waiting for a paced send slot (0 when idle). */
+  queuedRequests: number;
+  /** Epoch ms until which outbound requests are paused after a rate limit (0 when clear). */
+  rateLimitedUntil: number;
   /** True only once real market data has been received on this connection. */
   hasReceivedData: boolean;
   /** True while a manual reconnect/disconnect cycle is in progress. */
@@ -90,6 +133,18 @@ export class DerivApiError extends Error {
 }
 
 /**
+ * Builds a full derived-timeframe history (e.g. M7 from M1) using the shared aggregation
+ * rules. The forming (trailing) bucket is dropped so an incomplete candle is never handed
+ * back as a confirmed historical candle. Only the fully-covered tail is returned.
+ */
+export function buildDerivedHistory(source: readonly Candle[], granularitySec: number): Candle[] {
+  if (source.length === 0) return [];
+  const ordered = [...source].sort((a, b) => a.time - b.time);
+  const aggregated = aggregateCandles(ordered, granularitySec);
+  return confirmedDerivedCandles(aggregated, ordered[0].time, granularitySec, false);
+}
+
+/**
  * A single Deriv public market-data WebSocket client.
  *
  * Responsibilities:
@@ -117,6 +172,7 @@ export class DerivWebSocketService {
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private healthTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private staleTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectAttempt = 0;
   private manualDisconnect = false;
   private connectPromise: Promise<void> | null = null;
@@ -126,9 +182,47 @@ export class DerivWebSocketService {
   private openedOnce = false;
   private networkListenersBound = false;
 
+  /** Outbound request pacing: a FIFO queue drained at WS_MIN_REQUEST_INTERVAL_MS. */
+  private requestQueue: PendingQueueItem[] = [];
+  private drainTimer: ReturnType<typeof setTimeout> | null = null;
+  private inFlight = 0;
+  private lastSendAt = 0;
+  /** Epoch ms until which no request may be sent (set after a server rate-limit error). */
+  private rateLimitedUntil = 0;
+  /** Sliding-window budget for `ticks_history` (the only throttled request class). */
+  private historyLimiter = new SlidingWindowLimiter(
+    WS_HISTORY_MAX_PER_WINDOW,
+    WS_HISTORY_WINDOW_MS
+  );
+
+  /**
+   * Shared candle cache keyed by `symbol:granularity`. Every AI module, the scanner, the
+   * analyser, the chart and the health centre read the same series, so a warm cache turns a
+   * full multi-market sweep into zero history requests — the single biggest defence against
+   * Deriv's per-connection `ticks_history` rate limit.
+   */
+  private candleCache = new Map<string, CandleCacheEntry>();
+  /** In-flight history requests, so concurrent callers share ONE server round-trip. */
+  private candleInFlight = new Map<string, Promise<Candle[]>>();
+
   /** Live subscriptions, restored verbatim after any reconnect. */
   private candleSubs = new Map<string, CandleSubscription>();
   private tickSubs = new Map<string, TickSubscription>();
+
+  /**
+   * Derived-granularity live series (e.g. M7 built from M1). Keyed `symbol:granularity`.
+   * The native source stream is folded in and a genuine candle event is emitted on change.
+   */
+  private derivedSeries = new Map<string, Candle[]>();
+
+  /**
+   * In-flight dedupe for the shared market registry. The app is ONE shared live-data
+   * infrastructure, so concurrent callers await the same `active_symbols` request instead
+   * of each issuing their own — no duplicate subscriptions and no Deriv rate-limit trips.
+   * The result is never cached permanently, so newly listed eligible markets are still
+   * discovered on the next refresh.
+   */
+  private marketsPromise: Promise<SyntheticMarket[]> | null = null;
 
   constructor(url: string = DERIV_WS_URL) {
     this.url = url;
@@ -187,6 +281,8 @@ export class DerivWebSocketService {
       lastMessageAt: this.lastMessageAt || null,
       lastTickAt: this.lastTickAt || null,
       activeSubscriptions: this.candleSubs.size + this.tickSubs.size,
+      queuedRequests: this.requestQueue.length,
+      rateLimitedUntil: this.rateLimitedUntil,
       hasReceivedData: this.hasReceivedData,
       isManual: this.manualDisconnect,
     };
@@ -235,11 +331,43 @@ export class DerivWebSocketService {
    * reporting `connecting`/`reconnecting` rather than a misleading `connected`.
    */
   private markDataReceived() {
-    const firstData = !this.hasReceivedData;
     this.hasReceivedData = true;
-    if (firstData && this.status !== 'connected') {
+    // Real data proves the throttle has cleared; the queue may resume immediately.
+    this.rateLimitedUntil = 0;
+    if (this.status !== 'connected') {
       this.reconnectAttempt = 0;
       this.setStatus('connected', null);
+    }
+  }
+
+  /**
+   * Watches the live tick age. While connected, a feed that stops ticking within the
+   * staleness window is reported as `stale` (never silently as `connected`), so the UI and
+   * every signal gate can withhold output instead of acting on frozen prices.
+   */
+  private startStaleWatch() {
+    if (this.staleTimer) return;
+    this.staleTimer = setInterval(() => {
+      if (this.status === 'connected') {
+        if (this.lastTickAt > 0 && Date.now() - this.lastTickAt > WS_STALE_TICK_MS) {
+          this.setStatus('stale', {
+            code: 'STALE_FEED',
+            message: `No live tick for over ${Math.round(WS_STALE_TICK_MS / 1000)}s.`,
+          });
+        }
+      } else if (this.status === 'stale') {
+        // A fresh tick (or a still-fresh feed) clears the stale flag.
+        if (this.lastTickAt > 0 && Date.now() - this.lastTickAt <= WS_STALE_TICK_MS) {
+          this.setStatus('connected', null);
+        }
+      }
+    }, 3000);
+  }
+
+  private stopStaleWatch() {
+    if (this.staleTimer) {
+      clearInterval(this.staleTimer);
+      this.staleTimer = null;
     }
   }
 
@@ -257,6 +385,7 @@ export class DerivWebSocketService {
     this.manualDisconnect = false;
     this.bindNetworkListeners();
     this.clearReconnectTimer();
+    this.rateLimitedUntil = 0;
     this.setStatus(this.openedOnce ? 'reconnecting' : 'connecting', null);
 
     this.connectPromise = new Promise<void>((resolve, reject) => {
@@ -303,6 +432,7 @@ export class DerivWebSocketService {
         this.openedOnce = true;
         this.connectPromise = null;
         this.startHealthChecks();
+        this.startStaleWatch();
         // Socket is open but no data yet: keep reporting a pending state until the
         // first real market-data frame arrives (see markDataReceived).
         this.setStatus(this.reconnectAttempt > 0 ? 'reconnecting' : 'connecting', null);
@@ -430,10 +560,9 @@ export class DerivWebSocketService {
       });
       return;
     }
-    const delay = Math.min(
-      WS_MAX_RECONNECT_DELAY_MS,
-      1000 * Math.pow(2, this.reconnectAttempt)
-    );
+    // Full jitter: spread reconnects so many clients (or tabs) never stampede the endpoint
+    // at the same instant after an outage.
+    const delay = nextReconnectDelay(this.reconnectAttempt);
     this.reconnectAttempt += 1;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
@@ -496,6 +625,7 @@ export class DerivWebSocketService {
 
   private stopHealthChecks() {
     this.clearHealthTimeout();
+    this.stopStaleWatch();
     if (this.pingTimer) {
       clearInterval(this.pingTimer);
       this.pingTimer = null;
@@ -503,37 +633,140 @@ export class DerivWebSocketService {
   }
 
   private rejectAllPending(err: Error) {
+    this.inFlight = 0;
     for (const [id, req] of this.pending.entries()) {
       clearTimeout(req.timer);
       req.reject(err);
       this.pending.delete(id);
     }
+    this.rejectQueue(err);
   }
 
-  private sendRequest(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  /**
+   * Paces outbound requests. Deriv throttles per connection, so requests are queued and
+   * sent one slot at a time (WS_MIN_REQUEST_INTERVAL_MS apart, up to WS_MAX_IN_FLIGHT in
+   * flight). A server rate-limit error pauses the queue for WS_RATE_LIMIT_BACKOFF_MS so a
+   * burst can never escalate into a hard block. The returned promise resolves with the
+   * correlated response exactly as before.
+   */
+  private sendRequest(
+    payload: Record<string, unknown>,
+    options: { deadlineMs?: number; priority?: boolean } = {}
+  ): Promise<Record<string, unknown>> {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       return Promise.reject(new Error('Not connected to Deriv WebSocket API.'));
     }
-
-    const reqId = this.reqIdCounter++;
-    const body = { ...payload, req_id: reqId };
-
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(reqId);
-        reject(new Error('Deriv API request timed out.'));
-      }, WS_REQUEST_TIMEOUT_MS);
-
-      this.pending.set(reqId, { resolve, reject, timer });
-
-      try {
-        this.ws!.send(JSON.stringify(body));
-      } catch (err) {
-        clearTimeout(timer);
-        this.pending.delete(reqId);
-        reject(err instanceof Error ? err : new Error('Failed to send Deriv request.'));
+      const item: PendingQueueItem = {
+        payload,
+        resolve,
+        reject,
+        deadlineAt:
+          options.deadlineMs !== undefined ? Date.now() + options.deadlineMs : undefined,
+        priority: options.priority,
+      };
+      // A priority request is inserted ahead of every queued background request (but behind
+      // other priority requests) so a foreground health probe is never starved by a sweep.
+      if (options.priority) {
+        const idx = this.requestQueue.findIndex((q) => !q.priority);
+        if (idx === -1) this.requestQueue.push(item);
+        else this.requestQueue.splice(idx, 0, item);
+      } else {
+        this.requestQueue.push(item);
       }
+      this.scheduleDrain();
     });
+  }
+
+  private scheduleDrain() {
+    if (this.drainTimer) return;
+    const wait = this.nextSlotDelayMs();
+    this.drainTimer = setTimeout(() => {
+      this.drainTimer = null;
+      this.drainQueue();
+    }, wait);
+  }
+
+  /**
+   * Milliseconds until the next request may be released. Combines the fixed inter-request
+   * spacing, any active rate-limit gate, AND the sliding-window history budget when the
+   * request at the head of the queue is a `ticks_history` call.
+   */
+  private nextSlotDelayMs(): number {
+    const now = Date.now();
+    let wait = nextSendDelayMs({
+      now,
+      lastSendAt: this.lastSendAt,
+      minIntervalMs: WS_MIN_REQUEST_INTERVAL_MS,
+      rateLimitedUntil: this.rateLimitedUntil,
+    });
+    const head = this.requestQueue[0];
+    if (head && 'ticks_history' in head.payload) {
+      wait = Math.max(wait, this.historyLimiter.delayMs(now));
+    }
+    return wait;
+  }
+
+  private drainQueue() {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      this.rejectQueue(new Error('Not connected to Deriv WebSocket API.'));
+      return;
+    }
+    while (this.requestQueue.length > 0 && this.inFlight < WS_MAX_IN_FLIGHT) {
+      const head = this.requestQueue[0];
+      // Abandon a history request that has been waiting past its deadline rather than
+      // letting the queue grow without bound during a long rate-limit window.
+      if (head.deadlineAt !== undefined && Date.now() > head.deadlineAt) {
+        this.requestQueue.shift();
+        head.reject(new Error('Deriv history request expired while waiting for a send slot.'));
+        continue;
+      }
+      const wait = this.nextSlotDelayMs();
+      if (wait > 0) break;
+      this.requestQueue.shift();
+      if ('ticks_history' in head.payload) this.historyLimiter.record(Date.now());
+      this.dispatchRequest(head);
+    }
+    if (this.requestQueue.length > 0) this.scheduleDrain();
+  }
+
+  private dispatchRequest(item: PendingQueueItem) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      item.reject(new Error('Not connected to Deriv WebSocket API.'));
+      return;
+    }
+    const reqId = this.reqIdCounter++;
+    const body = { ...item.payload, req_id: reqId };
+    this.lastSendAt = Date.now();
+    this.inFlight += 1;
+
+    const timer = setTimeout(() => {
+      if (this.pending.delete(reqId)) {
+        this.inFlight = Math.max(0, this.inFlight - 1);
+      }
+      item.reject(new Error('Deriv API request timed out.'));
+    }, WS_REQUEST_TIMEOUT_MS);
+
+    this.pending.set(reqId, { resolve: item.resolve, reject: item.reject, timer });
+
+    try {
+      this.ws.send(JSON.stringify(body));
+    } catch (err) {
+      clearTimeout(timer);
+      this.pending.delete(reqId);
+      this.inFlight = Math.max(0, this.inFlight - 1);
+      item.reject(err instanceof Error ? err : new Error('Failed to send Deriv request.'));
+    }
+  }
+
+  private rejectQueue(err: Error) {
+    const queued = this.requestQueue;
+    this.requestQueue = [];
+    if (this.drainTimer) {
+      clearTimeout(this.drainTimer);
+      this.drainTimer = null;
+    }
+    for (const item of queued) item.reject(err);
   }
 
   private handleMessage(rawData: unknown) {
@@ -557,9 +790,10 @@ export class DerivWebSocketService {
       const pending = this.pending.get(reqId)!;
       clearTimeout(pending.timer);
       this.pending.delete(reqId);
+      this.inFlight = Math.max(0, this.inFlight - 1);
 
       const errorObj = data.error as
-        | { message?: unknown; code?: unknown; details?: unknown }
+        | { message?: unknown; code?: unknown; details?: unknown; rate_limit?: unknown }
         | undefined;
       if (errorObj && typeof errorObj === 'object') {
         const rawMsg =
@@ -568,6 +802,17 @@ export class DerivWebSocketService {
             : 'Deriv API returned an error.';
         const code = typeof errorObj.code === 'string' ? errorObj.code : undefined;
         const message = code ? `${rawMsg} (${code})` : rawMsg;
+        if (isRateLimitError(code, rawMsg)) {
+          const backoff = rateLimitBackoffMs(errorObj as Record<string, unknown>);
+          this.rateLimitedUntil = Date.now() + backoff;
+          // The server's budget is authoritative: refill our window so no further history
+          // request is released until it clears, even if we thought we had budget left.
+          this.historyLimiter.exhaust(Date.now());
+          this.setStatus('rate_limited', {
+            code: code ?? 'RateLimit',
+            message: `Deriv is rate limiting requests. Pausing ${Math.round(backoff / 1000)}s...`,
+          });
+        }
         pending.reject(new DerivApiError(message, code));
         return;
       }
@@ -594,6 +839,10 @@ export class DerivWebSocketService {
       if (!sub.subscriptionId && typeof incomingSubId === 'string') {
         sub.subscriptionId = incomingSubId;
       }
+
+      // Feed any derived series (e.g. M7) built from THIS native granularity. The native
+      // source candle is folded in and the derived candle is re-emitted only on a real change.
+      this.foldIntoDerivedSeries(parsed.symbol, parsed.granularity, parsed.candle);
 
       for (const listener of this.ohlcListeners) {
         listener(parsed);
@@ -628,18 +877,22 @@ export class DerivWebSocketService {
   }
 
   async fetchSyntheticMarkets(): Promise<SyntheticMarket[]> {
-    await this.connect();
-    const res = await this.sendRequest({ active_symbols: 'brief' });
-    const markets = parseActiveSymbols(res.active_symbols);
-    if (markets.length > 0) this.markDataReceived();
-    return markets;
+    if (this.marketsPromise) return this.marketsPromise;
+    this.marketsPromise = (async () => {
+      await this.connect();
+      const res = await this.sendRequest({ active_symbols: 'brief' });
+      const markets = parseActiveSymbols(res.active_symbols);
+      if (markets.length > 0) this.markDataReceived();
+      return markets;
+    })();
+    try {
+      return await this.marketsPromise;
+    } finally {
+      this.marketsPromise = null;
+    }
   }
 
-  /**
-   * Registers (or refreshes) the desired candle subscription, restored after reconnect.
-   * Returns the live entry so callers can detect whether it is still the registered
-   * subscription once an in-flight request resolves (see `subscribeCandles`).
-   */
+  /** Registers (or refreshes) the desired candle subscription, restored after reconnect. */
   registerCandleSubscription(
     symbol: string,
     granularitySec: number,
@@ -672,6 +925,30 @@ export class DerivWebSocketService {
       await this.sendRequest({ forget: subscriptionId });
     } catch {
       // Ignore forget failures if the stream already closed.
+    }
+  }
+
+  /**
+   * Folds a native candle into every derived series that is built from that granularity
+   * (currently M1 → M7). A genuine derived candle is emitted via the candle-snapshot
+   * listeners only when its OHLC actually changes, so no duplicate events are produced.
+   */
+  private foldIntoDerivedSeries(symbol: string, sourceGranularity: number, candle: Candle) {
+    for (const [derivedGranularity, source] of Object.entries(DERIVED_GRANULARITY_SOURCE)) {
+      if (source !== sourceGranularity) continue;
+      const derived = Number(derivedGranularity);
+      const key = `${symbol}:${derived}`;
+      const series = this.derivedSeries.get(key);
+      if (!series) continue;
+      const next = foldDerivedCandle(series, derived, candle);
+      if (next === series) continue;
+      const prevLast = series[series.length - 1];
+      const nextLast = next[next.length - 1];
+      if (prevLast && nextLast && candleEquals(prevLast, nextLast)) continue;
+      this.derivedSeries.set(key, next);
+      for (const listener of this.candleSnapshotListeners) {
+        listener({ symbol, granularity: derived, candles: next });
+      }
     }
   }
 
@@ -742,6 +1019,15 @@ export class DerivWebSocketService {
   /** Forgets a single candle subscription without disturbing any other active stream. */
   async unsubscribeCandleSubscription(symbol: string, granularitySec: number): Promise<void> {
     const key = `${symbol}:${granularitySec}`;
+    // A derived granularity holds no native subscription of its own — drop its built series
+    // and release the native source stream it was folded from.
+    const sourceGranularity = DERIVED_GRANULARITY_SOURCE[granularitySec];
+    if (sourceGranularity !== undefined) {
+      this.derivedSeries.delete(key);
+      this.candleCache.delete(key);
+      await this.unsubscribeCandleSubscription(symbol, sourceGranularity);
+      return;
+    }
     const sub = this.candleSubs.get(key);
     this.candleSubs.delete(key);
     if (!sub?.subscriptionId || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
@@ -760,17 +1046,36 @@ export class DerivWebSocketService {
     count: number
   ): Promise<Candle[]> {
     await this.connect();
+
+    // A derived granularity (e.g. M7) subscribes to its NATIVE source (M1), seeds the
+    // derived series from aggregated history, and folds every subsequent native candle in.
+    const sourceGranularity = DERIVED_GRANULARITY_SOURCE[granularitySec];
+    if (sourceGranularity !== undefined) {
+      const sourceCount = Math.min(DERIVED_SOURCE_MAX_COUNT, Math.ceil(count * (granularitySec / sourceGranularity)) + 1);
+      const historical = await this.subscribeCandles(symbol, sourceGranularity, sourceCount);
+      const derived = buildDerivedHistory(historical, granularitySec).slice(-count);
+      const key = `${symbol}:${granularitySec}`;
+      if (derived.length > 0) {
+        this.derivedSeries.set(key, derived);
+        this.candleCache.set(key, { candles: derived, at: Date.now() });
+      }
+      return derived;
+    }
+
     const registered = this.registerCandleSubscription(symbol, granularitySec, count);
 
-    const res = await this.sendRequest({
-      ticks_history: symbol,
-      adjust_start_time: 1,
-      count,
-      end: 'latest',
-      granularity: granularitySec,
-      style: 'candles',
-      subscribe: 1,
-    });
+    const res = await this.sendRequest(
+      {
+        ticks_history: symbol,
+        adjust_start_time: 1,
+        count,
+        end: 'latest',
+        granularity: granularitySec,
+        style: 'candles',
+        subscribe: 1,
+      },
+      { deadlineMs: WS_HISTORY_QUEUE_TIMEOUT_MS }
+    );
 
     const key = `${symbol}:${granularitySec}`;
     const subId = (res.subscription as { id?: unknown } | undefined)?.id;
@@ -788,7 +1093,12 @@ export class DerivWebSocketService {
     }
 
     const candles = parseHistoricalCandles(res.candles);
-    if (candles.length > 0) this.markDataReceived();
+    if (candles.length > 0) {
+      // Seed the shared cache so every AI module / scanner read for this symbol+timeframe
+      // is served from here instead of issuing its own throttled history request.
+      this.setCandleCache(symbol, granularitySec, candles);
+      this.markDataReceived();
+    }
     return candles;
   }
 
@@ -799,36 +1109,135 @@ export class DerivWebSocketService {
     count: number
   ): Promise<Candle[]> {
     await this.connect();
-    const res = await this.sendRequest({
-      ticks_history: symbol,
-      adjust_start_time: 1,
-      count,
-      end: String(Math.max(0, Math.floor(endEpochSec))),
-      granularity: granularitySec,
-      style: 'candles',
-    });
+    const sourceGranularity = DERIVED_GRANULARITY_SOURCE[granularitySec];
+    if (sourceGranularity !== undefined) {
+      const sourceCount = Math.min(DERIVED_SOURCE_MAX_COUNT, Math.ceil(count * (granularitySec / sourceGranularity)) + 1);
+      const res = await this.sendRequest(
+        {
+          ticks_history: symbol,
+          adjust_start_time: 1,
+          count: sourceCount,
+          end: String(Math.max(0, Math.floor(endEpochSec))),
+          granularity: sourceGranularity,
+          style: 'candles',
+        },
+        { deadlineMs: WS_HISTORY_QUEUE_TIMEOUT_MS }
+      );
+      const source = parseHistoricalCandles(res.candles);
+      const older = buildDerivedHistory(source, granularitySec).filter((c) => c.time < endEpochSec + 1);
+      if (older.length > 0) this.markDataReceived();
+      return older;
+    }
+    const res = await this.sendRequest(
+      {
+        ticks_history: symbol,
+        adjust_start_time: 1,
+        count,
+        end: String(Math.max(0, Math.floor(endEpochSec))),
+        granularity: granularitySec,
+        style: 'candles',
+      },
+      { deadlineMs: WS_HISTORY_QUEUE_TIMEOUT_MS }
+    );
     const candles = parseHistoricalCandles(res.candles);
     if (candles.length > 0) this.markDataReceived();
     return candles;
   }
 
+  /**
+   * Shared, deduped history fetch. This is the single entry point every caller (AI modules,
+   * scanner, analyser, chart, health) uses, so:
+   *  - a cached series younger than WS_CANDLE_CACHE_TTL_MS is served without any request;
+   *  - concurrent callers for the same symbol+granularity share ONE server round-trip;
+   *  - a failed request falls back to the last good cache entry rather than returning nothing.
+   * The cached array is treated as read-only by callers (engines receive `readonly Candle[]`
+   * and the chart only ever derives new arrays from it).
+   */
+  private async loadHistory(
+    symbol: string,
+    granularitySec: number,
+    count: number,
+    priority = false
+  ): Promise<Candle[]> {
+    const key = `${symbol}:${granularitySec}`;
+    const cached = this.candleCache.get(key);
+    // Only serve the cache when it is both fresh AND long enough for this caller, so the
+    // chart (which wants a deep series) is never short-changed by a shallower AI request.
+    if (cached && Date.now() - cached.at < WS_CANDLE_CACHE_TTL_MS && cached.candles.length >= count) {
+      return cached.candles;
+    }
+    const existing = this.candleInFlight.get(key);
+    if (existing) return existing;
+
+    const request = (async () => {
+      await this.connect();
+      // A derived granularity (e.g. M7 = 420s) is NOT native to Deriv: fetch enough native
+      // source candles (M1) and aggregate them internally into genuine candles.
+      const sourceGranularity = DERIVED_GRANULARITY_SOURCE[granularitySec];
+      if (sourceGranularity !== undefined) {
+        const sourceCount = Math.min(DERIVED_SOURCE_MAX_COUNT, Math.ceil(count * (granularitySec / sourceGranularity)) + 1);
+        const res = await this.sendRequest(
+          {
+            ticks_history: symbol,
+            adjust_start_time: 1,
+            count: sourceCount,
+            end: 'latest',
+            granularity: sourceGranularity,
+            style: 'candles',
+          },
+          { deadlineMs: WS_HISTORY_QUEUE_TIMEOUT_MS, priority }
+        );
+        const source = parseHistoricalCandles(res.candles);
+        const candles = buildDerivedHistory(source, granularitySec).slice(-count);
+        if (candles.length > 0) {
+          this.candleCache.set(key, { candles, at: Date.now() });
+          this.markDataReceived();
+          return candles;
+        }
+        return this.candleCache.get(key)?.candles ?? [];
+      }
+
+      const res = await this.sendRequest(
+        {
+          ticks_history: symbol,
+          adjust_start_time: 1,
+          count,
+          end: 'latest',
+          granularity: granularitySec,
+          style: 'candles',
+        },
+        { deadlineMs: WS_HISTORY_QUEUE_TIMEOUT_MS, priority }
+      );
+      const candles = parseHistoricalCandles(res.candles);
+      if (candles.length > 0) {
+        this.candleCache.set(key, { candles, at: Date.now() });
+        this.markDataReceived();
+        return candles;
+      }
+      return this.candleCache.get(key)?.candles ?? [];
+    })();
+
+    this.candleInFlight.set(key, request);
+    try {
+      return await request;
+    } finally {
+      this.candleInFlight.delete(key);
+    }
+  }
+
+  /** Drops cached series for one key (used when a stream is replaced with a fresh snapshot). */
+  private setCandleCache(symbol: string, granularitySec: number, candles: Candle[]) {
+    if (candles.length === 0) return;
+    this.candleCache.set(`${symbol}:${granularitySec}`, { candles, at: Date.now() });
+  }
+
   async fetchHistoricalCandles(
     symbol: string,
     granularitySec: number,
-    count: number
+    count: number,
+    options: { priority?: boolean } = {}
   ): Promise<Candle[]> {
-    await this.connect();
-    const res = await this.sendRequest({
-      ticks_history: symbol,
-      adjust_start_time: 1,
-      count,
-      end: 'latest',
-      granularity: granularitySec,
-      style: 'candles',
-    });
-    const candles = parseHistoricalCandles(res.candles);
-    if (candles.length > 0) this.markDataReceived();
-    return candles;
+    return this.loadHistory(symbol, granularitySec, count, options.priority === true);
   }
 
   /** Opens a continuous live tick stream for one symbol. */

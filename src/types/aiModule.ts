@@ -1,4 +1,8 @@
 import type { MarketFamily, TimeframeKey } from './market';
+import type { BosRetracementReadout } from './bosRetracement';
+import type { TopDownAnalysis } from './topDown';
+import type { TimeframeAlignmentRead } from './timeframeAlignment';
+import type { ConsolidationRead } from './consolidation';
 
 /**
  * Shared vocabulary for the independent AI strategy modules (Support & Resistance AI,
@@ -61,6 +65,11 @@ export type AiSignalStatus =
   | 'EXPANSION_DEVELOPING'
   | 'TRANSITIONING'
   | 'CONFIRMED_BREAKOUT'
+  | 'BOS_DETECTED'
+  | 'WAITING_FOR_PULLBACK'
+  | 'IN_ZONE'
+  | 'REJECTION'
+  | 'CONFIRMATION'
   | 'UNCLEAR'
   | 'ACTIVE'
   | 'TARGET_REACHED'
@@ -91,6 +100,11 @@ export const AI_STATUS_LABELS: Record<AiSignalStatus, string> = {
   EXPANSION_DEVELOPING: 'Expansion Developing',
   TRANSITIONING: 'Transitioning',
   CONFIRMED_BREAKOUT: 'Confirmed Breakout',
+  BOS_DETECTED: 'BOS Detected',
+  WAITING_FOR_PULLBACK: 'Waiting For Pullback',
+  IN_ZONE: 'In Zone',
+  REJECTION: 'Rejection',
+  CONFIRMATION: 'Confirmation',
   UNCLEAR: 'Unclear',
   ACTIVE: 'Active',
   TARGET_REACHED: 'Target Reached',
@@ -191,6 +205,24 @@ export interface AiInstrumentAnalysis {
   dataHealth: 'HEALTHY' | 'STALE' | 'DISCONNECTED';
   lastUpdated: number;
   rejectionReason?: string;
+  /**
+   * Module-specific structured readout (currently the BOS Retracement & Rejection AI's
+   * dealing range, entry zone, sweep, rejection, LTF confirmation and evidence trail).
+   */
+  detail?: BosRetracementReadout;
+  /**
+   * Top-down ten-timeframe ladder read for this index (major bias → intermediate structure
+   * → M5 execution → lower-timeframe refinement), computed from the SAME candles the engine
+   * analysed. Attached by the scanner so every AI view can surface the ladder without any
+   * module re-deriving it.
+   */
+  topDown?: TopDownAnalysis;
+  /**
+   * Module-specific structured intelligence readout. The Timeframe Alignment AI attaches its
+   * `TimeframeAlignmentRead`; the Consolidation & Momentum AI attaches its `ConsolidationRead`.
+   * Either may be absent — a module that does not own a structured read leaves it undefined.
+   */
+  intelligence?: TimeframeAlignmentRead | ConsolidationRead;
 }
 
 export interface AiScanSummary {

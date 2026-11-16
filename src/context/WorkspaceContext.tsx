@@ -6,6 +6,7 @@ import type { TrainingEngineValue } from '../hooks/useTrainingEngine';
 import type { TrendlineScannerValue } from '../hooks/useTrendlineScanner';
 import type { DemandSupplyScannerValue } from '../hooks/useDemandSupplyScanner';
 import type { ManagedSignal } from '../types/training';
+import type { AnalyserCycleValue } from '../hooks/useAnalyserCycle';
 import type {
   AnalysisControlMode,
   AnalysisRunState,
@@ -24,11 +25,15 @@ import type {
 import type { EngineScanSummary, ModelPerformanceRecord } from '../types/engine';
 import type { MonitorScanSummary } from '../types/scanner';
 import type { CoAnalysisResult, SignalFeedItem } from '../types/signals';
+import type { SetupOrigin } from '../types/ranking';
+import type { EntryModelAIValue } from '../hooks/useEntryModelAI';
 import type { SignalLifecycle } from '../utils/signalStatus';
 
 export type NavSection =
   | 'dashboard'
   | 'trade'
+  | 'chart'
+  | 'chartanalysis'
   | 'analyser'
   | 'scanner'
   | 'trendlines'
@@ -43,6 +48,7 @@ export type NavSection =
   | 'regime'
   | 'confluence'
   | 'live'
+  | 'entrymodel'
   | 'performance'
   | 'risk'
   | 'alerts'
@@ -156,6 +162,15 @@ export interface WorkspaceValue {
 
   openChart: (symbol: string, tf: TimeframeKey, snapshot?: SignalSnapshot | null) => void;
   openAnalyser: (symbol: string, tf: TimeframeKey, snapshot?: SignalSnapshot | null) => void;
+  /** Opens a ranked setup in the dedicated CHART ANALYSIS tab, preserving its origin. */
+  openSetupInChartAnalysis: (
+    symbol: string,
+    tf: TimeframeKey,
+    origin: SetupOrigin | null
+  ) => void;
+  /** The setup currently opened in the CHART ANALYSIS tab (its originating AI details). */
+  chartAnalysisSetup: SetupOrigin | null;
+  clearChartAnalysisSetup: () => void;
   navigate: (section: NavSection) => void;
 
   // AI training & backtesting
@@ -168,6 +183,15 @@ export interface WorkspaceValue {
   managedSignals: ManagedSignal[];
   openManagedSignals: ManagedSignal[];
   getManagedSignal: (id: string) => ManagedSignal | null;
+
+  /** UNIVERSAL ENTRY MODEL AI — best entry model per qualified setup, across all strategies. */
+  entryModelAI: EntryModelAIValue;
+
+  /**
+   * AUTOMATIC CHART RESET & FRESH-ENTRY CYCLE for the Chart Analyser — completion
+   * detection, completed-trade recording, automatic chart cleanup and fresh-entry status.
+   */
+  analyserCycle: AnalyserCycleValue;
 }
 
 const WorkspaceContext = createContext<WorkspaceValue | null>(null);

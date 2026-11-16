@@ -83,7 +83,7 @@ export function createAiJournalRecord(signal: AiSignal, module: string): AiJourn
     modelId: signal.modelId,
     modelLabel: signal.modelLabel,
     direction: signal.direction,
-    timeframe: 'M15→M5→M1',
+    timeframe: 'M30→M15→M10→M7→M6→M5→M4→M3→M2→M1',
     entryPrice: signal.entryPrice,
     stopLoss: signal.stopLoss,
     takeProfit1: signal.takeProfit1,

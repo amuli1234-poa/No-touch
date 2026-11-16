@@ -382,7 +382,14 @@ export interface FullAnalysisReport {
 export interface MultiTimeframeCandles {
   H4?: readonly Candle[];
   H1?: readonly Candle[];
+  M30?: readonly Candle[];
   M15?: readonly Candle[];
+  M10?: readonly Candle[];
+  M7?: readonly Candle[];
+  M6?: readonly Candle[];
   M5?: readonly Candle[];
+  M4?: readonly Candle[];
+  M3?: readonly Candle[];
+  M2?: readonly Candle[];
   M1?: readonly Candle[];
 }

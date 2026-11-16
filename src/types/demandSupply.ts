@@ -1,11 +1,13 @@
+import type { TopDownAnalysis } from './topDown';
 import type { MarketFamily, TimeframeKey } from './market';
 
 /**
  * DEMAND & SUPPLY AI types — a fully independent strategy module.
  *
- * Primary supply/demand identification is performed on M15; zones are refined and setups
- * developed on M5; entries are confirmed on M1. Nothing here shares state with the
- * price-action engine or the Trendline AI.
+ * Primary supply/demand identification is performed on M15; the trend and market structure
+ * are read on M7; zones are refined and setups developed on M5; the entry setup is confirmed
+ * on M3; entries are confirmed on M1. Nothing here shares state with the price-action engine
+ * or the Trendline AI.
  */
 
 /** Which side of the market a zone supplies liquidity from. */
@@ -270,9 +272,11 @@ export interface DsSignal {
   direction: 'RISE' | 'FALL';
   model: DsEntryModelId;
   modelLabel: string;
-  /** M15 → M5 → M1 top-down chain. */
+  /** M30 → M15 → M10 → M7 → M6 → M5 → M4 → M3 → M2 → M1 top-down chain. */
   structureTimeframe: TimeframeKey;
+  trendTimeframe: TimeframeKey;
   setupTimeframe: TimeframeKey;
+  confirmTimeframe: TimeframeKey;
   entryTimeframe: TimeframeKey;
   score: number;
   zoneQuality: number;
@@ -300,7 +304,7 @@ export interface DsSignal {
   lastUpdated: number;
 }
 
-/** The three-timeframe context surfaced in the signal panel. */
+/** The top-down timeframe context surfaced in the signal panel (M30 → M15 → M10 → M7 → M6 → M5 → M4 → M3 → M2 → M1). */
 export interface DsTimeframeRead {
   timeframe: TimeframeKey;
   label: string;
@@ -339,6 +343,8 @@ export interface DsInstrumentAnalysis {
   dataHealth: 'HEALTHY' | 'STALE' | 'DISCONNECTED';
   lastUpdated: number;
   rejectionReason?: string;
+  /** Top-down ten-timeframe ladder read for this index (same shared shape as every AI). */
+  topDown?: TopDownAnalysis;
 }
 
 export interface DsScanSummary {

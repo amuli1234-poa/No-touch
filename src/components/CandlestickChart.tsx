@@ -23,6 +23,7 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts';
 import { CHART_COLORS } from '../theme/designTokens';
+import { MARKUP_COLORS, hexToRgba } from './chart/markupStyle';
 import { AlertTriangle, BarChart2, Loader2, RefreshCw } from 'lucide-react';
 import type { ChartOverlayPreferences } from '../hooks/useAppSettings';
 import type { CandleDataset, LiveCandleTick } from '../hooks/useDerivChartData';
@@ -261,13 +262,13 @@ function ChartLegendOverlay({
   if (activeLevels.length === 0) return null;
 
   return (
-    <div className="absolute top-2 left-2 sm:top-3 sm:left-3 z-25 pointer-events-none bg-elevated/90 backdrop-blur-sm border border-line shadow-sm rounded-lg px-2 py-1 flex flex-col gap-0.5 max-w-[150px] text-[9px] font-mono">
+    <div className="absolute top-2 left-2 sm:top-3 sm:left-3 z-25 pointer-events-none bg-elevated/92 backdrop-blur-sm border border-line shadow-sm rounded-lg px-2 py-1 flex flex-col gap-0.5 max-w-[150px] text-[9px] font-mono">
       <span className="font-bold text-muted uppercase tracking-wider">S / R</span>
       <div className="flex flex-col gap-0.5">
         {activeLevels.map((lvl) => (
           <div key={lvl.id} className="flex items-center justify-between gap-1.5 text-muted">
             <span className={`font-semibold ${lvl.type === 'support' ? 'text-emerald-400' : 'text-bear'}`}>
-              {lvl.type === 'support' ? 'S' : 'R'} ({lvl.touches}×)
+              {lvl.type === 'support' ? 'S' : 'R'} {lvl.touches}x
             </span>
             <span className="font-mono text-ink">{formatPrice(lvl.price, precision)}</span>
           </div>
@@ -908,19 +909,21 @@ export const CandlestickChart = forwardRef<CandlestickChartHandle, CandlestickCh
 
       primitive.setOverlays(filteredOverlays, latestTime);
 
-      // 1. Support & Resistance lines (Clean horizontal lines, NO blue right price scale text labels)
+      // 1. Support & Resistance lines — fine horizontal lines, short S / R labels only.
       if (prefs.supportResistance) {
         for (const lvl of overlays.supportResistance) {
-        const line = series.createPriceLine({
-          price: lvl.price,
-          color: lvl.status === 'active' ? '#2563EB' : 'rgba(37, 99, 235, 0.45)',
-          lineWidth: lvl.status === 'active' && lvl.touches >= 3 ? 2 : 1,
-          lineStyle:
-            lvl.status === 'active' ? LineStyle.Dashed : LineStyle.Dotted,
-          axisLabelVisible: false, // REMOVED BLUE PRICE SCALE LABELS AS REQUESTED
-          title: '',
-        });
-        priceLinesRef.current.push(line);
+          const line = series.createPriceLine({
+            price: lvl.price,
+            color: hexToRgba(
+              lvl.type === 'support' ? MARKUP_COLORS.support : MARKUP_COLORS.resistance,
+              lvl.status === 'active' ? 0.7 : 0.4
+            ),
+            lineWidth: 1,
+            lineStyle: lvl.status === 'active' ? LineStyle.Dashed : LineStyle.Dotted,
+            axisLabelVisible: true,
+            title: `${lvl.type === 'support' ? 'S' : 'R'} ${lvl.touches}x`,
+          });
+          priceLinesRef.current.push(line);
         }
       }
 
@@ -929,16 +932,16 @@ export const CandlestickChart = forwardRef<CandlestickChartHandle, CandlestickCh
       if (prefs.rangeZones && overlays.range?.valid) {
         const r = overlays.range;
         const rangeLines = [
-          { price: r.resistance, color: CHART_COLORS.bearish, title: `RESISTANCE (${formatPrice(r.resistance, precision)})` },
-          { price: r.support, color: CHART_COLORS.bullish, title: `SUPPORT (${formatPrice(r.support, precision)})` },
-          { price: r.equilibrium, color: '#64748B', title: `EQUILIBRIUM (${formatPrice(r.equilibrium, precision)})` },
+          { price: r.resistance, color: MARKUP_COLORS.resistance, title: 'R' },
+          { price: r.support, color: MARKUP_COLORS.support, title: 'S' },
+          { price: r.equilibrium, color: MARKUP_COLORS.neutral, title: 'EQ' },
         ];
         for (const rl of rangeLines) {
           const line = series.createPriceLine({
             price: rl.price,
-            color: rl.color,
-            lineWidth: 2,
-            lineStyle: rl.title.startsWith('EQUILIBRIUM') ? LineStyle.Dotted : LineStyle.Solid,
+            color: hexToRgba(rl.color, 0.6),
+            lineWidth: 1,
+            lineStyle: rl.title === 'EQ' ? LineStyle.Dotted : LineStyle.Solid,
             axisLabelVisible: true,
             title: rl.title,
           });
@@ -946,39 +949,39 @@ export const CandlestickChart = forwardRef<CandlestickChartHandle, CandlestickCh
         }
       }
 
-      // 2. Active Signal Entry, TP1, TP2, & Stop Loss price lines
+      // 2. Active signal entry, TP1, TP2 and stop-loss price lines — thin, short labels.
       if (prefs.entryLevels && overlays.signal) {
         const entryLine = series.createPriceLine({
           price: overlays.signal.entryPrice,
-          color: '#2563EB',
-          lineWidth: 2,
+          color: hexToRgba(MARKUP_COLORS.entry, 0.75),
+          lineWidth: 1,
           lineStyle: LineStyle.Solid,
           axisLabelVisible: true,
-          title: `ENTRY (${formatPrice(overlays.signal.entryPrice, precision)})`,
+          title: 'ENTRY',
         });
         const tp1Line = series.createPriceLine({
           price: overlays.signal.takeProfit1,
-          color: CHART_COLORS.bullish,
-          lineWidth: 2,
+          color: hexToRgba(MARKUP_COLORS.target, 0.6),
+          lineWidth: 1,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: true,
-          title: `TP1 (${formatPrice(overlays.signal.takeProfit1, precision)})`,
+          title: 'TP1',
         });
         const tp2Line = series.createPriceLine({
           price: overlays.signal.takeProfit2,
-          color: '#15803D',
+          color: hexToRgba(MARKUP_COLORS.target, 0.5),
           lineWidth: 1,
           lineStyle: LineStyle.Dotted,
           axisLabelVisible: true,
-          title: `TP2 (${formatPrice(overlays.signal.takeProfit2, precision)})`,
+          title: 'TP2',
         });
         const slLine = series.createPriceLine({
           price: overlays.signal.stopLoss,
-          color: CHART_COLORS.bearish,
-          lineWidth: 2,
+          color: hexToRgba(MARKUP_COLORS.stop, 0.75),
+          lineWidth: 1,
           lineStyle: LineStyle.Solid,
           axisLabelVisible: true,
-          title: `SL (${formatPrice(overlays.signal.stopLoss, precision)})`,
+          title: 'SL',
         });
         priceLinesRef.current.push(entryLine, tp1Line, tp2Line, slLine);
       }
@@ -988,40 +991,40 @@ export const CandlestickChart = forwardRef<CandlestickChartHandle, CandlestickCh
       if (prefs.entryLevels && snapshot && !overlays.signal) {
         const snapEntry = series.createPriceLine({
           price: snapshot.entryPrice,
-          color: '#1D4ED8',
-          lineWidth: 2,
+          color: hexToRgba(MARKUP_COLORS.entry, 0.75),
+          lineWidth: 1,
           lineStyle: LineStyle.Solid,
           axisLabelVisible: true,
-          title: `SCANNER ENTRY (${formatPrice(snapshot.entryPrice, precision)})`,
+          title: 'ENTRY',
         });
         const snapInvalidation = series.createPriceLine({
           price: snapshot.invalidationPrice,
-          color: CHART_COLORS.bearish,
-          lineWidth: 2,
+          color: hexToRgba(MARKUP_COLORS.stop, 0.7),
+          lineWidth: 1,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: true,
-          title: `INVALIDATION (${formatPrice(snapshot.invalidationPrice, precision)})`,
+          title: 'INVAL',
         });
         priceLinesRef.current.push(snapEntry, snapInvalidation);
         if (prefs.targets && snapshot.target1 !== null) {
           const t1 = series.createPriceLine({
             price: snapshot.target1,
-            color: CHART_COLORS.bullish,
+            color: hexToRgba(MARKUP_COLORS.target, 0.55),
             lineWidth: 1,
             lineStyle: LineStyle.Dashed,
             axisLabelVisible: true,
-            title: `TARGET 1 (${formatPrice(snapshot.target1, precision)})`,
+            title: 'T1',
           });
           priceLinesRef.current.push(t1);
         }
         if (prefs.targets && snapshot.target2 !== null) {
           const t2 = series.createPriceLine({
             price: snapshot.target2,
-            color: '#15803D',
+            color: hexToRgba(MARKUP_COLORS.target, 0.45),
             lineWidth: 1,
             lineStyle: LineStyle.Dotted,
             axisLabelVisible: true,
-            title: `TARGET 2 (${formatPrice(snapshot.target2, precision)})`,
+            title: 'T2',
           });
           priceLinesRef.current.push(t2);
         }
@@ -1048,9 +1051,9 @@ export const CandlestickChart = forwardRef<CandlestickChartHandle, CandlestickCh
           time: overlays.signal.entryCandleTime as UTCTimestamp,
           position: isRise ? 'belowBar' : 'aboveBar',
           shape: isRise ? 'arrowUp' : 'arrowDown',
-          color: isRise ? '#15803D' : '#B91C1C',
+          color: isRise ? MARKUP_COLORS.rise : MARKUP_COLORS.fall,
           text: isRise ? 'RISE' : 'FALL',
-          size: 2,
+          size: 1,
         });
       }
 
@@ -1061,9 +1064,9 @@ export const CandlestickChart = forwardRef<CandlestickChartHandle, CandlestickCh
           time: snapshot.confirmedBarTime as UTCTimestamp,
           position: isRise ? 'belowBar' : 'aboveBar',
           shape: isRise ? 'arrowUp' : 'arrowDown',
-          color: isRise ? '#1D4ED8' : '#B91C1C',
-          text: `${isRise ? 'RISE' : 'FALL'} · ${snapshot.qualityTotal}/100`,
-          size: 2,
+          color: isRise ? MARKUP_COLORS.rise : MARKUP_COLORS.fall,
+          text: isRise ? 'RISE' : 'FALL',
+          size: 1,
         });
       }
 

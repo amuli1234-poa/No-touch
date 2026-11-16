@@ -2,15 +2,19 @@ import {
   aiAtr,
   buildAiSignal,
   buildTimeframeReads,
+  ladderTimeframeReads,
+  timeframeConditionRead,
   clamp,
+  structurallyValidDrafts,
   dealingRange,
   makeZone,
-  orderTargets,
+  resolveTargets,
   readAiCondition,
   statusForScore,
+  m1LevelConfirm,
 } from './aiCommon';
 import { analyzeMarketStructure } from './structure';
-import { computeAtrSeries, detectSwings, getCandleStats } from './swings';
+import { computeAtrSeries, detectSwings } from './swings';
 import { detectFvgs, detectOrderBlocks, detectSweeps, detectLiquidityPools } from './smcTools';
 import { confirmedOnly } from './trendlineDetection';
 import type {
@@ -20,7 +24,7 @@ import type {
   AiTimeframeRead,
   AiZone,
 } from '../types/aiModule';
-import type { Candle, MarketFamily } from '../types/market';
+import type { Candle, MarketFamily, TimeframeKey } from '../types/market';
 import { formatPrice } from '../utils/derivParser';
 
 /**
@@ -52,6 +56,12 @@ export interface FvgEngineParams {
   structureCandles: readonly Candle[];
   setupCandles: readonly Candle[];
   entryCandles: readonly Candle[];
+  /** M7 (trend & structure) candles — optional. */
+  trendCandles?: readonly Candle[];
+  /** M3 (entry confirmation) candles — optional. */
+  confirmCandles?: readonly Candle[];
+  /** ALL TEN analysis timeframes for this index (M30/M15/M10/M7/M6/M5/M4/M3/M2/M1). */
+  candlesByTimeframe?: Partial<Record<TimeframeKey, readonly Candle[]>>;
   dataHealth: 'HEALTHY' | 'STALE' | 'DISCONNECTED';
 }
 
@@ -61,23 +71,18 @@ function m1Confirm(
   level: number,
   atr: number
 ): { confirmed: boolean; time: number; detail: string } {
-  const bars = confirmedOnly(entry);
-  for (let i = bars.length - 1; i >= Math.max(0, bars.length - 5); i--) {
-    const bar = bars[i];
-    const stats = getCandleStats(bar);
-    const dirOk = direction === 'RISE' ? stats.isBullish : stats.isBearish;
-    const beyond = direction === 'RISE' ? bar.close - level : level - bar.close;
-    if (dirOk && beyond > -atr * 0.1) {
-      return {
-        confirmed: true,
-        time: bar.time,
-        detail: `M1 rejected from the imbalance at ${formatPrice(level, 2)} with a ${
-          (stats.body / atr).toFixed(2)
-        }× ATR body.`,
-      };
-    }
-  }
-  return { confirmed: false, time: 0, detail: 'M1 reaction at the imbalance pending.' };
+  return m1LevelConfirm(
+    entry,
+    direction,
+    level,
+    atr,
+    0.1,
+    (stats) =>
+      `M1 rejected from the imbalance at ${formatPrice(level, 2)} with a ${(
+        stats.body / atr
+      ).toFixed(2)}× ATR body.`,
+    'M1 reaction at the imbalance pending.'
+  );
 }
 
 export function analyzeFvgInstrument(params: FvgEngineParams): AiInstrumentAnalysis {
@@ -147,8 +152,9 @@ export function analyzeFvgInstrument(params: FvgEngineParams): AiInstrumentAnaly
   }
   const drafts: Draft[] = [];
 
-  const targetFor = (direction: AiDirection): number[] =>
-    orderTargets(direction, price, direction === 'RISE' ? highs : lows).slice(0, 3);
+  // Targets are anchored to the ACTUAL entry (the FVG boundary), never the current price.
+  const targetFor = (direction: AiDirection, entry: number): number[] =>
+    resolveTargets(direction, entry, direction === 'RISE' ? highs : lows, atr);
 
   const tradeable = fvgs.filter(
     (f) => f.state === 'FRESH' || f.state === 'APPROACHING' || f.state === 'TESTED'
@@ -158,7 +164,7 @@ export function analyzeFvgInstrument(params: FvgEngineParams): AiInstrumentAnaly
     const dir: AiDirection = f.kind === 'BULLISH' ? 'RISE' : 'FALL';
     const entryLevel = dir === 'RISE' ? f.upperPrice : f.lowerPrice;
     const conf = m1Confirm(entry, dir, entryLevel, aiAtr(entry));
-    const targets = targetFor(dir);
+    const targets = targetFor(dir, entryLevel);
     const inDiscount = range
       ? dir === 'RISE'
         ? range.position === 'DISCOUNT'
@@ -225,8 +231,8 @@ export function analyzeFvgInstrument(params: FvgEngineParams): AiInstrumentAnaly
       direction: dir,
       entry: entryLevel,
       stop: f.kind === 'BULLISH' ? f.upperPrice + atr * 0.5 : f.lowerPrice - atr * 0.5,
-      targets: targetFor(dir),
-      score: clamp(54 + (conf.confirmed ? 12 : 0) + (targetFor(dir).length >= 2 ? 6 : 0), 0, 100),
+      targets: targetFor(dir, entryLevel),
+      score: clamp(54 + (conf.confirmed ? 12 : 0) + (targetFor(dir, entryLevel).length >= 2 ? 6 : 0), 0, 100),
       reasons: [
         `${f.kind === 'BULLISH' ? 'Bullish' : 'Bearish'} imbalance was broken — now an inverse FVG acting as ${
           dir === 'RISE' ? 'support' : 'resistance'
@@ -240,10 +246,10 @@ export function analyzeFvgInstrument(params: FvgEngineParams): AiInstrumentAnaly
     });
   }
 
-  const best = drafts.sort((a, b) => b.score - a.score)[0] ?? null;
+  const best = structurallyValidDrafts(drafts).sort((a, b) => b.score - a.score)[0] ?? null;
   const bestScore = best?.score ?? 0;
   const gate = FVG_PUBLICATION_MIN_SCORE;
-  const status = statusForScore(bestScore, gate);
+  const status = statusForScore(bestScore, gate, best?.confirmed === true);
 
   // ---- Chart zones: fresh / approaching imbalances (future if ahead of price) ----
   const zones: AiZone[] = [];
@@ -265,13 +271,25 @@ export function analyzeFvgInstrument(params: FvgEngineParams): AiInstrumentAnaly
     );
   }
 
+  const trendRead = params.trendCandles
+    ? timeframeConditionRead(params.trendCandles, 'M7 trend & structure')
+    : null;
+  const confirmRead = params.confirmCandles
+    ? timeframeConditionRead(params.confirmCandles, 'M3 confirmation')
+    : null;
+
   const timeframes: AiTimeframeRead[] = buildTimeframeReads({
+    m7: trendRead?.detail,
+    m7Tone: trendRead?.tone,
+    m3: confirmRead?.detail,
+    m3Tone: confirmRead?.tone,
     m15: `${condition.condition.replace(/_/g, ' ').toLowerCase()} — ${condition.detail}`,
     m15Tone: condition.bias === 'bullish' ? 'bull' : condition.bias === 'bearish' ? 'bear' : 'neutral',
     m5: `${tradeable.length} tradeable imbalance(s) · ${fvgs.filter((f) => f.state === 'IFVG').length} IFVG(s)`,
     m5Tone: tradeable.length > 0 ? 'warn' : 'neutral',
     m1: best ? (best.confirmed ? 'M1 rejection confirmed at the imbalance.' : 'M1 rejection pending.') : 'No M1 confirmation.',
     m1Tone: best?.confirmed ? 'bull' : 'neutral',
+    ladder: ladderTimeframeReads(params.candlesByTimeframe),
   });
 
   let signal: AiSignal | null = null;

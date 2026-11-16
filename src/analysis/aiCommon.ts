@@ -1,7 +1,9 @@
-import { computeAdxSeries, computeRsiSeries } from './indicators';
-import { computeAtrSeries, detectSwings, getCandleStats } from './swings';
+import { computeAdxSeries, computeRsiSeries, ema } from './indicators';
+import { computeAtrSeries, detectSwings, getCandleStats, type CandleStats } from './swings';
 import { confirmedOnly } from './trendlineDetection';
-import type { Candle } from '../types/market';
+import { formatPrice } from '../utils/derivParser';
+import { AI_TIMEFRAME_KEYS } from '../config/deriv';
+import type { Candle, TimeframeKey } from '../types/market';
 import type {
   AiDirection,
   AiLevel,
@@ -30,20 +32,9 @@ export function smaLast(values: readonly number[], period: number): number | nul
   return sum / period;
 }
 
-/** EMA series (nulls until the seed). Mirrors `indicators.ts` but exported for modules. */
+/** EMA series (nulls until the seed). Single implementation lives in `indicators.ts`. */
 export function emaSeries(values: readonly number[], period: number): (number | null)[] {
-  const out: (number | null)[] = new Array(values.length).fill(null);
-  if (values.length < period || period <= 0) return out;
-  const k = 2 / (period + 1);
-  let seed = 0;
-  for (let i = 0; i < period; i++) seed += values[i];
-  let prev = seed / period;
-  out[period - 1] = prev;
-  for (let i = period; i < values.length; i++) {
-    prev = values[i] * k + prev * (1 - k);
-    out[i] = prev;
-  }
-  return out;
+  return ema(values, period);
 }
 
 export function emaLast(values: readonly number[], period: number): number | null {
@@ -268,14 +259,25 @@ export function aiSignalStatus(
   return 'ACTIVE';
 }
 
-/** Status label helper — a developing read never shows as CONFIRMED. */
-export function statusForScore(score: number, gate: number): AiSignal['status'] {
-  if (score >= gate) return 'CONFIRMED';
+/**
+ * Status label helper — a developing read never shows as CONFIRMED.
+ *
+ * `CONFIRMED` is only ever returned when the setup is actually confirmed (and therefore
+ * publishable). A high score that still awaits M1 confirmation reads as
+ * WAITING_FOR_CONFIRMATION, never CONFIRMED, so a badge can never claim a confirmed entry
+ * while no trade exists.
+ */
+export function statusForScore(
+  score: number,
+  gate: number,
+  confirmed = true
+): AiSignal['status'] {
+  if (score >= gate) return confirmed ? 'CONFIRMED' : 'WAITING_FOR_CONFIRMATION';
   if (score >= gate - 12) return 'WAITING_FOR_CONFIRMATION';
   return 'WAITING_FOR_SETUP';
 }
 
-/** Builds a compact three-timeframe read from raw detail strings. */
+/** Builds a compact top-down timeframe read from raw detail strings (M30 → M15 → M10 → M7 → M6 → M5 → M4 → M3 → M2 → M1). */
 export function buildTimeframeReads(params: {
   m15: string;
   m5: string;
@@ -283,12 +285,90 @@ export function buildTimeframeReads(params: {
   m15Tone?: AiTimeframeRead['tone'];
   m5Tone?: AiTimeframeRead['tone'];
   m1Tone?: AiTimeframeRead['tone'];
+  /** M7 trend & market-structure confirmation read — present when M7 candles were supplied. */
+  m7?: string;
+  m7Tone?: AiTimeframeRead['tone'];
+  /** M3 entry-setup confirmation read — present when M3 candles were supplied. */
+  m3?: string;
+  m3Tone?: AiTimeframeRead['tone'];
+  /**
+   * Extra ten-timeframe ladder reads (M30/M10/M6/M4/M2), in top-down order. Each is a
+   * `timeframeConditionRead` result for a timeframe the module actually read; a timeframe
+   * with insufficient data is simply omitted so it is never faked.
+   */
+  ladder?: readonly { timeframe: TimeframeKey; label: string; detail: string; tone: AiTimeframeRead['tone'] }[];
 }): AiTimeframeRead[] {
-  return [
+  const reads: AiTimeframeRead[] = [
     { timeframe: 'M15', label: 'M15 structure', detail: params.m15, tone: params.m15Tone ?? 'neutral' },
-    { timeframe: 'M5', label: 'M5 setup', detail: params.m5, tone: params.m5Tone ?? 'neutral' },
-    { timeframe: 'M1', label: 'M1 entry', detail: params.m1, tone: params.m1Tone ?? 'neutral' },
   ];
+  if (params.m7 !== undefined) {
+    reads.push({ timeframe: 'M7', label: 'M7 trend & structure', detail: params.m7, tone: params.m7Tone ?? 'neutral' });
+  }
+  reads.push({ timeframe: 'M5', label: 'M5 setup', detail: params.m5, tone: params.m5Tone ?? 'neutral' });
+  if (params.m3 !== undefined) {
+    reads.push({ timeframe: 'M3', label: 'M3 confirmation', detail: params.m3, tone: params.m3Tone ?? 'neutral' });
+  }
+  reads.push({ timeframe: 'M1', label: 'M1 entry', detail: params.m1, tone: params.m1Tone ?? 'neutral' });
+  if (params.ladder && params.ladder.length > 0) {
+    const order = AI_TIMEFRAME_KEYS;
+    const seen = new Set(reads.map((r) => r.timeframe));
+    for (const extra of params.ladder) {
+      if (seen.has(extra.timeframe)) continue;
+      seen.add(extra.timeframe);
+      reads.push({
+        timeframe: extra.timeframe,
+        label: extra.label,
+        detail: extra.detail,
+        tone: extra.tone,
+      });
+    }
+    reads.sort((a, b) => order.indexOf(a.timeframe) - order.indexOf(b.timeframe));
+  }
+  return reads;
+}
+
+/**
+ * Builds the extra ten-timeframe ladder reads (M30/M10/M6/M4/M2) for one index from its
+ * per-timeframe candles, using the SAME market-condition classifier every module uses. A
+ * timeframe with insufficient confirmed data is omitted — never faked.
+ */
+export function ladderTimeframeReads(
+  candlesByTimeframe: Partial<Record<TimeframeKey, readonly Candle[]>> | undefined,
+  roleLabels: Partial<Record<TimeframeKey, string>> = {}
+): { timeframe: TimeframeKey; label: string; detail: string; tone: AiTimeframeRead['tone'] }[] {
+  if (!candlesByTimeframe) return [];
+  const out: { timeframe: TimeframeKey; label: string; detail: string; tone: AiTimeframeRead['tone'] }[] = [];
+  for (const tf of AI_TIMEFRAME_KEYS) {
+    const candles = candlesByTimeframe[tf];
+    if (!candles || candles.length === 0) continue;
+    const read = timeframeConditionRead(candles, roleLabels[tf] ?? tf);
+    if (!read) continue;
+    out.push({ timeframe: tf, label: `${tf} ${roleLabels[tf] ?? 'structure'}`, detail: read.detail, tone: read.tone });
+  }
+  return out;
+}
+
+/**
+ * A short timeframe read (tone + detail) derived from a candle series using the SAME
+ * market-condition classifier every module uses. Returns null when there is not enough
+ * confirmed data — the caller then simply omits the read, so a timeframe is never faked.
+ */
+export function timeframeConditionRead(
+  candles: readonly Candle[],
+  role: string
+): { detail: string; tone: AiTimeframeRead['tone'] } | null {
+  const confirmed = confirmedOnly(candles);
+  if (confirmed.length < 30) return null;
+  const read = readAiCondition(confirmed, aiAtr(confirmed));
+  const tone: AiTimeframeRead['tone'] =
+    read.bias === 'bullish'
+      ? 'bull'
+      : read.bias === 'bearish'
+        ? 'bear'
+        : read.condition === 'CONSOLIDATION' || read.condition === 'RANGING'
+          ? 'warn'
+          : 'neutral';
+  return { detail: `${role} — ${read.detail}`, tone };
 }
 
 /** Chart levels for a published signal (entry / stop / TP1-3). */
@@ -316,6 +396,76 @@ export function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));
 }
 
+/** Outcome of an M1 (entry-timeframe) confirmation scan. */
+export interface M1Confirmation {
+  confirmed: boolean;
+  time: number;
+  detail: string;
+}
+
+/**
+ * The shared M1 confirmation scan every AI engine uses. It walks the last few CONFIRMED
+ * entry-timeframe bars (most recent first) and returns the first one that satisfies the
+ * caller's `accept` predicate. Each strategy keeps its own confirmation rule and wording;
+ * only the scan loop is shared, so a strategy can never accidentally read the live bar.
+ *
+ * `accept` returns the confirmation detail text when a bar confirms, or `null` otherwise.
+ */
+export function scanM1Confirmation(
+  entry: readonly Candle[],
+  accept: (bar: Candle, stats: CandleStats) => string | null,
+  pendingDetail: string,
+  lookback = 5
+): M1Confirmation {
+  const bars = confirmedOnly(entry);
+  for (let i = bars.length - 1; i >= Math.max(0, bars.length - lookback); i--) {
+    const bar = bars[i];
+    const detail = accept(bar, getCandleStats(bar));
+    if (detail) return { confirmed: true, time: bar.time, detail };
+  }
+  return { confirmed: false, time: 0, detail: pendingDetail };
+}
+
+/** M1 confirmation for a model that requires a directional close relative to a price level. */
+export function m1LevelConfirm(
+  entry: readonly Candle[],
+  direction: AiDirection,
+  level: number,
+  atr: number,
+  toleranceAtr: number,
+  detail: (stats: CandleStats) => string,
+  pendingDetail: string
+): M1Confirmation {
+  return scanM1Confirmation(
+    entry,
+    (bar, stats) => {
+      const dirOk = direction === 'RISE' ? stats.isBullish : stats.isBearish;
+      const beyond = direction === 'RISE' ? bar.close - level : level - bar.close;
+      return dirOk && beyond > -atr * toleranceAtr ? detail(stats) : null;
+    },
+    pendingDetail
+  );
+}
+
+/** M1 confirmation for a model that requires a directional bar with a minimum body. */
+export function m1BodyConfirm(
+  entry: readonly Candle[],
+  direction: AiDirection,
+  atr: number,
+  bodyAtr: number,
+  detail: (stats: CandleStats) => string,
+  pendingDetail: string
+): M1Confirmation {
+  return scanM1Confirmation(
+    entry,
+    (bar, stats) => {
+      const dirOk = direction === 'RISE' ? stats.isBullish : stats.isBearish;
+      return dirOk && stats.body >= atr * bodyAtr ? detail(stats) : null;
+    },
+    pendingDetail
+  );
+}
+
 /** Reward-to-risk from entry / stop / first target (null when degenerate). */
 export function riskReward(entry: number, stop: number, target: number): number {
   const risk = Math.abs(entry - stop);
@@ -324,19 +474,101 @@ export function riskReward(entry: number, stop: number, target: number): number 
   return Number((reward / risk).toFixed(2));
 }
 
-/** Structural targets in the trade direction, deduped and ordered. */
-export function orderTargets(
+/**
+ * Drops drafts whose stop has landed on the WRONG SIDE of their entry. A structural stop
+ * derived from a level that price has already passed through (e.g. a swept low that price
+ * later closed below) can end up beyond the entry, which makes the trade unenterable. Such
+ * drafts are removed so a module never publishes an invalid setup — it simply keeps the
+ * remaining candidates or waits for the next valid one.
+ */
+export function structurallyValidDrafts<
+  T extends { direction: AiDirection; entry: number; stop: number; targets: number[] }
+>(drafts: readonly T[]): T[] {
+  return drafts.filter(
+    (d) =>
+      Number.isFinite(d.entry) &&
+      Number.isFinite(d.stop) &&
+      (d.direction === 'RISE' ? d.stop < d.entry : d.stop > d.entry)
+  );
+}
+
+/**
+ * Bounded confluence bonus (0–18) from INDEPENDENT evidence a model has already computed.
+ *
+ * Modules score `base + confirmation + confluence`. Every module's base is set so that a
+ * fully confirmed setup with strong confluence can reach its publication gate — without
+ * this term several modules could never publish at all because their maximum achievable
+ * score sat below their own gate. The bonus is capped so it can never carry a setup on its
+ * own: confirmation is still required to publish.
+ */
+export function confluenceBonus(factors: {
+  fvgQuality?: number;
+  obQuality?: number;
+  momentumConfirmed?: boolean;
+  poolTouches?: number;
+  trendAligned?: boolean;
+  displacement?: boolean;
+}): number {
+  let b = 0;
+  if (factors.fvgQuality !== undefined) b += factors.fvgQuality >= 70 ? 6 : factors.fvgQuality >= 50 ? 3 : 0;
+  if (factors.obQuality !== undefined) b += factors.obQuality >= 70 ? 6 : factors.obQuality >= 50 ? 3 : 0;
+  if (factors.momentumConfirmed) b += 5;
+  if (factors.poolTouches !== undefined) b += factors.poolTouches >= 3 ? 4 : factors.poolTouches >= 2 ? 2 : 0;
+  if (factors.trendAligned) b += 3;
+  if (factors.displacement) b += 4;
+  return Math.min(18, b);
+}
+
+/**
+ * Bounded reward-to-risk sub-score (0–20), mirroring the Demand & Supply engine's
+ * `spaceScore`. The Live Scanner previously ranked on confirmation + confluence alone, so a
+ * setup risking 12× its reward could outrank one with a healthy 3:1 R:R even though the panel
+ * advertises ranking "by quality, structure and reward-to-risk".
+ */
+export function rewardToRiskScore(reward: number, risk: number): number {
+  if (!Number.isFinite(reward) || !Number.isFinite(risk) || risk <= 0) return 0;
+  const rr = reward / risk;
+  return rr >= 2 ? 20 : rr >= 1.5 ? 15 : rr >= 1 ? 9 : 3;
+}
+
+/**
+ * A structurally valid, monotonic target ladder anchored to the ACTUAL entry.
+ *
+ * Every returned target lies strictly beyond `entry` in `direction`, ordered nearest →
+ * farthest, with at least TP1 and TP2 guaranteed from `unit` (the trade risk) when
+ * structure offers fewer. This is the single guarantee that a published trade can never
+ * carry a target on the wrong side of its entry — the class of bug that arises when an
+ * engine derives targets from the current price while entering at a zone boundary.
+ */
+export function resolveTargets(
   direction: AiDirection,
   entry: number,
-  candidates: readonly number[]
+  candidates: readonly (number | null | undefined)[],
+  unit: number
 ): number[] {
-  const forward = candidates.filter((p) =>
-    direction === 'RISE' ? p > entry : p < entry
+  const step = Math.max(1e-9, Math.abs(unit) || 1e-9);
+  const eps = step * 0.05;
+  const forward = candidates.filter(
+    (p): p is number =>
+      typeof p === 'number' &&
+      Number.isFinite(p) &&
+      (direction === 'RISE' ? p > entry + eps : p < entry - eps)
   );
-  const sorted = [...new Set(forward)].sort((a, b) =>
+  const ladder = [...new Set(forward)].sort((a, b) =>
     direction === 'RISE' ? a - b : b - a
   );
-  return sorted;
+  const fallback = (mult: number) =>
+    direction === 'RISE' ? entry + step * mult : entry - step * mult;
+  // Guarantee TP1 and TP2, then enforce strict monotonic ordering beyond the previous leg.
+  if (ladder.length < 1) ladder.push(fallback(2));
+  if (ladder.length < 2) ladder.push(fallback(3.5));
+  const out = ladder.slice(0, 3);
+  for (let i = 1; i < out.length; i++) {
+    const prev = out[i - 1];
+    const ok = direction === 'RISE' ? out[i] > prev + eps : out[i] < prev - eps;
+    if (!ok) out[i] = direction === 'RISE' ? prev + step * 1.5 : prev - step * 1.5;
+  }
+  return out;
 }
 
 /**
@@ -370,11 +602,18 @@ export function buildAiSignal(params: {
   confirmedBarTime: number;
 }): AiSignal {
   const now = Date.now();
+  const { takeProfit1: tp1, takeProfit2: tp2, takeProfit3: tp3 } = params;
   return {
     ...params,
     lifecycle: 'ACTIVE',
-    riskRewardRatio: riskReward(params.entryPrice, params.stopLoss, params.takeProfit1),
-    levels: signalLevels(params),
+    riskRewardRatio: riskReward(params.entryPrice, params.stopLoss, tp1),
+    levels: signalLevels({
+      entryPrice: params.entryPrice,
+      stopLoss: params.stopLoss,
+      takeProfit1: tp1,
+      takeProfit2: tp2,
+      takeProfit3: tp3,
+    }),
     createdAt: now,
     lastUpdated: now,
   };

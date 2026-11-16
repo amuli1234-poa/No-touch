@@ -1,11 +1,13 @@
 import type { MarketFamily, TimeframeKey } from './market';
+import type { AiTimeframeRead } from './aiModule';
 
 /**
  * Trendline Scanner types — a fully independent strategy module.
  *
- * Structural analysis (swings, trendlines, market condition) is performed on M15;
- * entries and the mandatory rejection confirmation are taken on M5. Nothing here
- * touches the existing price-action engine's model taxonomy.
+ * Structural analysis (swings, trendlines, market condition) is performed on M15, with the
+ * trend and market structure read on M7. The rejection setup develops on M5, the entry setup
+ * is confirmed on M3, and the precise entry trigger is taken on M1. Nothing here touches the
+ * existing price-action engine's model taxonomy.
  */
 
 /** Which side of price a trendline acts on. */
@@ -91,9 +93,10 @@ export interface TrendlineRejection {
 }
 
 /**
- * The precise entry confirmation taken on M1 — the third, lowest timeframe in the
- * top-down chain (M15 structure → M5 setup → M1 entry). It must AGREE with the
- * higher-timeframe direction unless a validated reversal has flipped the bias.
+ * The precise entry confirmation taken on M1 — the lowest timeframe in the top-down
+ * chain (M15 structure → M7 trend & structure → M5 setup → M3 confirmation → M1 entry).
+ * It must AGREE with the higher-timeframe direction unless a validated reversal has
+ * flipped the bias.
  */
 export type TrendlineEntryConfirmationKind =
   | 'BULLISH_ENGULFING'
@@ -208,7 +211,7 @@ export interface TrendlineCandidate {
   rejection: TrendlineRejection;
   /** The trend-aligned setup zone (boundary) this candidate rejected from. */
   zone: TrendlineSetupZone | null;
-  /** The M1 precise-entry confirmation (third timeframe in the top-down chain). */
+  /** The M1 precise-entry confirmation (lowest timeframe in the top-down chain). */
   entryConfirmation: TrendlineEntryConfirmation;
   /** Continuation BOS that confirms the trend after the rejection, when present. */
   continuationBos: string | null;
@@ -225,7 +228,7 @@ export interface TrendlineCandidate {
 
 /**
  * Signal status vocabulary surfaced in the scanner results table. The scanner only ever
- * records CONFIRMED opportunities (a real M5/M1 confirmation), but the enum carries
+ * records CONFIRMED opportunities (a real M3/M1 confirmation), but the enum carries
  * WAITING / INVALIDATED so the UI can express every state the module can be in.
  */
 export type TrendlineSignalStatus =
@@ -261,8 +264,14 @@ export interface TrendlineSignal {
   model: TrendlineEntryModelId;
   modelLabel: string;
   condition: TrendlineMarketCondition;
-  /** Structural timeframe (M15), setup timeframe (M5) and entry timeframe (M1). */
+  /** Structural timeframe (M15) and precise-entry timeframe (M1) for the published signal. */
   structureTimeframe: TimeframeKey;
+  /** M7 trend & market-structure timeframe. */
+  trendTimeframe: TimeframeKey;
+  /** M5 setup timeframe the rejection developed on. */
+  setupTimeframe: TimeframeKey;
+  /** M3 entry-setup confirmation timeframe. */
+  confirmTimeframe: TimeframeKey;
   entryTimeframe: TimeframeKey;
   score: number;
   entryPrice: number;
@@ -316,10 +325,15 @@ export interface TrendlineInstrumentAnalysis {
   rejection: TrendlineRejection;
   /** The M1 precise-entry confirmation for the current instrument (may be unconfirmed). */
   entryConfirmation: TrendlineEntryConfirmation;
-  /** M15 structure → M5 setup → M1 entry. */
+  /** M15 structure → M7 trend → M5 setup → M3 confirmation → M1 entry (see `timeframes`). */
   structureTimeframe: TimeframeKey;
   setupTimeframe: TimeframeKey;
   entryTimeframe: TimeframeKey;
+  /**
+   * Top-down timeframe reads: M15 bias, M7 trend & structure, M5 setup, M3 confirmation,
+   * M1 entry. M7/M3 entries are present only when those series were supplied.
+   */
+  timeframes: AiTimeframeRead[];
   atr: number;
   dataHealth: 'HEALTHY' | 'STALE' | 'DISCONNECTED';
   lastUpdated: number;

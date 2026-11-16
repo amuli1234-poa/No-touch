@@ -12,14 +12,14 @@ import type {
 } from 'lightweight-charts';
 import type { CanvasRenderingTarget2D } from 'fancy-canvas';
 import {
-  MARKUP,
   MARKUP_ALPHA,
-  MARKUP_LABEL,
-  MARKUP_WIDTH,
-  drawAnchorDot,
-  drawHLine,
-  drawLabel,
-} from './chartMarkupStyle';
+  MARKUP_COLORS,
+  MARKUP_DASH,
+  MARKUP_FONT,
+  MARKUP_LINE,
+  drawTag,
+  hexToRgba,
+} from './markupStyle';
 
 export type SignalMarkerDirection = 'RISE' | 'FALL';
 
@@ -44,12 +44,13 @@ export interface SignalLevels {
 }
 
 /**
- * Draws the RISE/FALL entry marker and the locked ENTRY / STOP-LOSS / TAKE-PROFIT levels
- * on the candle canvas.
+ * Draws the managed RISE/FALL entry annotation and the locked ENTRY / STOP-LOSS levels
+ * plus the dynamic TAKE-PROFIT level directly on the candle canvas.
  *
- * Kept deliberately minimal: thin lines, a small triangle marker at the entry candle and
- * short labels (E, SL, TP). Everything is drawn in media coordinates on every frame, so
- * the annotations stay pinned to their exact candle and price through zoom and pan.
+ * Everything is drawn in media coordinates on every frame, so the annotations stay
+ * pinned to their exact candle and price through zoom, pan and resize. Minimalist styling
+ * is used throughout: hairline level lines, a small R / F marker and tiny price tags, so
+ * the candlesticks remain the main focus.
  */
 class SignalAnnotationRenderer implements IPrimitivePaneRenderer {
   private readonly chart: IChartApi;
@@ -71,7 +72,7 @@ class SignalAnnotationRenderer implements IPrimitivePaneRenderer {
 
       const timeScale = this.chart.timeScale();
       const isRise = levels.direction === 'RISE';
-      const dirColor = isRise ? MARKUP.bull : MARKUP.bear;
+      const dirColor = isRise ? MARKUP_COLORS.rise : MARKUP_COLORS.fall;
 
       ctx.save();
       ctx.textBaseline = 'middle';
@@ -82,42 +83,73 @@ class SignalAnnotationRenderer implements IPrimitivePaneRenderer {
       const yTarget = this.series.priceToCoordinate(levels.takeProfit);
       const xEntry = timeScale.timeToCoordinate(levels.entryTime as UTCTimestamp);
 
-      // Locked ENTRY — solid blue line, thin, short label.
+      // Locked ENTRY level — thin solid line, small tag.
       if (yEntry !== null) {
-        this.drawLevel(ctx, yEntry, width, MARKUP.entry, [], `${MARKUP_LABEL.entry} ${formatLevel(levels.entry)}`);
+        this.drawLevel(ctx, width, yEntry, MARKUP_COLORS.entry, 'ENTRY', MARKUP_DASH.solid);
       }
-      // Locked STOP-LOSS — solid red line.
+      // Locked STOP-LOSS level — thin solid line, small tag.
       if (yStop !== null) {
-        this.drawLevel(ctx, yStop, width, MARKUP.stop, [], `${MARKUP_LABEL.stop} ${formatLevel(levels.stopLoss)}`);
+        this.drawLevel(ctx, width, yStop, MARKUP_COLORS.stop, 'SL', MARKUP_DASH.solid);
       }
-      // Dynamic TAKE-PROFIT — dashed green line.
+      // Dynamic TAKE-PROFIT level — thin dashed line, small tag.
       if (yTarget !== null) {
         this.drawLevel(
           ctx,
-          yTarget,
           width,
-          MARKUP.target,
-          [7, 5],
-          `${MARKUP_LABEL.target} ${formatLevel(levels.takeProfit)}`
+          yTarget,
+          MARKUP_COLORS.target,
+          levels.tpAnimating ? 'TP ▶' : 'TP',
+          MARKUP_DASH.dashed
         );
       }
 
-      // Risk / reward context between stop and target — very faint, no labels.
-      if (yEntry !== null && yStop !== null && yTarget !== null) {
-        const x0 = Math.max(0, width * 0.62);
-        const ribbonW = width - x0;
-        ctx.fillStyle = hexSoft(MARKUP.stop, 0.05);
-        ctx.fillRect(x0, Math.min(yStop, yEntry), ribbonW, Math.abs(yEntry - yStop));
-        ctx.fillStyle = hexSoft(MARKUP.target, 0.05);
-        ctx.fillRect(x0, Math.min(yTarget, yEntry), ribbonW, Math.abs(yTarget - yEntry));
-      }
+      // Small directional marker on the confirmation candle + tiny price tag.
+      if (xEntry !== null && yEntry !== null) {
+        const markerY = isRise ? yEntry + 12 : yEntry - 12;
 
-      // Small directional marker at the exact entry candle.
-      if (xEntry !== null && yEntry !== null && xEntry >= 0 && xEntry <= width) {
-        drawEntryMarker(ctx, xEntry, yEntry, dirColor, isRise);
-        drawLabel(ctx, isRise ? 'RISE' : 'FALL', xEntry + 8, yEntry - 10, dirColor, {
-          size: 9,
-          weight: 700,
+        // Faint highlight of the confirmation candle (context, not colour-only).
+        const barSpacing = timeScale.options().barSpacing ?? 10;
+        const halfWidth = Math.max(3, Math.min(7, barSpacing * 0.3));
+        const candleHigh = this.series.priceToCoordinate(
+          levels.entry + Math.abs(levels.entry - levels.stopLoss) * 0.9
+        );
+        const candleLow = this.series.priceToCoordinate(
+          levels.entry - Math.abs(levels.entry - levels.stopLoss) * 0.9
+        );
+        if (candleHigh !== null && candleLow !== null) {
+          ctx.fillStyle = hexToRgba(dirColor, 0.06);
+          ctx.fillRect(xEntry - halfWidth, candleHigh, halfWidth * 2, candleLow - candleHigh);
+        }
+
+        // Small triangle marker pointing at the candle.
+        ctx.fillStyle = dirColor;
+        ctx.beginPath();
+        if (isRise) {
+          ctx.moveTo(xEntry, markerY - 6);
+          ctx.lineTo(xEntry - 4, markerY + 3);
+          ctx.lineTo(xEntry + 4, markerY + 3);
+        } else {
+          ctx.moveTo(xEntry, markerY + 6);
+          ctx.lineTo(xEntry - 4, markerY - 3);
+          ctx.lineTo(xEntry + 4, markerY - 3);
+        }
+        ctx.closePath();
+        ctx.fill();
+
+        // Non-colour cue: a letter R / F inside the marker for colour-blind users.
+        ctx.font = MARKUP_FONT.glyph;
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.fillText(isRise ? 'R' : 'F', xEntry, isRise ? markerY - 1 : markerY + 1);
+        ctx.textAlign = 'left';
+
+        // Short label: RISE / FALL + quality. Model detail lives in the panel.
+        const meta = typeof levels.quality === 'number' ? ` ${levels.quality}` : '';
+        drawTag(ctx, {
+          x: xEntry + 6,
+          y: markerY,
+          text: `${isRise ? 'RISE' : 'FALL'}${meta}`,
+          color: dirColor,
         });
       }
 
@@ -127,56 +159,31 @@ class SignalAnnotationRenderer implements IPrimitivePaneRenderer {
 
   private drawLevel(
     ctx: CanvasRenderingContext2D,
-    y: number,
     width: number,
+    y: number,
     color: string,
-    dash: number[],
-    label: string
+    badge: string,
+    dash: number[]
   ): void {
-    drawHLine(ctx, y, width, color, { dash, width: MARKUP_WIDTH.line, alpha: MARKUP_ALPHA.line });
-    drawLabel(ctx, label, width - 58, y - 9, color, { size: 9, weight: 700 });
+    ctx.save();
+    ctx.setLineDash(dash);
+    ctx.strokeStyle = hexToRgba(color, MARKUP_ALPHA.edge);
+    ctx.lineWidth = MARKUP_LINE.hair;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    drawTag(ctx, {
+      x: width - 6,
+      y,
+      align: 'right',
+      text: `${badge} ${formatLevel(badge === 'SL' ? this.levels.stopLoss : badge.startsWith('TP') ? this.levels.takeProfit : this.levels.entry)}`,
+      color,
+    });
   }
-}
-
-function hexSoft(hex: string, alpha: number): string {
-  const clean = hex.replace('#', '');
-  const r = parseInt(clean.slice(0, 2), 16);
-  const g = parseInt(clean.slice(2, 4), 16);
-  const b = parseInt(clean.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-function drawEntryMarker(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  color: string,
-  bullish: boolean
-): void {
-  const s = 5;
-  ctx.save();
-  ctx.strokeStyle = hexSoft(color, 0.9);
-  ctx.lineWidth = MARKUP_WIDTH.line;
-  ctx.beginPath();
-  ctx.moveTo(x, y);
-  ctx.lineTo(x, bullish ? y + s * 2.4 : y - s * 2.4);
-  ctx.stroke();
-
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  if (bullish) {
-    ctx.moveTo(x, y - s);
-    ctx.lineTo(x - s, y + s);
-    ctx.lineTo(x + s, y + s);
-  } else {
-    ctx.moveTo(x, y + s);
-    ctx.lineTo(x - s, y - s);
-    ctx.lineTo(x + s, y - s);
-  }
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
-  drawAnchorDot(ctx, x, y, color, 2);
 }
 
 function formatLevel(price: number): string {

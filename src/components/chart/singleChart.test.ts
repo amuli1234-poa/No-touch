@@ -57,4 +57,16 @@ describe('single shared chart', () => {
     const slots = walk(SRC).filter((file) => /<ModuleChartSlot\b/.test(readFileSync(file, 'utf8')));
     assert.ok(slots.length >= 4, `expected module views to use ModuleChartSlot, found ${slots.length}`);
   });
+
+  it('memoises the ModuleChartSlot overlay so the shared chart cannot re-render in a loop', () => {
+    const source = readFileSync(join(SRC, 'components/chart/ModuleChartSlot.tsx'), 'utf8');
+    // The registration effect keys on the overlay object's identity, so passing a fresh
+    // object literal every render (setOverlay -> App re-render -> new literal -> ...) loops.
+    assert.match(source, /useMemo/, 'ModuleChartSlot must memoise its overlay object');
+    assert.doesNotMatch(
+      source,
+      /useRegisterModuleOverlay\(\s*\{/,
+      'ModuleChartSlot must not pass an inline object literal to useRegisterModuleOverlay'
+    );
+  });
 });

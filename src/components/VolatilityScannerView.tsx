@@ -115,8 +115,17 @@ export function VolatilityScannerView({
     );
   }, [monitorSummary, familyFilter]);
 
+  // Jump / Step coverage — proves the mandatory families are actually being analysed.
+  const familyCoverage = useMemo(() => {
+    const all = monitorSummary?.readings ?? [];
+    const jump = all.filter((r) => r.marketFamily === 'JUMP').length;
+    const step = all.filter((r) => r.marketFamily === 'STEP').length;
+    const volatility = all.filter((r) => r.marketFamily === 'VOLATILITY').length;
+    return { jump, step, volatility };
+  }, [monitorSummary]);
+
   return (
-    <div className="flex flex-col gap-4 p-3 @sm:p-5 max-w-[1400px] w-full mx-auto">
+    <div className="flex flex-col gap-4 p-3 sm:p-5 max-w-[1400px] w-full mx-auto">
       {/* Header */}
       <div className="flex flex-col gap-3 bg-surface border border-line rounded-xl p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -223,7 +232,7 @@ export function VolatilityScannerView({
       </div>
 
       {/* Summary tiles */}
-      <div className="grid grid-cols-2 @lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-surface border border-line rounded-xl px-3 py-2.5">
           <div className="text-[10px] font-semibold uppercase tracking-wide text-faint">
             Monitored
@@ -254,6 +263,25 @@ export function VolatilityScannerView({
           </div>
           <div className="text-lg font-bold font-mono text-ink">{timeframe}</div>
         </div>
+      </div>
+
+      {/* Market coverage — the mandatory families must all be present. */}
+      <div className="flex flex-wrap items-center gap-2 text-[11px]">
+        <span className="font-semibold text-faint uppercase tracking-wide text-[10px]">
+          Coverage
+        </span>
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-elevated border border-line text-muted">
+          Volatility <span className="font-mono font-bold text-ink">{familyCoverage.volatility}</span>
+        </span>
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-elevated border border-line text-muted">
+          Jump <span className="font-mono font-bold text-ink">{familyCoverage.jump}</span>
+        </span>
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-elevated border border-line text-muted">
+          Step <span className="font-mono font-bold text-ink">{familyCoverage.step}</span>
+        </span>
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-elevated border border-line text-faint">
+          Boom / Crash excluded
+        </span>
       </div>
 
       {/* Scanner's single best setup — the breadth engine's own conclusion */}
@@ -323,7 +351,7 @@ export function VolatilityScannerView({
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-2 @lg:grid-cols-4 gap-2.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                     {[
                       { label: 'Entry', value: w.entryPrice },
                       { label: 'Invalidation', value: w.invalidationPrice },
@@ -400,7 +428,7 @@ export function VolatilityScannerView({
                     const falseSignal = analysis?.falseSignal ?? null;
                     if (!reach && !falseSignal) return null;
                     return (
-                      <div className="grid grid-cols-1 @sm:grid-cols-2 gap-2.5">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                         {reach && (
                           <div
                             data-testid="scanner-reachability"

@@ -12,23 +12,26 @@ import type { CanvasRenderingTarget2D } from 'fancy-canvas';
 import type { AiSignal, AiZone } from '../../types/aiModule';
 import { formatPrice } from '../../utils/derivParser';
 import {
-  MARKUP,
   MARKUP_ALPHA,
-  MARKUP_LABEL,
-  MARKUP_WIDTH,
-  drawHLine,
-  drawLabel,
-  drawZoneBox,
-} from './chartMarkupStyle';
+  MARKUP_COLORS,
+  MARKUP_DASH,
+  MARKUP_LINE,
+  drawTag,
+  hexToRgba,
+  shortZoneLabel,
+} from './markupStyle';
 
 /**
  * Shared chart overlay for the independent AI strategy modules (Support & Resistance AI,
  * Chart Patterns AI, BOS & CHOCH AI, Technical AI, SMC/ICT & Price Action AI).
  *
- * Draws only the current relevant zones (blue = bullish, red = bearish), the FUTURE watch
- * zones (dimmer + dashed) and, when a signal is confirmed, the entry / stop / TP levels
- * with a small directional marker. Zones are lightly shaded with thin edges and short
- * labels; historical / invalidated / completed markings are never drawn.
+ * Draws ONLY the current relevant zones (blue = bullish, red = bearish), the FUTURE watch
+ * zones (dimmer + dashed) and, when a signal is confirmed, the entry / stop / TP1-3 levels.
+ * Historical / invalidated / completed markings are never drawn — the modules prune them
+ * before the overlay is built, so the chart always reflects the current live market.
+ *
+ * All drawings use the minimalist markup style: thin lines, transparent fills and short
+ * labels (S, R, SZ, DZ, BOS, CHoCH, WATCH) so the candles stay the focus.
  */
 export interface AiChartOverlay {
   /** Current valid zones in play (nearest first). */
@@ -37,49 +40,6 @@ export interface AiChartOverlay {
   watchZones?: AiZone[];
   signal?: AiSignal | null;
   precision: number;
-}
-
-/**
- * Compresses a module zone label ("SUPPORT", "BULLISH OB", "DEMAND ZONE", …) to a short
- * on-chart code. Unknown labels fall back to their first word so the chart never shows a
- * sentence.
- */
-export function shortZoneLabel(label: string): string {
-  const key = label.trim().toUpperCase();
-  if (key.includes('SUPPORT')) return MARKUP_LABEL.support;
-  if (key.includes('RESIST')) return MARKUP_LABEL.resistance;
-  if (key.includes('DEMAND')) return MARKUP_LABEL.demand;
-  if (key.includes('SUPPLY')) return MARKUP_LABEL.supply;
-  if (key.includes('CHOCH')) return MARKUP_LABEL.choch;
-  if (key.includes('BOS')) return MARKUP_LABEL.bos;
-  if (key.includes('FVG')) return MARKUP_LABEL.fvg;
-  if (key.includes('OB')) return 'OB';
-  return key.split(/\s+/)[0]?.slice(0, 6) || 'Z';
-}
-
-function drawBreakMarker(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  color: string,
-  bullish: boolean
-): void {
-  const s = 4;
-  ctx.save();
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  if (bullish) {
-    ctx.moveTo(x, y - s);
-    ctx.lineTo(x - s, y + s);
-    ctx.lineTo(x + s, y + s);
-  } else {
-    ctx.moveTo(x, y + s);
-    ctx.lineTo(x - s, y - s);
-    ctx.lineTo(x + s, y - s);
-  }
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
 }
 
 class AiRenderer implements IPrimitivePaneRenderer {
@@ -94,38 +54,44 @@ class AiRenderer implements IPrimitivePaneRenderer {
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
       const width = mediaSize.width;
       const height = mediaSize.height;
-      if (width <= 0) return;
       ctx.save();
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'left';
 
       const drawZone = (zone: AiZone, isWatch: boolean) => {
         const isBull = zone.direction === 'RISE';
-        const color = isBull ? MARKUP.support : MARKUP.bear;
+        const color = isBull ? MARKUP_COLORS.support : MARKUP_COLORS.resistance;
 
         const yUpper = series.priceToCoordinate(zone.upperPrice);
         const yLower = series.priceToCoordinate(zone.lowerPrice);
         if (yUpper === null || yLower === null) return;
         const top = Math.min(yUpper, yLower);
-        const h = Math.max(2, Math.abs(yLower - yUpper));
+        const zoneH = Math.max(2, Math.abs(yLower - yUpper));
 
-        drawZoneBox(ctx, {
-          x: 0,
-          y: top,
-          w: width,
-          h,
+        // Barely-there band fill; watch zones a touch lighter still.
+        ctx.fillStyle = hexToRgba(color, isWatch ? MARKUP_ALPHA.fill : MARKUP_ALPHA.fillActive);
+        ctx.fillRect(0, top, width, zoneH);
+
+        // Thin upper / lower boundaries (dashed for a future watch zone).
+        ctx.strokeStyle = hexToRgba(color, isWatch ? MARKUP_ALPHA.edgeSoft : MARKUP_ALPHA.edge);
+        ctx.lineWidth = MARKUP_LINE.hair;
+        ctx.setLineDash(isWatch ? MARKUP_DASH.subtle : MARKUP_DASH.solid);
+        ctx.beginPath();
+        ctx.moveTo(0, top);
+        ctx.lineTo(width, top);
+        ctx.moveTo(0, top + zoneH);
+        ctx.lineTo(width, top + zoneH);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // One short label: token + WATCH for a future zone.
+        const token = shortZoneLabel(zone.label);
+        const text = isWatch ? `${token} · WATCH` : token;
+        drawTag(ctx, {
+          x: 6,
+          y: Math.max(7, Math.min(height - 7, top + zoneH / 2)),
+          text,
           color,
-          fillAlpha: isWatch ? MARKUP_ALPHA.fillFaint : MARKUP_ALPHA.fill,
-          edgeAlpha: MARKUP_ALPHA.edge,
-          edgesOnly: true,
-          dash: isWatch ? [6, 5] : [],
-        });
-
-        const code = shortZoneLabel(zone.label);
-        const ly = Math.max(9, Math.min(height - 9, top + h / 2));
-        drawLabel(ctx, `${code}${isWatch ? ` ${MARKUP_LABEL.watch}` : ''}`, 6, ly, color, {
-          size: 9,
-          weight: 700,
         });
       };
 
@@ -135,31 +101,63 @@ class AiRenderer implements IPrimitivePaneRenderer {
       const signal = overlay.signal;
       if (signal) {
         const isRise = signal.direction === 'RISE';
-        const dirColor = isRise ? MARKUP.support : MARKUP.bear;
+        const dirColor = isRise ? MARKUP_COLORS.rise : MARKUP_COLORS.fall;
 
         const drawLevel = (price: number, color: string, badge: string, dash: number[]) => {
           const y = series.priceToCoordinate(price);
           if (y === null) return;
-          drawHLine(ctx, y, width, color, { dash, width: MARKUP_WIDTH.line, alpha: MARKUP_ALPHA.line });
-          const text = `${badge} ${formatPrice(price, overlay.precision)}`;
-          drawLabel(ctx, text, width - 70, y - 9, color, { size: 9, weight: 700 });
+          ctx.save();
+          ctx.setLineDash(dash);
+          ctx.strokeStyle = hexToRgba(color, MARKUP_ALPHA.edge);
+          ctx.lineWidth = MARKUP_LINE.hair;
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(width, y);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.restore();
+
+          drawTag(ctx, {
+            x: width - 6,
+            y,
+            align: 'right',
+            text: `${badge} ${formatPrice(price, overlay.precision)}`,
+            color,
+          });
         };
 
-        drawLevel(signal.entryPrice, MARKUP.entry, MARKUP_LABEL.entry, []);
-        drawLevel(signal.takeProfit1, MARKUP.target, MARKUP_LABEL.target, [7, 5]);
-        drawLevel(signal.takeProfit2, MARKUP.target, MARKUP_LABEL.target, [7, 5]);
+        drawLevel(signal.entryPrice, MARKUP_COLORS.entry, 'ENTRY', MARKUP_DASH.solid);
+        drawLevel(signal.takeProfit1, MARKUP_COLORS.target, 'TP1', MARKUP_DASH.dashed);
+        drawLevel(signal.takeProfit2, MARKUP_COLORS.target, 'TP2', MARKUP_DASH.dashed);
         if (signal.takeProfit3 !== null) {
-          drawLevel(signal.takeProfit3, MARKUP.target, MARKUP_LABEL.target, [7, 5]);
+          drawLevel(signal.takeProfit3, MARKUP_COLORS.target, 'TP3', MARKUP_DASH.dashed);
         }
-        drawLevel(signal.stopLoss, MARKUP.stop, MARKUP_LABEL.stop, []);
+        drawLevel(signal.stopLoss, MARKUP_COLORS.stop, 'SL', MARKUP_DASH.solid);
 
+        // Small directional marker on the confirmation candle.
         const xEntry = chart.timeScale().timeToCoordinate(signal.confirmedBarTime as UTCTimestamp);
         const yEntry = series.priceToCoordinate(signal.entryPrice);
-        if (xEntry !== null && yEntry !== null && xEntry >= 0 && xEntry <= width) {
-          drawBreakMarker(ctx, xEntry, yEntry, dirColor, isRise);
-          drawLabel(ctx, isRise ? 'RISE' : 'FALL', xEntry + 7, yEntry - 10, dirColor, {
-            size: 9,
-            weight: 700,
+        if (xEntry !== null && yEntry !== null) {
+          const markerY = isRise ? yEntry + 12 : yEntry - 12;
+          ctx.fillStyle = dirColor;
+          ctx.beginPath();
+          if (isRise) {
+            ctx.moveTo(xEntry, markerY - 6);
+            ctx.lineTo(xEntry - 4, markerY + 3);
+            ctx.lineTo(xEntry + 4, markerY + 3);
+          } else {
+            ctx.moveTo(xEntry, markerY + 6);
+            ctx.lineTo(xEntry - 4, markerY - 3);
+            ctx.lineTo(xEntry + 4, markerY - 3);
+          }
+          ctx.closePath();
+          ctx.fill();
+
+          drawTag(ctx, {
+            x: xEntry + 6,
+            y: markerY,
+            text: isRise ? 'RISE' : 'FALL',
+            color: dirColor,
           });
         }
       }

@@ -2,15 +2,19 @@ import {
   aiAtr,
   buildAiSignal,
   buildTimeframeReads,
+  ladderTimeframeReads,
+  timeframeConditionRead,
   clamp,
+  structurallyValidDrafts,
   dealingRange,
   makeZone,
-  orderTargets,
+  resolveTargets,
   readAiCondition,
   statusForScore,
+  m1LevelConfirm,
 } from './aiCommon';
 import { analyzeMarketStructure } from './structure';
-import { computeAtrSeries, detectSwings, getCandleStats } from './swings';
+import { computeAtrSeries, detectSwings } from './swings';
 import {
   detectFvgs,
   detectLiquidityPools,
@@ -25,7 +29,7 @@ import type {
   AiTimeframeRead,
   AiZone,
 } from '../types/aiModule';
-import type { Candle, MarketFamily } from '../types/market';
+import type { Candle, MarketFamily, TimeframeKey } from '../types/market';
 import { formatPrice } from '../utils/derivParser';
 
 /**
@@ -57,6 +61,12 @@ export interface SmcEngineParams {
   structureCandles: readonly Candle[];
   setupCandles: readonly Candle[];
   entryCandles: readonly Candle[];
+  /** M7 (trend & structure) candles — optional. */
+  trendCandles?: readonly Candle[];
+  /** M3 (entry confirmation) candles — optional. */
+  confirmCandles?: readonly Candle[];
+  /** ALL TEN analysis timeframes for this index (M30/M15/M10/M7/M6/M5/M4/M3/M2/M1). */
+  candlesByTimeframe?: Partial<Record<TimeframeKey, readonly Candle[]>>;
   dataHealth: 'HEALTHY' | 'STALE' | 'DISCONNECTED';
 }
 
@@ -66,24 +76,19 @@ function m1Confirm(
   level: number,
   atr: number
 ): { confirmed: boolean; time: number; detail: string } {
-  const bars = confirmedOnly(entry);
-  for (let i = bars.length - 1; i >= Math.max(0, bars.length - 5); i--) {
-    const bar = bars[i];
-    const stats = getCandleStats(bar);
-    const dirOk = direction === 'RISE' ? stats.isBullish : stats.isBearish;
-    const beyond = direction === 'RISE' ? bar.close - level : level - bar.close;
-    if (dirOk && beyond > -atr * 0.05) {
-      return {
-        confirmed: true,
-        time: bar.time,
-        detail: `M1 confirmed a ${direction === 'RISE' ? 'bullish' : 'bearish'} reaction at ${formatPrice(
-          level,
-          2
-        )}.`,
-      };
-    }
-  }
-  return { confirmed: false, time: 0, detail: 'M1 reaction confirmation pending.' };
+  return m1LevelConfirm(
+    entry,
+    direction,
+    level,
+    atr,
+    0.05,
+    () =>
+      `M1 confirmed a ${direction === 'RISE' ? 'bullish' : 'bearish'} reaction at ${formatPrice(
+        level,
+        2
+      )}.`,
+    'M1 reaction confirmation pending.'
+  );
 }
 
 export function analyzeSmcInstrument(params: SmcEngineParams): AiInstrumentAnalysis {
@@ -157,9 +162,16 @@ export function analyzeSmcInstrument(params: SmcEngineParams): AiInstrumentAnaly
   const freshFvg = fvgs.find((f) => f.state === 'FRESH' || f.state === 'APPROACHING' || f.state === 'TESTED');
   const freshOb = obs.find((o) => !o.invalidated);
 
-  const targetFor = (direction: AiDirection): number[] => {
+  // Targets are anchored to the ACTUAL entry (never the current price): a zone entry can
+  // sit far from price, so a price-anchored ladder would place FALL targets above the entry.
+  const targetFor = (direction: AiDirection, entry: number): number[] => {
     const opposing = pools.filter((p) => (direction === 'RISE' ? p.side === 'BSL' : p.side === 'SSL'));
-    return orderTargets(direction, price, [...opposing.map((p) => p.price), ...(direction === 'RISE' ? highs : lows)]).slice(0, 3);
+    return resolveTargets(
+      direction,
+      entry,
+      [...opposing.map((p) => p.price), ...(direction === 'RISE' ? highs : lows)],
+      atr
+    );
   };
 
   // 1. Sweep → MSS → FVG retracement.
@@ -170,7 +182,7 @@ export function analyzeSmcInstrument(params: SmcEngineParams): AiInstrumentAnaly
       const zone = freshFvg && (freshFvg.kind === 'BULLISH' ? 'RISE' : 'FALL') === dir ? freshFvg : null;
       const entryLevel = zone ? (dir === 'RISE' ? zone.upperPrice : zone.lowerPrice) : latestSweep.level;
       const conf = m1Confirm(entry, dir, entryLevel, aiAtr(entry));
-      const targets = targetFor(dir);
+      const targets = targetFor(dir, entryLevel);
       drafts.push({
         modelId: 'SMC_SWEEP_MSS_FVG',
         direction: dir,
@@ -207,7 +219,7 @@ export function analyzeSmcInstrument(params: SmcEngineParams): AiInstrumentAnaly
     if (ob) {
       const entryLevel = dir === 'RISE' ? ob.upperPrice : ob.lowerPrice;
       const conf = m1Confirm(entry, dir, entryLevel, aiAtr(entry));
-      const targets = targetFor(dir);
+      const targets = targetFor(dir, entryLevel);
       drafts.push({
         modelId: 'SMC_SWEEP_CHOCH_OB',
         direction: dir,
@@ -236,7 +248,7 @@ export function analyzeSmcInstrument(params: SmcEngineParams): AiInstrumentAnaly
     if (fvg) {
       const entryLevel = dir === 'RISE' ? fvg.upperPrice : fvg.lowerPrice;
       const conf = m1Confirm(entry, dir, entryLevel, aiAtr(entry));
-      const targets = targetFor(dir);
+      const targets = targetFor(dir, entryLevel);
       drafts.push({
         modelId: 'SMC_BOS_FVG_CONTINUATION',
         direction: dir,
@@ -259,7 +271,7 @@ export function analyzeSmcInstrument(params: SmcEngineParams): AiInstrumentAnaly
     const dir: AiDirection = breaker.kind === 'BULLISH' ? 'FALL' : 'RISE';
     const entryLevel = dir === 'RISE' ? breaker.lowerPrice : breaker.upperPrice;
     const conf = m1Confirm(entry, dir, entryLevel, aiAtr(entry));
-    const targets = targetFor(dir);
+    const targets = targetFor(dir, entryLevel);
     drafts.push({
       modelId: 'SMC_BREAKER_RETEST',
       direction: dir,
@@ -283,7 +295,7 @@ export function analyzeSmcInstrument(params: SmcEngineParams): AiInstrumentAnaly
     if (overlap) {
       const entryLevel = dir === 'RISE' ? freshOb.upperPrice : freshOb.lowerPrice;
       const conf = m1Confirm(entry, dir, entryLevel, aiAtr(entry));
-      const targets = targetFor(dir);
+      const targets = targetFor(dir, entryLevel);
       drafts.push({
         modelId: 'SMC_OB_FVG_CONFLUENCE',
         direction: dir,
@@ -310,7 +322,7 @@ export function analyzeSmcInstrument(params: SmcEngineParams): AiInstrumentAnaly
       const legHigh = range.high;
       const ote = dir === 'RISE' ? legHigh - (legHigh - legLow) * 0.71 : legLow + (legHigh - legLow) * 0.71;
       const conf = m1Confirm(entry, dir, price, aiAtr(entry));
-      const targets = targetFor(dir);
+      const targets = targetFor(dir, ote);
       drafts.push({
         modelId: 'SMC_OTE_RETRACEMENT',
         direction: dir,
@@ -335,7 +347,7 @@ export function analyzeSmcInstrument(params: SmcEngineParams): AiInstrumentAnaly
   if (latestSweep && !latestBreak) {
     const dir: AiDirection = latestSweep.side === 'SSL' ? 'RISE' : 'FALL';
     const conf = m1Confirm(entry, dir, latestSweep.level, aiAtr(entry));
-    const targets = targetFor(dir);
+    const targets = targetFor(dir, price);
     drafts.push({
       modelId: 'SMC_TURTLE_SOUP',
       direction: dir,
@@ -355,10 +367,10 @@ export function analyzeSmcInstrument(params: SmcEngineParams): AiInstrumentAnaly
     });
   }
 
-  const best = drafts.sort((a, b) => b.score - a.score)[0] ?? null;
+  const best = structurallyValidDrafts(drafts).sort((a, b) => b.score - a.score)[0] ?? null;
   const bestScore = best?.score ?? 0;
   const gate = SMC_PUBLICATION_MIN_SCORE;
-  const status = statusForScore(bestScore, gate);
+  const status = statusForScore(bestScore, gate, best?.confirmed === true);
 
   // ---- Chart zones: fresh FVGs, order blocks, liquidity pools (unswept) ----
   const zones: AiZone[] = [];
@@ -408,13 +420,25 @@ export function analyzeSmcInstrument(params: SmcEngineParams): AiInstrumentAnaly
     );
   }
 
+  const trendRead = params.trendCandles
+    ? timeframeConditionRead(params.trendCandles, 'M7 trend & structure')
+    : null;
+  const confirmRead = params.confirmCandles
+    ? timeframeConditionRead(params.confirmCandles, 'M3 confirmation')
+    : null;
+
   const timeframes: AiTimeframeRead[] = buildTimeframeReads({
+    m7: trendRead?.detail,
+    m7Tone: trendRead?.tone,
+    m3: confirmRead?.detail,
+    m3Tone: confirmRead?.tone,
     m15: `${condition.condition.replace(/_/g, ' ').toLowerCase()} — ${condition.detail}`,
     m15Tone: bias === 'bullish' ? 'bull' : bias === 'bearish' ? 'bear' : 'neutral',
     m5: ms.structureLabel || 'No clear M5 structure',
     m5Tone: ms.direction === 'BULLISH' ? 'bull' : ms.direction === 'BEARISH' ? 'bear' : 'neutral',
     m1: best ? (best.confirmed ? 'M1 entry confirmed.' : 'M1 confirmation pending.') : 'No M1 confirmation.',
     m1Tone: best?.confirmed ? 'bull' : 'neutral',
+    ladder: ladderTimeframeReads(params.candlesByTimeframe),
   });
 
   let signal: AiSignal | null = null;

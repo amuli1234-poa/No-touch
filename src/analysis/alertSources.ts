@@ -26,7 +26,7 @@ function fromAiSignal(module: string, moduleId: string, signal: AiSignal): Alert
     modelLabel: signal.modelLabel,
     direction: signal.direction,
     price: signal.entryPrice,
-    timeframe: 'M15',
+    timeframe: signal.timeframes[0]?.timeframe ?? 'M15',
     status: actionable ? 'CONFIRMED' : 'DEVELOPING',
     quality: signal.score,
     entryPrice: signal.entryPrice,

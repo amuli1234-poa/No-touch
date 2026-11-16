@@ -422,7 +422,7 @@ function detectRaw(ctx: DsModelContext, lastSetup: Candle): RawDsDetection | nul
 }
 
 /** Resolves TP1 / TP2 / TP3 from the opposing zones and structural swings (never invented). */
-function resolveTargets(
+function resolveDsTargets(
   ctx: DsModelContext,
   zone: DsZone,
   entryPrice: number,
@@ -468,7 +468,7 @@ function finalize(ctx: DsModelContext, raw: RawDsDetection): DsCandidate {
   // Stop sits just beyond the distal edge with an ATR buffer (zone invalidation).
   const buffer = Math.max(entryAtr * 0.5, structureAtr * 0.2);
   const stopLoss = isRise ? raw.invalidationAnchor - buffer : raw.invalidationAnchor + buffer;
-  const { tp1, tp2, tp3 } = resolveTargets(ctx, raw.zone, entryPrice, stopLoss);
+  const { tp1, tp2, tp3 } = resolveDsTargets(ctx, raw.zone, entryPrice, stopLoss);
   const risk = Math.abs(entryPrice - stopLoss) || setupAtr;
 
   const score = scoreCandidate(raw, entryPrice, stopLoss, tp1);

@@ -67,6 +67,28 @@ function m15Uptrend(): Candle[] {
   });
 }
 
+/** M7 series — its own rising staircase, distinct from the M15 series. */
+function m7Uptrend(): Candle[] {
+  return walk({
+    startTime: 1_700_000_000,
+    step: 420,
+    start: 100,
+    legs: [104, 102, 106, 104, 108, 106, 110, 108.2],
+    stepsPerLeg: 6,
+  });
+}
+
+/** M3 series — a falling staircase, deliberately opposite to the M15/M7 series. */
+function m3Downtrend(): Candle[] {
+  return walk({
+    startTime: 1_700_000_000,
+    step: 180,
+    start: 110,
+    legs: [106, 108, 104, 106, 102, 104, 100, 102],
+    stepsPerLeg: 6,
+  });
+}
+
 
 /**
  * Builds a trend-aligned model context. `tradable` is the direction the dominant trend
@@ -506,4 +528,95 @@ test('invalidation: a close beyond the stop marks the signal invalidated; target
     signal.takeProfit
   );
   assert.equal(trendlineSignalStatus(signal, [targetBar]), 'COMPLETED');
+});
+
+test('reads the whole ten-timeframe ladder when every series is supplied', () => {
+  const m15 = m15Uptrend();
+  const atr = trendlineAtr(m15, 14);
+  const swings = detectSwings(m15, 3, 3);
+  const line = detectTrendlines(m15, swings, atr, 2).find((l) => l.kind === 'support' && l.valid)!;
+  const m5 = m5Rejection(line.currentPrice, 'RISE', alignedM5Start(m15));
+
+  const analysis = analyzeTrendlineInstrument({
+    symbol: 'R_100',
+    displayName: 'Volatility 100 Index',
+    precision: 2,
+    marketFamily: 'VOLATILITY',
+    structureCandles: m15,
+    entryCandles: m5,
+    m1Candles: m5,
+    trendCandles: m7Uptrend(),
+    confirmCandles: m3Downtrend(),
+    candlesByTimeframe: {
+      M30: m7Uptrend(),
+      M15: m15,
+      M10: m7Uptrend(),
+      M7: m7Uptrend(),
+      M6: m7Uptrend(),
+      M5: m5,
+      M4: m7Uptrend(),
+      M3: m3Downtrend(),
+      M2: m7Uptrend(),
+      M1: m5,
+    },
+  });
+
+  assert.deepEqual(
+    analysis.timeframes.map((tf) => tf.timeframe),
+    ['M30', 'M15', 'M10', 'M7', 'M6', 'M5', 'M4', 'M3', 'M2', 'M1']
+  );
+  for (const tf of analysis.timeframes) {
+    assert.ok(tf.detail.length > 0, `${tf.timeframe}: empty detail`);
+  }
+});
+
+test('never fakes M7/M3 reads: they are omitted when those series are not supplied', () => {
+  const m15 = m15Uptrend();
+  const atr = trendlineAtr(m15, 14);
+  const swings = detectSwings(m15, 3, 3);
+  const line = detectTrendlines(m15, swings, atr, 2).find((l) => l.kind === 'support' && l.valid)!;
+  const m5 = m5Rejection(line.currentPrice, 'RISE', alignedM5Start(m15));
+
+  const analysis = analyzeTrendlineInstrument({
+    symbol: 'R_100',
+    displayName: 'Volatility 100 Index',
+    precision: 2,
+    marketFamily: 'VOLATILITY',
+    structureCandles: m15,
+    entryCandles: m5,
+    m1Candles: m5,
+  });
+
+  assert.deepEqual(
+    analysis.timeframes.map((tf) => tf.timeframe),
+    ['M15', 'M5', 'M1']
+  );
+});
+
+test('M7 and M3 reads follow their OWN series, never echoed from M15', () => {
+  const m15 = m15Uptrend();
+  const atr = trendlineAtr(m15, 14);
+  const swings = detectSwings(m15, 3, 3);
+  const line = detectTrendlines(m15, swings, atr, 2).find((l) => l.kind === 'support' && l.valid)!;
+  const m5 = m5Rejection(line.currentPrice, 'RISE', alignedM5Start(m15));
+
+  const analysis = analyzeTrendlineInstrument({
+    symbol: 'R_100',
+    displayName: 'Volatility 100 Index',
+    precision: 2,
+    marketFamily: 'VOLATILITY',
+    structureCandles: m15,
+    entryCandles: m5,
+    m1Candles: m5,
+    trendCandles: m7Uptrend(),
+    confirmCandles: m3Downtrend(),
+  });
+
+  const m7 = analysis.timeframes.find((tf) => tf.timeframe === 'M7')!;
+  const m3 = analysis.timeframes.find((tf) => tf.timeframe === 'M3')!;
+  assert.equal(m7.tone, 'bull');
+  assert.match(m7.detail, /Bullish/);
+  // The M3 series is a genuine downtrend — its read must reflect that, not the bullish M15/M7 bias.
+  assert.equal(m3.tone, 'bear');
+  assert.match(m3.detail, /Bearish/);
 });

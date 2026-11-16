@@ -5,23 +5,26 @@ import {
   selectStrongestDs,
 } from '../analysis/demandSupplyEngine';
 import { DS_PUBLICATION_MIN_SCORE } from '../analysis/demandSupplyModels';
-import { TIMEFRAME_MAP } from '../config/deriv';
+import { TIMEFRAME_MAP, AI_TIMEFRAME_KEYS } from '../config/deriv';
+import { buildTopDownAnalysis } from '../analysis/topDownAnalysis';
 import { DerivWebSocketService } from '../services/derivWebSocket';
 import type { DsEntryModelId, DsInstrumentAnalysis, DsScanSummary, DsSignal } from '../types/demandSupply';
 import { DS_MODEL_IDS } from '../types/demandSupply';
-import type { Candle, MarketFamily, SyntheticMarket, TimeframeKey } from '../types/market';
+import type { Candle, ConnectionStatus, MarketFamily, SyntheticMarket, TimeframeKey } from '../types/market';
 import { eligibleMarkets } from '../utils/eligibleMarkets';
 
-/** Demand & Supply structure is always M15 → M5 → M1. */
+/** Demand & Supply structure is always M30 → M15 → M10 → M7 → M6 → M5 → M4 → M3 → M2 → M1. */
 export const DS_STRUCTURE_TF: TimeframeKey = 'M15';
+export const DS_TREND_TF: TimeframeKey = 'M7';
 export const DS_SETUP_TF: TimeframeKey = 'M5';
+export const DS_CONFIRM_TF: TimeframeKey = 'M3';
 export const DS_ENTRY_TF: TimeframeKey = 'M1';
 
 export interface DsScannerSettings {
   enabledModels: Record<DsEntryModelId, boolean>;
   minScore: number;
   directionPreference: 'RISE' | 'FALL' | 'BOTH';
-  /** Timeframe shown on the chart (analysis still uses M15/M5/M1). */
+  /** Timeframe shown on the chart (analysis still uses M30/M15/M10/M7/M6/M5/M4/M3/M2/M1). */
   chartTimeframe: TimeframeKey;
   /** Include the 1-second Volatility variants in the breadth scan. */
   include1Sec: boolean;
@@ -41,31 +44,52 @@ const DEFAULT_SETTINGS: DsScannerSettings = {
 interface UseDemandSupplyScannerProps {
   derivService: DerivWebSocketService;
   markets: SyntheticMarket[];
+  /** Live connection status — gates the automatic background sweep. */
+  connectionStatus?: ConnectionStatus;
+  /** When false the module never auto-scans (default: true). */
+  autoStart?: boolean;
+  /** Delay before the first automatic pass (staggering). */
+  autoStartDelayMs?: number;
+  /** Continuous background re-scan interval (default 180s). */
+  autoRefreshMs?: number;
 }
 
 /**
  * DEMAND & SUPPLY AI — a dedicated strategy module that runs independently of both the
  * price-action engine and the Trendline AI. It reuses the shared live Deriv connection:
- * M15 identifies zones, M5 refines/develops the setup, M1 confirms the entry.
+ * M15 identifies zones, M7 reads the trend, M5 refines/develops the setup, M3 confirms the
+ * entry setup, and M1 confirms the entry.
  *
- * EVERY eligible Volatility Index (standard + 1-second) is analysed, each on its own feed.
- * Boom/Crash and every other synthetic family are excluded structurally by the canonical
- * `eligibleMarkets` module, so they cannot enter the scan set.
+ * EVERY eligible index (standard + 1-second Volatility, Jump, Step) is analysed, each on
+ * its own feed. Boom/Crash and every other synthetic family are excluded structurally by
+ * the canonical `eligibleMarkets` module, so they cannot enter the scan set.
  */
-export function useDemandSupplyScanner({ derivService, markets }: UseDemandSupplyScannerProps) {
+export function useDemandSupplyScanner({
+  derivService,
+  markets,
+  connectionStatus = 'connected',
+  autoStart = true,
+  autoStartDelayMs = 0,
+  autoRefreshMs = 180_000,
+}: UseDemandSupplyScannerProps) {
   const [settings, setSettings] = useState<DsScannerSettings>(DEFAULT_SETTINGS);
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState(
-    'Ready to scan Deriv indices for demand & supply zones (M15 zones, M5 setup, M1 confirmation).'
+    'Ready to scan Deriv indices for demand & supply zones (M15 zones, M7 trend, M5 setup, M3 confirmation, M1 entry).'
   );
   const [summary, setSummary] = useState<DsScanSummary | null>(null);
   const [analyses, setAnalyses] = useState<DsInstrumentAnalysis[]>([]);
   const [history, setHistory] = useState<DsSignal[]>([]);
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastScannedAt, setLastScannedAt] = useState<number | null>(null);
 
   const scanAbortRef = useRef(false);
+  const autoStartedRef = useRef(false);
+  const isScanningRef = useRef(isScanning);
+  isScanningRef.current = isScanning;
+  const marketsRef = useRef(markets);
+  marketsRef.current = markets;
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
 
@@ -114,18 +138,28 @@ export function useDemandSupplyScanner({ derivService, markets }: UseDemandSuppl
     [markets, settings.include1Sec]
   );
 
-  /** Runs the Demand & Supply engine for one instrument on M15 → M5 → M1. */
+  /** Runs the Demand & Supply engine for one instrument on M30 → M15 → M10 → M7 → M6 → M5 → M4 → M3 → M2 → M1. */
   const analyzeSymbol = useCallback(
     async (market: SyntheticMarket): Promise<DsInstrumentAnalysis | null> => {
-      const structureGranularity = TIMEFRAME_MAP[DS_STRUCTURE_TF].granularitySec;
-      const setupGranularity = TIMEFRAME_MAP[DS_SETUP_TF].granularitySec;
       const entryGranularity = TIMEFRAME_MAP[DS_ENTRY_TF].granularitySec;
       try {
-        const [structureCandles, setupCandles, entryCandles] = await Promise.all([
-          derivService.fetchHistoricalCandles(market.symbol, structureGranularity, 180),
-          derivService.fetchHistoricalCandles(market.symbol, setupGranularity, 180),
-          derivService.fetchHistoricalCandles(market.symbol, entryGranularity, 180),
-        ]);
+        // EVERY AI module independently analyses this index across ALL TEN timeframes.
+        const series = await Promise.all(
+          AI_TIMEFRAME_KEYS.map((tf) =>
+            derivService
+              .fetchHistoricalCandles(market.symbol, TIMEFRAME_MAP[tf].granularitySec, 180)
+              .catch(() => [] as Candle[])
+          )
+        );
+        const candlesByTimeframe: Partial<Record<TimeframeKey, readonly Candle[]>> = {};
+        AI_TIMEFRAME_KEYS.forEach((tf, i) => {
+          candlesByTimeframe[tf] = series[i];
+        });
+        const structureCandles = candlesByTimeframe[DS_STRUCTURE_TF] ?? [];
+        const trendCandles = candlesByTimeframe[DS_TREND_TF] ?? [];
+        const setupCandles = candlesByTimeframe[DS_SETUP_TF] ?? [];
+        const confirmCandles = candlesByTimeframe[DS_CONFIRM_TF] ?? [];
+        const entryCandles = candlesByTimeframe[DS_ENTRY_TF] ?? [];
         const nowSec = Math.floor(Date.now() / 1000);
         let dataHealth: 'HEALTHY' | 'STALE' | 'DISCONNECTED' = 'HEALTHY';
         if (structureCandles.length === 0 || setupCandles.length === 0 || entryCandles.length === 0) {
@@ -136,16 +170,20 @@ export function useDemandSupplyScanner({ derivService, markets }: UseDemandSuppl
           if (nowSec - latest.time > maxAllowedAgeSec) dataHealth = 'STALE';
         }
 
-        return analyzeDsInstrument({
+        const analysis = analyzeDsInstrument({
           symbol: market.symbol,
           displayName: market.displayName,
           precision: market.precision,
           marketFamily: market.family as MarketFamily,
           structureCandles,
+          trendCandles,
           setupCandles,
+          confirmCandles,
           entryCandles,
+          candlesByTimeframe,
           dataHealth,
         });
+        return { ...analysis, topDown: buildTopDownAnalysis(market.symbol, candlesByTimeframe) };
       } catch {
         return null;
       }
@@ -178,11 +216,11 @@ export function useDemandSupplyScanner({ derivService, markets }: UseDemandSuppl
   );
 
   const scanMarkets = useCallback(async () => {
-    if (isScanning) return;
+    if (isScanningRef.current) return;
     scanAbortRef.current = false;
     setIsScanning(true);
     setScanProgress(0);
-    setProgressMessage('Scanning Deriv indices for demand & supply zones (M15 → M5 → M1)…');
+    setProgressMessage('Scanning Deriv indices for demand & supply zones (M30 → M15 → M10 → M7 → M6 → M5 → M4 → M3 → M2 → M1)…');
 
     const results: DsInstrumentAnalysis[] = [];
     try {
@@ -215,7 +253,7 @@ export function useDemandSupplyScanner({ derivService, markets }: UseDemandSuppl
       setIsScanning(false);
       setScanProgress(0);
     }
-  }, [isScanning, targetMarkets, analyzeSymbol, applyFilters]);
+  }, [targetMarkets, analyzeSymbol, applyFilters]);
 
   const cancelScan = useCallback(() => {
     scanAbortRef.current = true;
@@ -225,13 +263,27 @@ export function useDemandSupplyScanner({ derivService, markets }: UseDemandSuppl
 
   const clearHistory = useCallback(() => setHistory([]), []);
 
+  // AUTOMATIC BACKGROUND SWEEP — one staggered pass once ready, then continuous re-scans.
   useEffect(() => {
-    if (!autoRefresh) return;
+    if (!autoStart) return;
+    if (connectionStatus !== 'connected') return;
+    if (markets.length === 0) return;
+    if (autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    const timer = setTimeout(() => {
+      if (!isScanningRef.current && marketsRef.current.length > 0) void scanMarkets();
+    }, autoStartDelayMs);
+    return () => clearTimeout(timer);
+  }, [autoStart, connectionStatus, markets.length, autoStartDelayMs, scanMarkets]);
+
+  useEffect(() => {
+    if (!autoStart || !autoRefresh) return;
+    if (connectionStatus !== 'connected') return;
     const id = setInterval(() => {
-      void scanMarkets();
-    }, 30_000);
+      if (!isScanningRef.current && marketsRef.current.length > 0) void scanMarkets();
+    }, autoRefreshMs);
     return () => clearInterval(id);
-  }, [autoRefresh, scanMarkets]);
+  }, [autoStart, autoRefresh, connectionStatus, autoRefreshMs, scanMarkets]);
 
   /** Live demand & supply read for the chart's currently selected instrument. */
   const analyzeLive = useCallback(
@@ -276,6 +328,8 @@ export function useDemandSupplyScanner({ derivService, markets }: UseDemandSuppl
     autoRefresh,
     setAutoRefresh,
     lastScannedAt,
+    /** True once this module has completed at least one pass (even a zero-result one). */
+    hasRun: lastScannedAt !== null,
     scanMarkets,
     cancelScan,
     clearHistory,

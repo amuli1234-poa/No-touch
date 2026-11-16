@@ -13,24 +13,20 @@ import type {
 import type { CanvasRenderingTarget2D } from 'fancy-canvas';
 import type { ChartOverlayData } from '../types/analysis';
 import {
-  MARKUP,
   MARKUP_ALPHA,
-  MARKUP_LABEL,
-  MARKUP_WIDTH,
-  drawAnchorDot,
-  drawHLine,
-  drawLabel,
-  drawZoneBox,
+  MARKUP_COLORS,
+  MARKUP_DASH,
+  MARKUP_FONT,
+  MARKUP_LINE,
+  drawTag,
   hexToRgba,
-} from './chart/chartMarkupStyle';
+} from './chart/markupStyle';
 
 /**
- * Price-action overlay for the shared chart: supply/demand zones, trendlines (minor and
- * major), support/resistance, liquidity sweeps, swing labels, patterns, the sideways
- * range bands and the confirmed setup's breakout/retest.
- *
- * Everything is thin, lightly shaded and short-labelled so the candles stay the focus.
- * Only drawings the cleanliness pass kept as current are ever painted.
+ * The analyser overlay. Every drawing uses the minimalist markup style (thin lines,
+ * transparent fills, short S / R / SZ / DZ / BOS / CHoCH / FVG / WATCH labels) so the
+ * candlesticks stay the main focus. Only the CURRENT, valid markings are drawn — the
+ * overlay is pruned before it reaches this renderer.
  */
 class AnalysisOverlayRenderer implements IPrimitivePaneRenderer {
   private readonly chart: IChartApi;
@@ -65,99 +61,95 @@ class AnalysisOverlayRenderer implements IPrimitivePaneRenderer {
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'left';
 
-      // 0a. Sideways range bands — barely-there tints for the resistance / no-trade /
-      //     support thirds, with a single short code on each.
+      // 0a. Sideways range bands (range extremes only). Upper 25% red, middle 50% grey,
+      //     lower 25% green. Drawn behind everything else, very faint.
       if (overlays.range?.valid) {
         const r = overlays.range;
-        const bands: { top: number; bottom: number; color: string; code: string }[] = [
-          { top: r.resistance, bottom: r.tradingArea.lower, color: MARKUP.bear, code: MARKUP_LABEL.resistance },
-          { top: r.tradingArea.lower, bottom: r.noTradeBand.lower, color: MARKUP.neutral, code: 'NT' },
-          { top: r.noTradeBand.lower, bottom: r.support, color: MARKUP.bull, code: MARKUP_LABEL.support },
+        const bands: { top: number; bottom: number; color: string; label: string }[] = [
+          { top: r.resistance, bottom: r.tradingArea.lower, color: MARKUP_COLORS.fall, label: 'R AREA' },
+          { top: r.tradingArea.lower, bottom: r.noTradeBand.lower, color: MARKUP_COLORS.neutral, label: 'NT' },
+          { top: r.noTradeBand.lower, bottom: r.support, color: MARKUP_COLORS.rise, label: 'S AREA' },
         ];
         for (const band of bands) {
           const yTop = this.series.priceToCoordinate(band.top);
           const yBottom = this.series.priceToCoordinate(band.bottom);
           if (yTop === null || yBottom === null) continue;
           const top = Math.min(yTop, yBottom);
-          const h = Math.max(2, Math.abs(yBottom - yTop));
-          if (top + h < 0 || top > height) continue;
-          drawZoneBox(ctx, {
-            x: 0,
-            y: top,
-            w: width,
-            h,
-            color: band.color,
-            fillAlpha: MARKUP_ALPHA.fillFaint,
-            edgesOnly: true,
-            edgeAlpha: MARKUP_ALPHA.edge,
-          });
-          const ly = top + h / 2;
-          if (ly >= 8 && ly <= height - 8) drawLabel(ctx, band.code, 6, ly, band.color, { size: 9 });
+          const boxHeight = Math.max(2, Math.abs(yBottom - yTop));
+          if (top + boxHeight < 0 || top > height) continue;
+          ctx.fillStyle = hexToRgba(band.color, MARKUP_ALPHA.fill);
+          ctx.fillRect(0, top, width, boxHeight);
+          const ly = top + boxHeight / 2;
+          if (ly >= 8 && ly <= height - 8) {
+            drawTag(ctx, { x: 6, y: ly, text: band.label, color: band.color });
+          }
         }
       }
 
-      // 0. High-probability entry zone — thin dashed band on the right, single code.
+      // 0. High-probability entry zone (band between the structural level and the
+      //    confirmation close). Drawn first so it sits behind the annotations.
       if (overlays.entryZone) {
         const ez = overlays.entryZone;
         const yTop = this.series.priceToCoordinate(ez.high);
         const yBottom = this.series.priceToCoordinate(ez.low);
         if (yTop !== null && yBottom !== null) {
           const top = Math.min(yTop, yBottom);
-          const h = Math.max(3, Math.abs(yBottom - yTop));
-          if (top + h >= 0 && top <= height) {
+          const boxHeight = Math.max(3, Math.abs(yBottom - yTop));
+          if (top + boxHeight >= 0 && top <= height) {
             const xStart = Math.max(0, width * 0.62);
-            drawZoneBox(ctx, {
-              x: xStart,
-              y: top,
-              w: width - xStart,
-              h,
-              color: MARKUP.accent,
-              fillAlpha: MARKUP_ALPHA.fill,
-              dash: [4, 3],
-            });
-            const ly = Math.max(10, Math.min(height - 10, top - 8));
-            drawLabel(ctx, MARKUP_LABEL.entry, xStart + 6, ly, MARKUP.accent, { size: 9, weight: 700 });
+            const boxWidth = width - xStart;
+            ctx.fillStyle = hexToRgba(MARKUP_COLORS.entry, MARKUP_ALPHA.fillActive);
+            ctx.fillRect(xStart, top, boxWidth, boxHeight);
+            ctx.strokeStyle = hexToRgba(MARKUP_COLORS.entry, MARKUP_ALPHA.edgeSoft);
+            ctx.lineWidth = MARKUP_LINE.hair;
+            ctx.setLineDash(MARKUP_DASH.subtle);
+            ctx.strokeRect(xStart, top, boxWidth, boxHeight);
+            ctx.setLineDash([]);
+
+            const ly = Math.max(12, Math.min(height - 12, top - 10));
+            drawTag(ctx, { x: xStart + 6, y: ly, text: ez.label, color: MARKUP_COLORS.entry });
           }
         }
       }
 
-      // 1. Supply & demand zones — light fills with a thin boundary and a short DZ/SZ tag.
+      // 1. Supply & Demand zones — transparent rectangles, hairline boundary, short label.
       for (const zone of overlays.supplyDemand) {
         const yTop = this.series.priceToCoordinate(zone.upperPrice);
         const yBottom = this.series.priceToCoordinate(zone.lowerPrice);
         if (yTop === null || yBottom === null) continue;
 
         const top = Math.min(yTop, yBottom);
-        const h = Math.max(3, Math.abs(yBottom - yTop));
-        if (top + h < 0 || top > height) continue;
+        const boxHeight = Math.max(2, Math.abs(yBottom - yTop));
+        if (top + boxHeight < 0 || top > height) continue;
 
         const originX = timeScale.timeToCoordinate(zone.originTime as UTCTimestamp);
         const startX = originX === null ? 0 : Math.max(0, Math.min(width - 40, originX));
-        const boxW = width - startX;
-        if (boxW <= 4) continue;
+        const boxWidth = width - startX;
+        if (boxWidth <= 4) continue;
 
         const isDemand = zone.type === 'demand';
-        const stale = zone.status === 'invalidated';
-        const color = stale ? MARKUP.neutral : isDemand ? MARKUP.bull : MARKUP.bear;
-        const strong = zone.status === 'fresh';
+        const color = isDemand ? MARKUP_COLORS.support : MARKUP_COLORS.resistance;
+        const fresh = zone.status === 'fresh';
 
-        drawZoneBox(ctx, {
-          x: startX,
-          y: top,
-          w: boxW,
-          h,
+        ctx.fillStyle = hexToRgba(color, fresh ? MARKUP_ALPHA.fillActive : MARKUP_ALPHA.fill);
+        ctx.fillRect(startX, top, boxWidth, boxHeight);
+
+        ctx.strokeStyle = hexToRgba(color, fresh ? MARKUP_ALPHA.edge : MARKUP_ALPHA.edgeSoft);
+        ctx.lineWidth = MARKUP_LINE.hair;
+        ctx.setLineDash(fresh ? MARKUP_DASH.solid : MARKUP_DASH.subtle);
+        ctx.strokeRect(startX, top, boxWidth, boxHeight);
+        ctx.setLineDash([]);
+
+        const labelY = Math.max(9, Math.min(height - 9, top + boxHeight / 2));
+        drawTag(ctx, {
+          x: startX + 6,
+          y: labelY,
+          text: isDemand ? 'DZ' : 'SZ',
           color,
-          fillAlpha: strong ? MARKUP_ALPHA.fillStrong : MARKUP_ALPHA.fillFaint,
-          edgeAlpha: strong ? MARKUP_ALPHA.edgeStrong : MARKUP_ALPHA.edge,
-          dash: strong ? [] : [4, 3],
         });
-
-        const code = isDemand ? MARKUP_LABEL.demand : MARKUP_LABEL.supply;
-        const ly = Math.max(10, Math.min(height - 10, top + h / 2));
-        drawLabel(ctx, code, Math.max(startX + 6, width - 40), ly, color, { size: 9, weight: 700 });
       }
 
-      // 2. Trendlines (minor) — thin line, short TL tag, tiny anchor dots.
+      // 2. Trendlines (thin; broken lines dashed).
       for (const tl of overlays.trendlines) {
         const x1 = timeScale.timeToCoordinate(tl.startTime as UTCTimestamp);
         const y1 = this.series.priceToCoordinate(tl.startPrice);
@@ -167,24 +159,29 @@ class AnalysisOverlayRenderer implements IPrimitivePaneRenderer {
         const y2 = this.series.priceToCoordinate(endYPrice);
         if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
 
-        const color = tl.direction === 'bullish' ? MARKUP.bull : MARKUP.bear;
-        ctx.save();
-        ctx.strokeStyle = hexToRgba(color, MARKUP_ALPHA.line);
-        ctx.lineWidth = MARKUP_WIDTH.line;
-        if (tl.broken) ctx.setLineDash([5, 4]);
+        const color = tl.direction === 'bullish' ? MARKUP_COLORS.rise : MARKUP_COLORS.fall;
+        ctx.strokeStyle = hexToRgba(color, MARKUP_ALPHA.edge);
+        ctx.lineWidth = MARKUP_LINE.hair;
+        ctx.setLineDash(tl.broken ? MARKUP_DASH.subtle : MARKUP_DASH.solid);
         ctx.beginPath();
         ctx.moveTo(x1, y1);
         ctx.lineTo(x2, y2);
         ctx.stroke();
-        ctx.restore();
-        drawAnchorDot(ctx, x1, y1, color);
+        ctx.setLineDash([]);
 
-        const lx = Math.max(8, Math.min(width - 24, (x1 + x2) / 2));
-        const ly = Math.max(10, Math.min(height - 10, (y1 + y2) / 2 - 9));
-        drawLabel(ctx, MARKUP_LABEL.trendline, lx, ly, color, { size: 9 });
+        const midX = (x1 + x2) / 2;
+        const midY = (y1 + y2) / 2;
+        const ly = Math.max(12, Math.min(height - 12, midY - 11));
+        drawTag(ctx, {
+          x: midX,
+          y: ly,
+          align: 'center',
+          text: tl.broken ? 'TL ×' : 'TL',
+          color,
+        });
       }
 
-      // 2b. Major trendlines — a touch heavier, still thin, with tiny swing anchors.
+      // 2b. MAJOR trendlines (significant swings only) — a touch firmer than minor ones.
       for (const tl of overlays.majorTrendlines) {
         const x1 = timeScale.timeToCoordinate(tl.startTime as UTCTimestamp);
         const y1 = this.series.priceToCoordinate(tl.startPrice);
@@ -195,29 +192,36 @@ class AnalysisOverlayRenderer implements IPrimitivePaneRenderer {
         const y2 = this.series.priceToCoordinate(endYPrice);
         if (x2 === null || y2 === null) continue;
 
-        const color = tl.direction === 'bullish' ? MARKUP.support : MARKUP.resistance;
-        ctx.save();
-        ctx.strokeStyle = hexToRgba(color, MARKUP_ALPHA.line);
-        ctx.lineWidth = MARKUP_WIDTH.strong;
+        const color = tl.direction === 'bullish' ? MARKUP_COLORS.support : MARKUP_COLORS.resistance;
+        ctx.strokeStyle = hexToRgba(color, MARKUP_ALPHA.edgeStrong);
+        ctx.lineWidth = MARKUP_LINE.edge;
+        ctx.setLineDash(MARKUP_DASH.solid);
         ctx.beginPath();
         ctx.moveTo(x1, y1);
         ctx.lineTo(x2, y2);
         ctx.stroke();
-        ctx.restore();
 
+        // Small anchor dots at the major swing touches.
+        ctx.fillStyle = color;
         for (const a of tl.anchors) {
           const ax = timeScale.timeToCoordinate(a.time as UTCTimestamp);
           const ay = this.series.priceToCoordinate(a.price);
           if (ax === null || ay === null) continue;
-          drawAnchorDot(ctx, ax, ay, color);
+          ctx.beginPath();
+          ctx.arc(ax, ay, 2, 0, Math.PI * 2);
+          ctx.fill();
         }
 
-        const lx = Math.max(8, Math.min(width - 30, x2 - 24));
-        const ly = Math.max(10, Math.min(height - 10, y2 - 9));
-        drawLabel(ctx, `TL${tl.thirdTouchConfirmed ? '★' : ''}`, lx, ly, color, { size: 9, weight: 700 });
+        const ly = Math.max(12, Math.min(height - 12, y2));
+        drawTag(ctx, {
+          x: Math.max(8, Math.min(width - 40, x2 - 34)),
+          y: ly,
+          text: tl.thirdTouchConfirmed ? 'TL ★' : 'TL',
+          color,
+        });
       }
 
-      // 2c. Major support / resistance zones — thin boundary, light fill, S/R tag.
+      // 2c. MAJOR support / resistance zones — faint rectangle covering the reaction area.
       for (const zone of overlays.majorZones) {
         const xStart = timeScale.timeToCoordinate(zone.originTime as UTCTimestamp);
         const yTop = this.series.priceToCoordinate(zone.upperPrice);
@@ -225,33 +229,34 @@ class AnalysisOverlayRenderer implements IPrimitivePaneRenderer {
         if (yTop === null || yBottom === null) continue;
         const left = xStart === null ? 0 : Math.max(0, xStart);
         const top = Math.min(yTop, yBottom);
-        const h = Math.abs(yBottom - yTop);
-        if (h < 1) continue;
+        const boxH = Math.abs(yBottom - yTop);
+        if (boxH < 1) continue;
 
         const weakened = zone.freshness === 'WEAKENED' || zone.freshness === 'INVALIDATED';
         const color = weakened
-          ? MARKUP.neutral
+          ? MARKUP_COLORS.neutral
           : zone.role === 'support'
-            ? MARKUP.bull
-            : MARKUP.bear;
+            ? MARKUP_COLORS.support
+            : MARKUP_COLORS.resistance;
 
-        drawZoneBox(ctx, {
-          x: left,
-          y: top,
-          w: width - left,
-          h,
+        ctx.fillStyle = hexToRgba(color, MARKUP_ALPHA.fill);
+        ctx.fillRect(left, top, width - left, boxH);
+        ctx.strokeStyle = hexToRgba(color, weakened ? MARKUP_ALPHA.edgeSoft : MARKUP_ALPHA.edge);
+        ctx.lineWidth = MARKUP_LINE.hair;
+        ctx.setLineDash(weakened ? MARKUP_DASH.subtle : MARKUP_DASH.solid);
+        ctx.strokeRect(left, top, width - left, boxH);
+        ctx.setLineDash([]);
+
+        const ly = Math.max(9, Math.min(height - 9, top + boxH / 2));
+        drawTag(ctx, {
+          x: left + 6,
+          y: ly,
+          text: zone.role === 'support' ? (zone.roleReversed ? 'S ↺' : 'S') : zone.roleReversed ? 'R ↺' : 'R',
           color,
-          fillAlpha: MARKUP_ALPHA.fillFaint,
-          edgeAlpha: weakened ? MARKUP_ALPHA.edge : MARKUP_ALPHA.edgeStrong,
-          dash: weakened ? [4, 4] : [],
         });
-
-        const code = zone.role === 'support' ? MARKUP_LABEL.support : MARKUP_LABEL.resistance;
-        const ly = Math.max(9, Math.min(height - 9, top + h / 2));
-        drawLabel(ctx, code, left + 6, ly, color, { size: 9, weight: 700 });
       }
 
-      // 3a. Liquidity sweep markers — a small cross-hair at the swept wick.
+      // 3a. Liquidity sweep markers (small circle + crosshair).
       for (const sweep of overlays.liquiditySweeps) {
         const sx = timeScale.timeToCoordinate(sweep.time as UTCTimestamp);
         const sy = this.series.priceToCoordinate(sweep.sweepPrice);
@@ -259,24 +264,22 @@ class AnalysisOverlayRenderer implements IPrimitivePaneRenderer {
           continue;
         }
         const bullish = sweep.type === 'BULLISH_SWEEP';
-        const color = MARKUP.sweep;
-        ctx.save();
-        ctx.strokeStyle = hexToRgba(color, MARKUP_ALPHA.line);
-        ctx.lineWidth = MARKUP_WIDTH.hairline;
+        const color = bullish ? MARKUP_COLORS.support : MARKUP_COLORS.resistance;
+        ctx.strokeStyle = hexToRgba(color, MARKUP_ALPHA.edge);
+        ctx.lineWidth = MARKUP_LINE.hair;
         ctx.beginPath();
-        ctx.arc(sx, sy, 4, 0, Math.PI * 2);
+        ctx.arc(sx, sy, 3, 0, Math.PI * 2);
         ctx.stroke();
         ctx.beginPath();
-        ctx.moveTo(sx - 6, sy);
-        ctx.lineTo(sx + 6, sy);
+        ctx.moveTo(sx - 4, sy);
+        ctx.lineTo(sx + 4, sy);
         ctx.stroke();
-        ctx.restore();
 
-        const ly = bullish ? Math.min(height - 10, sy + 14) : Math.max(10, sy - 14);
-        drawLabel(ctx, MARKUP_LABEL.sweep, sx - 16, ly, color, { size: 8, weight: 700 });
+        const ly = bullish ? Math.min(height - 9, sy + 13) : Math.max(9, sy - 13);
+        drawTag(ctx, { x: sx, y: ly, align: 'center', text: 'SWEEP', color });
       }
 
-      // 3b. Swing labels (HH / HL / LH / LL) — short code above/below the swing.
+      // 3b. Swing labels (HH / HL / LH / LL) — tiny, no background box.
       for (const sw of overlays.swingPoints) {
         if (!sw.swingLabel) continue;
         const px = timeScale.timeToCoordinate(sw.time as UTCTimestamp);
@@ -284,19 +287,23 @@ class AnalysisOverlayRenderer implements IPrimitivePaneRenderer {
         if (px === null || py === null || px < -20 || px > width + 20) continue;
         const isHigh = sw.type === 'high';
         const bullishLabel = sw.swingLabel === 'HH' || sw.swingLabel === 'HL';
-        const color = bullishLabel ? MARKUP.bull : MARKUP.bear;
-        const ly = isHigh ? py - 10 : py + 10;
+        const color = bullishLabel ? MARKUP_COLORS.rise : MARKUP_COLORS.fall;
+        const ly = isHigh ? py - 9 : py + 9;
         if (ly < 6 || ly > height - 6) continue;
-        drawLabel(ctx, sw.swingLabel, px, ly, color, { size: 8, weight: 700, align: 'center' });
+        ctx.font = MARKUP_FONT.microBold;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = hexToRgba(color, 0.95);
+        ctx.fillText(sw.swingLabel, px, ly);
+        ctx.textAlign = 'left';
       }
 
-      // 3. Chart patterns — thin outline + short name only.
+      // 3. Chart patterns (thin; forming patterns dashed).
       for (const pat of overlays.patterns) {
-        const color = pat.confirmed
+        const patColor = pat.confirmed
           ? pat.bias === 'bullish'
-            ? MARKUP.bull
-            : MARKUP.bear
-          : MARKUP.neutral;
+            ? MARKUP_COLORS.rise
+            : MARKUP_COLORS.fall
+          : MARKUP_COLORS.neutral;
 
         let sumX = 0;
         let sumY = 0;
@@ -309,15 +316,14 @@ class AnalysisOverlayRenderer implements IPrimitivePaneRenderer {
           const y2 = this.series.priceToCoordinate(seg.endPrice);
           if (x1 === null || y1 === null || x2 === null || y2 === null) continue;
 
-          ctx.save();
-          ctx.strokeStyle = hexToRgba(color, MARKUP_ALPHA.line);
-          ctx.lineWidth = MARKUP_WIDTH.line;
-          if (!pat.confirmed) ctx.setLineDash([4, 4]);
+          ctx.strokeStyle = hexToRgba(patColor, MARKUP_ALPHA.edge);
+          ctx.lineWidth = MARKUP_LINE.hair;
+          ctx.setLineDash(pat.confirmed ? MARKUP_DASH.solid : MARKUP_DASH.subtle);
           ctx.beginPath();
           ctx.moveTo(x1, y1);
           ctx.lineTo(x2, y2);
           ctx.stroke();
-          ctx.restore();
+          ctx.setLineDash([]);
 
           sumX += (x1 + x2) / 2;
           sumY += (y1 + y2) / 2;
@@ -327,15 +333,18 @@ class AnalysisOverlayRenderer implements IPrimitivePaneRenderer {
         if (segCount > 0) {
           const centerX = sumX / segCount;
           const centerY = sumY / segCount;
-          const ly = Math.max(10, Math.min(height - 10, centerY + 10));
-          drawLabel(ctx, pat.confirmed ? `${pat.name} ✓` : pat.name, centerX, ly, color, {
-            size: 9,
+          const ly = Math.max(12, Math.min(height - 12, centerY + 11));
+          drawTag(ctx, {
+            x: centerX,
+            y: ly,
             align: 'center',
+            text: pat.confirmed ? pat.name : `${pat.name} …`,
+            color: patColor,
           });
         }
       }
 
-      // 4. Breakout level & retest for the confirmed setup — thin dashed line + small tag.
+      // 4. Breakout level & retest markings for the confirmed setup.
       if (overlays.breakoutRetest) {
         const br = overlays.breakoutRetest;
         const yLevel = this.series.priceToCoordinate(br.breakoutLevel);
@@ -348,26 +357,33 @@ class AnalysisOverlayRenderer implements IPrimitivePaneRenderer {
         if (yLevel !== null && yLevel >= 0 && yLevel <= height) {
           const drawStartX = xStart === null ? Math.max(0, width * 0.45) : Math.max(0, xStart);
           const drawEndX = xEnd === null ? width - 12 : Math.min(width - 4, xEnd + 24);
-          const color = br.direction === 'RISE' ? MARKUP.support : MARKUP.resistance;
+          const accent = br.direction === 'RISE' ? MARKUP_COLORS.support : MARKUP_COLORS.resistance;
 
-          drawHLine(ctx, yLevel, Math.max(drawStartX + 24, drawEndX), color, {
-            dash: [6, 4],
-            width: MARKUP_WIDTH.line,
-            x: drawStartX,
-          });
+          ctx.strokeStyle = hexToRgba(accent, MARKUP_ALPHA.edge);
+          ctx.lineWidth = MARKUP_LINE.hair;
+          ctx.setLineDash(MARKUP_DASH.subtle);
+          ctx.beginPath();
+          ctx.moveTo(drawStartX, yLevel);
+          ctx.lineTo(Math.max(drawStartX + 24, drawEndX), yLevel);
+          ctx.stroke();
+          ctx.setLineDash([]);
 
-          const ly = Math.max(10, Math.min(height - 10, yLevel - 9));
-          drawLabel(ctx, br.label, drawStartX + 6, ly, color, { size: 9, weight: 700 });
+          const ly = Math.max(12, Math.min(height - 12, yLevel - 11));
+          drawTag(ctx, { x: drawStartX + 6, y: ly, text: br.label, color: accent });
         }
 
         if (br.retestTime !== null && br.retestPrice !== null) {
           const rx = timeScale.timeToCoordinate(br.retestTime as UTCTimestamp);
           const ry = this.series.priceToCoordinate(br.retestPrice);
           if (rx !== null && ry !== null && rx >= 0 && rx <= width && ry >= 0 && ry <= height) {
-            const color = br.direction === 'RISE' ? MARKUP.bull : MARKUP.bear;
-            drawAnchorDot(ctx, rx, ry, color, 3);
-            const ly = br.direction === 'RISE' ? Math.min(height - 10, ry + 12) : Math.max(10, ry - 12);
-            drawLabel(ctx, 'RT', rx, ly, color, { size: 8, weight: 700, align: 'center' });
+            const retestColor = br.direction === 'RISE' ? MARKUP_COLORS.rise : MARKUP_COLORS.fall;
+            ctx.fillStyle = retestColor;
+            ctx.beginPath();
+            ctx.arc(rx, ry, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            const rly = br.direction === 'RISE' ? Math.min(height - 9, ry + 12) : Math.max(9, ry - 12);
+            drawTag(ctx, { x: rx, y: rly, align: 'center', text: 'RETEST', color: retestColor });
           }
         }
       }

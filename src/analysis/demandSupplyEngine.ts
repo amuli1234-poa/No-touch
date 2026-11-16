@@ -15,6 +15,8 @@ import { confirmedOnly } from './trendlineDetection';
 import { detectDsZones } from './demandSupplyDetection';
 import { detectDsCandidate, isDsPublishable } from './demandSupplyModels';
 import { applyFlips, trackDsZones, zoneInPlay } from './demandSupplyZones';
+import { aiAtr, ladderTimeframeReads, readAiCondition } from './aiCommon';
+import { AI_TIMEFRAME_KEYS } from '../config/deriv';
 
 export interface AnalyzeDsParams {
   symbol: string;
@@ -23,16 +25,60 @@ export interface AnalyzeDsParams {
   marketFamily: MarketFamily;
   /** Confirmed M15 candles (primary supply/demand identification). */
   structureCandles: readonly Candle[];
+  /** Confirmed M7 candles (trend & market-structure confirmation). Optional. */
+  trendCandles?: readonly Candle[];
   /** Confirmed M5 candles (zone refinement + setup development). */
   setupCandles: readonly Candle[];
+  /** Confirmed M3 candles (entry-setup confirmation). Optional. */
+  confirmCandles?: readonly Candle[];
   /** Confirmed M1 candles (rejection + entry confirmation). */
   entryCandles: readonly Candle[];
+  /** ALL TEN analysis timeframes for this index (M30/M15/M10/M7/M6/M5/M4/M3/M2/M1). */
+  candlesByTimeframe?: Partial<Record<TimeframeKey, readonly Candle[]>>;
   dataHealth?: 'HEALTHY' | 'STALE' | 'DISCONNECTED';
 }
 
 const STRUCTURE_TF: TimeframeKey = 'M15';
+const TREND_TF: TimeframeKey = 'M7';
 const SETUP_TF: TimeframeKey = 'M5';
+const CONFIRM_TF: TimeframeKey = 'M3';
 const ENTRY_TF: TimeframeKey = 'M1';
+
+/**
+ * M7 (trend & structure) and M3 (entry-setup confirmation) reads for the Demand & Supply
+ * AI. Present only when those series were supplied, so a timeframe is never fabricated.
+ */
+function optionalDsTimeframeReads(params: AnalyzeDsParams): {
+  m7: DsTimeframeRead | null;
+  m3: DsTimeframeRead | null;
+} {
+  const build = (
+    candles: readonly Candle[] | undefined,
+    timeframe: TimeframeKey,
+    label: string,
+    role: string
+  ): DsTimeframeRead | null => {
+    if (!candles) return null;
+    const confirmed = confirmedOnly(candles);
+    if (confirmed.length < 30) {
+      return { timeframe, label, detail: `Insufficient ${timeframe} data.`, tone: 'neutral' };
+    }
+    const read = readAiCondition(confirmed, aiAtr(confirmed));
+    const tone: DsTimeframeRead['tone'] =
+      read.bias === 'bullish'
+        ? 'bull'
+        : read.bias === 'bearish'
+          ? 'bear'
+          : read.condition === 'RANGING' || read.condition === 'CONSOLIDATION'
+            ? 'warn'
+            : 'neutral';
+    return { timeframe, label, detail: `${role} — ${read.detail}`, tone };
+  };
+  return {
+    m7: build(params.trendCandles, 'M7', 'M7 trend & structure', 'Trend & structure'),
+    m3: build(params.confirmCandles, 'M3', 'M3 confirmation', 'Entry-setup confirmation'),
+  };
+}
 
 function atrOf(candles: readonly Candle[]): number {
   const series = computeAtrSeries(candles, 14);
@@ -44,7 +90,9 @@ function atrOf(candles: readonly Candle[]): number {
  * Trendline AI.
  *
  *  - M15 identifies the primary demand / supply zones (DBR/RBR/RBD/DBD + displacement).
+ *  - M7 reads the trend and market structure for context.
  *  - M5 refines the zones and develops the setup.
+ *  - M3 confirms the entry setup.
  *  - M1 confirms the rejection entry (mandatory for every model).
  *  - A signal is only published when a confirmed M1 rejection clears the 85/100 gate.
  */
@@ -71,8 +119,15 @@ export function analyzeDsInstrument(params: AnalyzeDsParams): DsInstrumentAnalys
   const now = Date.now();
 
   const baseTimeframes: DsTimeframeRead[] = [
+    { timeframe: 'M30', label: 'M30 major trend', detail: 'Awaiting confirmed M30 data.', tone: 'neutral' },
     { timeframe: 'M15', label: 'M15 zones', detail: 'Awaiting confirmed M15 structure.', tone: 'neutral' },
+    { timeframe: 'M10', label: 'M10 intermediate structure', detail: 'Awaiting confirmed M10 data.', tone: 'neutral' },
+    { timeframe: 'M7', label: 'M7 trend & structure', detail: 'Awaiting confirmed M7 data.', tone: 'neutral' },
+    { timeframe: 'M6', label: 'M6 intermediate structure', detail: 'Awaiting confirmed M6 data.', tone: 'neutral' },
     { timeframe: 'M5', label: 'M5 setup', detail: 'Awaiting M5 data.', tone: 'neutral' },
+    { timeframe: 'M4', label: 'M4 supporting structure', detail: 'Awaiting confirmed M4 data.', tone: 'neutral' },
+    { timeframe: 'M3', label: 'M3 confirmation', detail: 'Awaiting confirmed M3 data.', tone: 'neutral' },
+    { timeframe: 'M2', label: 'M2 entry refinement', detail: 'Awaiting confirmed M2 data.', tone: 'neutral' },
     { timeframe: 'M1', label: 'M1 confirmation', detail: 'Awaiting M1 data.', tone: 'neutral' },
   ];
 
@@ -83,7 +138,7 @@ export function analyzeDsInstrument(params: AnalyzeDsParams): DsInstrumentAnalys
     precision,
     price,
     status: 'ANALYSING',
-    statusExplanation: 'Insufficient confirmed M15 / M5 / M1 candles for demand & supply analysis.',
+    statusExplanation: 'Insufficient confirmed candles for demand & supply analysis.',
     timeframes: baseTimeframes,
     zones: [],
     freshDemand: null,
@@ -100,7 +155,7 @@ export function analyzeDsInstrument(params: AnalyzeDsParams): DsInstrumentAnalys
     rejectionReason:
       dataHealth !== 'HEALTHY'
         ? `Live market data feed is ${dataHealth.toLowerCase()}.`
-        : 'Insufficient confirmed M15 / M5 / M1 candles for demand & supply analysis.',
+        : 'Insufficient confirmed candles for demand & supply analysis.',
   };
 
   if (structure.length < 30 || setup.length < 20 || dataHealth !== 'HEALTHY') {
@@ -211,6 +266,7 @@ export function analyzeDsInstrument(params: AnalyzeDsParams): DsInstrumentAnalys
     demandSupplyBalance,
   });
 
+  const { m7: m7Read, m3: m3Read } = optionalDsTimeframeReads(params);
   const timeframes: DsTimeframeRead[] = [
     {
       timeframe: 'M15',
@@ -218,6 +274,7 @@ export function analyzeDsInstrument(params: AnalyzeDsParams): DsInstrumentAnalys
       detail: buildM15Detail(zones, demandSupplyBalance),
       tone: demandSupplyBalance === 'DEMAND_DOMINANT' ? 'bull' : demandSupplyBalance === 'SUPPLY_DOMINANT' ? 'bear' : 'neutral',
     },
+    ...(m7Read ? [m7Read] : []),
     {
       timeframe: 'M5',
       label: 'M5 setup',
@@ -228,6 +285,7 @@ export function analyzeDsInstrument(params: AnalyzeDsParams): DsInstrumentAnalys
           : 'no zone in play — waiting for price to reach a valid zone',
       tone: candidate ? 'bull' : activeZone ? 'warn' : 'neutral',
     },
+    ...(m3Read ? [m3Read] : []),
     {
       timeframe: 'M1',
       label: 'M1 confirmation',
@@ -237,6 +295,18 @@ export function analyzeDsInstrument(params: AnalyzeDsParams): DsInstrumentAnalys
       tone: candidate?.confirmation.confirmed ? (candidate.direction === 'RISE' ? 'bull' : 'bear') : 'warn',
     },
   ];
+  // Surface the remaining ten-timeframe ladder reads (M30/M10/M6/M4/M2) the engine read.
+  {
+    const seen = new Set(timeframes.map((r) => r.timeframe));
+    for (const extra of ladderTimeframeReads(params.candlesByTimeframe)) {
+      if (seen.has(extra.timeframe)) continue;
+      seen.add(extra.timeframe);
+      timeframes.push({ timeframe: extra.timeframe, label: extra.label, detail: extra.detail, tone: extra.tone });
+    }
+    timeframes.sort(
+      (a, b) => AI_TIMEFRAME_KEYS.indexOf(a.timeframe) - AI_TIMEFRAME_KEYS.indexOf(b.timeframe)
+    );
+  }
 
   const rejectionReason = publishable
     ? undefined
@@ -366,7 +436,9 @@ function buildSignal(params: {
     model: candidate.model,
     modelLabel: candidate.modelLabel,
     structureTimeframe: STRUCTURE_TF,
+    trendTimeframe: TREND_TF,
     setupTimeframe: SETUP_TF,
+    confirmTimeframe: CONFIRM_TF,
     entryTimeframe: ENTRY_TF,
     score: candidate.score,
     zoneQuality: candidate.zone.score.total,

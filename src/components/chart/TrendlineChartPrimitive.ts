@@ -16,14 +16,13 @@ import type {
 } from '../../types/trendline';
 import { formatPrice } from '../../utils/derivParser';
 import {
-  MARKUP,
   MARKUP_ALPHA,
-  MARKUP_LABEL,
-  MARKUP_WIDTH,
-  drawHLine,
-  drawLabel,
-  drawZoneBox,
-} from './chartMarkupStyle';
+  MARKUP_COLORS,
+  MARKUP_DASH,
+  MARKUP_LINE,
+  drawTag,
+  hexToRgba,
+} from './markupStyle';
 
 /**
  * Overlay payload for the Trendline Scanner module. Drawn on the candle canvas so the
@@ -32,6 +31,8 @@ import {
  * Only the NEAREST valid future setup zones are drawn (blue = bullish continuation below
  * price in an uptrend, red = bearish continuation above price in a downtrend). Historical
  * drawings (touch points, broken lines, old break labels) are intentionally hidden.
+ *
+ * Minimalist styling: hairline dashed boundaries, transparent fill, short WATCH labels.
  */
 export interface TrendlineChartOverlay {
   /** Nearest valid future setup zones (trend-aligned). */
@@ -41,31 +42,6 @@ export interface TrendlineChartOverlay {
   /** The module's best confirmed signal for this instrument (entry/SL/TP + arrow). */
   signal?: TrendlineSignal | null;
   precision: number;
-}
-
-function drawBreakMarker(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  color: string,
-  bullish: boolean
-): void {
-  const s = 4;
-  ctx.save();
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  if (bullish) {
-    ctx.moveTo(x, y - s);
-    ctx.lineTo(x - s, y + s);
-    ctx.lineTo(x + s, y + s);
-  } else {
-    ctx.moveTo(x, y + s);
-    ctx.lineTo(x - s, y - s);
-    ctx.lineTo(x + s, y - s);
-  }
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
 }
 
 class TrendlineRenderer implements IPrimitivePaneRenderer {
@@ -87,51 +63,70 @@ class TrendlineRenderer implements IPrimitivePaneRenderer {
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'left';
 
-      // ---- Future setup zones (nearest only): thin dashed edges, light fill, WATCH tag ----
+      // ---- Future setup zones (nearest only). Historical drawings are never rendered. ----
       for (const zone of overlay.setupZones) {
         const isRise = zone.direction === 'RISE';
-        const color = isRise ? MARKUP.support : MARKUP.bear;
+        const color = isRise ? MARKUP_COLORS.rise : MARKUP_COLORS.fall;
 
         const yTop = series.priceToCoordinate(zone.upperPrice);
         const yBottom = series.priceToCoordinate(zone.lowerPrice);
         if (yTop === null || yBottom === null) continue;
         const top = Math.min(yTop, yBottom);
-        const h = Math.max(2, Math.abs(yBottom - yTop));
+        const zoneH = Math.max(2, Math.abs(yBottom - yTop));
 
-        drawZoneBox(ctx, {
-          x: 0,
-          y: top,
-          w: width,
-          h,
+        ctx.fillStyle = hexToRgba(color, MARKUP_ALPHA.fill);
+        ctx.fillRect(0, top, width, zoneH);
+
+        ctx.strokeStyle = hexToRgba(color, MARKUP_ALPHA.edgeSoft);
+        ctx.lineWidth = MARKUP_LINE.hair;
+        ctx.setLineDash(MARKUP_DASH.subtle);
+        ctx.beginPath();
+        ctx.moveTo(0, top);
+        ctx.lineTo(width, top);
+        ctx.moveTo(0, top + zoneH);
+        ctx.lineTo(width, top + zoneH);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // One short label: WATCH + direction. Detail lives in the module panel.
+        drawTag(ctx, {
+          x: width - 6,
+          y: Math.max(7, Math.min(height - 7, top + zoneH / 2)),
+          align: 'right',
+          text: isRise ? 'WATCH RISE' : 'WATCH FALL',
           color,
-          fillAlpha: MARKUP_ALPHA.fillFaint,
-          edgeAlpha: MARKUP_ALPHA.edge,
-          edgesOnly: true,
-          dash: [6, 4],
         });
-
-        const ly = Math.max(9, Math.min(height - 9, isRise ? top + h + 10 : top - 10));
-        drawLabel(ctx, MARKUP_LABEL.watch, Math.max(6, width - 52), ly, color, { size: 9, weight: 700 });
       }
 
-      // ---- Entry / SL / TP + small directional marker for the confirmed signal ----
+      // ---- Entry / SL / TP + directional marker for the confirmed signal ----
       const signal = overlay.signal;
       if (signal) {
         const isRise = signal.direction === 'RISE';
-        const dirColor = isRise ? MARKUP.support : MARKUP.bear;
+        const dirColor = isRise ? MARKUP_COLORS.rise : MARKUP_COLORS.fall;
 
-        this.drawLevel(ctx, series, width, signal.entryPrice, MARKUP.entry, MARKUP_LABEL.entry);
-        this.drawLevel(ctx, series, width, signal.stopLoss, MARKUP.stop, MARKUP_LABEL.stop);
-        this.drawLevel(ctx, series, width, signal.takeProfit, MARKUP.target, MARKUP_LABEL.target, [7, 5]);
+        this.drawLevel(ctx, series, width, signal.entryPrice, MARKUP_COLORS.entry, 'ENTRY', MARKUP_DASH.solid);
+        this.drawLevel(ctx, series, width, signal.stopLoss, MARKUP_COLORS.stop, 'SL', MARKUP_DASH.solid);
+        this.drawLevel(ctx, series, width, signal.takeProfit, MARKUP_COLORS.target, 'TP', MARKUP_DASH.dashed);
 
         const xEntry = timeScale.timeToCoordinate(signal.confirmedBarTime as UTCTimestamp);
         const yEntry = series.priceToCoordinate(signal.entryPrice);
-        if (xEntry !== null && yEntry !== null && xEntry >= 0 && xEntry <= width) {
-          drawBreakMarker(ctx, xEntry, yEntry, dirColor, isRise);
-          drawLabel(ctx, isRise ? 'RISE' : 'FALL', xEntry + 7, yEntry - 10, dirColor, {
-            size: 9,
-            weight: 700,
-          });
+        if (xEntry !== null && yEntry !== null) {
+          const markerY = isRise ? yEntry + 12 : yEntry - 12;
+          ctx.fillStyle = dirColor;
+          ctx.beginPath();
+          if (isRise) {
+            ctx.moveTo(xEntry, markerY - 6);
+            ctx.lineTo(xEntry - 4, markerY + 3);
+            ctx.lineTo(xEntry + 4, markerY + 3);
+          } else {
+            ctx.moveTo(xEntry, markerY + 6);
+            ctx.lineTo(xEntry - 4, markerY - 3);
+            ctx.lineTo(xEntry + 4, markerY - 3);
+          }
+          ctx.closePath();
+          ctx.fill();
+
+          drawTag(ctx, { x: xEntry + 6, y: markerY, text: isRise ? 'RISE' : 'FALL', color: dirColor });
         }
       }
 
@@ -146,13 +141,27 @@ class TrendlineRenderer implements IPrimitivePaneRenderer {
     price: number,
     color: string,
     badge: string,
-    dash: number[] = []
+    dash: number[]
   ): void {
     const y = series.priceToCoordinate(price);
     if (y === null) return;
-    drawHLine(ctx, y, width, color, { dash, width: MARKUP_WIDTH.line, alpha: MARKUP_ALPHA.line });
-    const text = `${badge} ${formatPrice(price, this.source.overlay?.precision ?? 2)}`;
-    drawLabel(ctx, text, 6, y - 9, color, { size: 9, weight: 700 });
+    ctx.save();
+    ctx.setLineDash(dash);
+    ctx.strokeStyle = hexToRgba(color, MARKUP_ALPHA.edge);
+    ctx.lineWidth = MARKUP_LINE.hair;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    drawTag(ctx, {
+      x: 6,
+      y,
+      text: `${badge} ${formatPrice(price, this.source.overlay?.precision ?? 2)}`,
+      color,
+    });
   }
 }
 
@@ -170,8 +179,8 @@ class TrendlinePaneView implements IPrimitivePaneView {
 }
 
 /**
- * Renders the Trendline Scanner's valid future setup zones and the confirmed signal's
- * entry / stop / target plus a small RISE / FALL marker on the candle canvas.
+ * Renders the Trendline Scanner's nearest valid setup zones and the confirmed signal's
+ * entry / stop / target plus a RISE / FALL marker on the candle canvas.
  */
 export class TrendlineChartPrimitive implements ISeriesPrimitive<Time> {
   chart: SeriesAttachedParameter<Time, SeriesType>['chart'] | null = null;

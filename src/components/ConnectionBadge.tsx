@@ -1,48 +1,81 @@
-import { AlertCircle, RefreshCw, Wifi, WifiOff } from 'lucide-react';
+import { RefreshCw, Wifi, WifiOff } from 'lucide-react';
 import type { ConnectionStatus } from '../types/market';
 
 interface ConnectionBadgeProps {
   status: ConnectionStatus;
   onReconnect: () => void;
+  /** Compact dot-only form for narrow screens (the full label is hidden there). */
+  compact?: boolean;
 }
 
 const STATUS_CONFIG: Record<
   ConnectionStatus,
-  { label: string; textClass: string }
+  { label: string; textClass: string; dotClass: string }
 > = {
   connected: {
     label: 'CONNECTED',
     textClass: 'text-emerald-400',
+    dotClass: 'bg-emerald-400',
   },
   connecting: {
     label: 'CONNECTING',
     textClass: 'text-warn',
+    dotClass: 'bg-amber-400 animate-pulse',
   },
   reconnecting: {
     label: 'RECONNECTING',
     textClass: 'text-warn',
+    dotClass: 'bg-amber-400 animate-pulse',
+  },
+  rate_limited: {
+    label: 'RATE LIMITED',
+    textClass: 'text-warn',
+    dotClass: 'bg-amber-400 animate-pulse',
+  },
+  stale: {
+    label: 'STALE DATA',
+    textClass: 'text-warn',
+    dotClass: 'bg-amber-400 animate-pulse',
   },
   disconnected: {
     label: 'DISCONNECTED',
     textClass: 'text-muted',
+    dotClass: 'bg-faint',
   },
   error: {
-    label: 'DISCONNECTED · ERROR',
+    label: 'DISCONNECTED',
     textClass: 'text-bear',
+    dotClass: 'bg-red-500',
   },
 };
 
-export const CONNECTION_STATUS_DOT: Record<ConnectionStatus, string> = {
-  connected: 'bg-emerald-400',
-  connecting: 'bg-amber-400 animate-pulse',
-  reconnecting: 'bg-amber-400 animate-pulse',
-  disconnected: 'bg-faint',
-  error: 'bg-red-500',
-};
-
-export function ConnectionBadge({ status, onReconnect }: ConnectionBadgeProps) {
+export function ConnectionBadge({ status, onReconnect, compact = false }: ConnectionBadgeProps) {
   const cfg = STATUS_CONFIG[status];
   const showReconnect = status === 'disconnected' || status === 'error';
+  const Icon =
+    status === 'connected'
+      ? Wifi
+      : status === 'error' || status === 'disconnected'
+        ? WifiOff
+        : RefreshCw;
+
+  if (compact) {
+    return (
+      <button
+        type="button"
+        onClick={showReconnect ? onReconnect : undefined}
+        aria-label={`Deriv feed ${cfg.label}${showReconnect ? '. Tap to reconnect.' : ''}`}
+        title={`Deriv Feed · ${cfg.label}`}
+        data-testid="connection-status"
+        className={`inline-flex items-center justify-center w-9 h-9 rounded-lg bg-elevated border border-line transition-colors ${
+          showReconnect ? 'cursor-pointer hover:border-accent/50' : 'cursor-default'
+        } ${cfg.textClass}`}
+      >
+        <Icon className={`w-[18px] h-[18px] ${status === 'connecting' || status === 'reconnecting' || status === 'rate_limited' || status === 'stale' ? 'animate-spin' : ''}`} aria-hidden="true" />
+        <span className={`w-1.5 h-1.5 rounded-full ${cfg.dotClass}`} aria-hidden="true" />
+      </button>
+    );
+  }
 
   return (
     <div className="flex items-center gap-3 shrink-0" data-testid="connection-status">
@@ -51,16 +84,15 @@ export function ConnectionBadge({ status, onReconnect }: ConnectionBadgeProps) {
         role="status"
         aria-live="polite"
       >
-        {status === 'connected' ? (
-          <Wifi className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-        ) : status === 'error' ? (
-          <AlertCircle className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-        ) : status === 'disconnected' ? (
-          <WifiOff className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-        ) : (
-          <RefreshCw className="w-3.5 h-3.5 shrink-0 animate-spin" aria-hidden="true" />
-        )}
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${CONNECTION_STATUS_DOT[status]}`} aria-hidden="true" />
+        <Icon
+          className={`w-3.5 h-3.5 shrink-0 ${
+            status === 'connecting' || status === 'reconnecting' || status === 'rate_limited' || status === 'stale'
+              ? 'animate-spin'
+              : ''
+          }`}
+          aria-hidden="true"
+        />
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dotClass}`} aria-hidden="true" />
         <span>Deriv Feed · {cfg.label}</span>
       </div>
 

@@ -2,8 +2,10 @@ import {
   aiAtr,
   buildAiSignal,
   buildTimeframeReads,
+  ladderTimeframeReads,
+  timeframeConditionRead,
   makeZone,
-  orderTargets,
+  resolveTargets,
   readAiCondition,
 } from './aiCommon';
 import { verifyPeerEvidence, type PeerEvidence } from './peerValidation';
@@ -12,7 +14,7 @@ import { computeAtrSeries, detectSwings } from './swings';
 import { detectFvgs, detectLiquidityPools, detectOrderBlocks, detectSweeps } from './smcTools';
 import { confirmedOnly } from './trendlineDetection';
 import type { AiInstrumentAnalysis, AiTimeframeRead, AiZone } from '../types/aiModule';
-import type { Candle, MarketFamily } from '../types/market';
+import type { Candle, MarketFamily, TimeframeKey } from '../types/market';
 
 /**
  * CONFLUENCE & TRADE VALIDATION AI — decision engine.
@@ -33,6 +35,12 @@ export interface ConfluenceEngineParams {
   structureCandles: readonly Candle[];
   setupCandles: readonly Candle[];
   entryCandles: readonly Candle[];
+  /** M7 (trend & structure) candles — optional. */
+  trendCandles?: readonly Candle[];
+  /** M3 (entry confirmation) candles — optional. */
+  confirmCandles?: readonly Candle[];
+  /** ALL TEN analysis timeframes for this index (M30/M15/M10/M7/M6/M5/M4/M3/M2/M1). */
+  candlesByTimeframe?: Partial<Record<TimeframeKey, readonly Candle[]>>;
   dataHealth: 'HEALTHY' | 'STALE' | 'DISCONNECTED';
   /** Published signals from every other module for THIS index only. */
   peers: readonly PeerEvidence[];
@@ -106,14 +114,16 @@ export function analyzeConfluenceInstrument(params: ConfluenceEngineParams): AiI
     const chosenEvidence = verified.filter((v) => v.direction === chosen).sort((a, b) => b.score - a.score);
     const entryPrice = best ? best.entryPrice : price;
     const stop = best ? best.stopLoss : chosen === 'RISE' ? price - atr * 1.5 : price + atr * 1.5;
-    const structuralTargets = orderTargets(
+    // Anchor targets to the actual entry (a peer's entry can be a zone boundary ≠ price).
+    const structuralTargets = resolveTargets(
       chosen,
-      price,
+      entryPrice,
       (chosen === 'RISE'
         ? pools.filter((p) => p.side === 'BSL').map((p) => p.price)
         : pools.filter((p) => p.side === 'SSL').map((p) => p.price)
-      ).concat(swings.filter((s) => (chosen === 'RISE' ? s.type === 'high' : s.type === 'low')).map((s) => s.price))
-    ).slice(0, 3);
+      ).concat(swings.filter((s) => (chosen === 'RISE' ? s.type === 'high' : s.type === 'low')).map((s) => s.price)),
+      atr
+    );
 
     const tp1 = structuralTargets[0] ?? (chosen === 'RISE' ? entryPrice + atr * 2 : entryPrice - atr * 2);
     const tp2 = structuralTargets[1] ?? (chosen === 'RISE' ? entryPrice + atr * 3.5 : entryPrice - atr * 3.5);
@@ -157,13 +167,25 @@ export function analyzeConfluenceInstrument(params: ConfluenceEngineParams): AiI
     }
   }
 
+  const trendRead = params.trendCandles
+    ? timeframeConditionRead(params.trendCandles, 'M7 trend & structure')
+    : null;
+  const confirmRead = params.confirmCandles
+    ? timeframeConditionRead(params.confirmCandles, 'M3 confirmation')
+    : null;
+
   const timeframes: AiTimeframeRead[] = buildTimeframeReads({
+    m7: trendRead?.detail,
+    m7Tone: trendRead?.tone,
+    m3: confirmRead?.detail,
+    m3Tone: confirmRead?.tone,
     m15: `${condition.condition.replace(/_/g, ' ').toLowerCase()} — ${condition.detail}`,
     m15Tone: condition.bias === 'bullish' ? 'bull' : condition.bias === 'bearish' ? 'bear' : 'neutral',
     m5: `${verified.length} verified evidence item(s) · ${conflicts.length} rejected`,
     m5Tone: verified.length ? 'warn' : 'neutral',
     m1: signal ? 'Validated entry levels derived from structure.' : 'No validated trade.',
     m1Tone: signal ? 'bull' : 'neutral',
+    ladder: ladderTimeframeReads(params.candlesByTimeframe),
   });
 
   const zones: AiZone[] = signal

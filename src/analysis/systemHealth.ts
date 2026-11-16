@@ -53,8 +53,13 @@ export interface HealthInputs {
   scannerRanAt: number | null;
   scannerRows: number;
   floatingScannerOpen: boolean;
+  /** Modules that have COMPLETED a pass (even with zero results) — the honest "run" count. */
+  aiModulesRun: number;
+  /** Modules that produced at least one instrument analysis — the honest "active" count. */
   aiModulesActive: number;
   aiModulesTotal: number;
+  /** Human-readable reason the AI sweep produced nothing, when it did. */
+  aiScanError: string | null;
   alertCount: number;
   backtestEvaluations: number;
   performanceRecords: number;
@@ -87,7 +92,10 @@ export function buildHealthChecks(input: HealthInputs): HealthCheck[] {
     status:
       input.connectionStatus === 'connected'
         ? 'HEALTHY'
-        : input.connectionStatus === 'connecting' || input.connectionStatus === 'reconnecting'
+        : input.connectionStatus === 'connecting' ||
+            input.connectionStatus === 'reconnecting' ||
+            input.connectionStatus === 'rate_limited' ||
+            input.connectionStatus === 'stale'
           ? 'WARNING'
           : 'FAILED',
     detail:
@@ -146,11 +154,11 @@ export function buildHealthChecks(input: HealthInputs): HealthCheck[] {
   });
 
   // 4. Timeframe synchronisation
-  const tfKeys: TimeframeKey[] = ['M1', 'M5', 'M15'];
+  const tfKeys: TimeframeKey[] = [...HEALTH_TIMEFRAMES];
   const missingTf = tfKeys.filter((tf) => (input.timeframesReady[tf] ?? 0) < 20);
   checks.push({
     id: 'timeframes',
-    label: 'M1 / M5 / M15 synchronization',
+    label: 'M30 / M15 / M10 / M7 / M6 / M5 / M4 / M3 / M2 / M1 synchronization',
     status:
       missingTf.length === 0
         ? 'HEALTHY'
@@ -159,7 +167,7 @@ export function buildHealthChecks(input: HealthInputs): HealthCheck[] {
           : 'WARNING',
     detail:
       missingTf.length === 0
-        ? 'All three core timeframes have loaded candles for this instrument.'
+        ? 'All ten analysis timeframes have loaded candles for this instrument.'
         : `Not yet verified for: ${missingTf.join(', ')} — open each timeframe to load its candles.`,
     metric: tfKeys.map((tf) => `${tf}:${input.timeframesReady[tf] ?? 0}`).join(' '),
     critical: false,
@@ -225,21 +233,31 @@ export function buildHealthChecks(input: HealthInputs): HealthCheck[] {
     critical: false,
   });
 
-  // 8. AI modules
+  // 8. AI modules — an un-run module is NOT_TESTED, never a failure. A module that ran but
+  // produced no analysis is a WARNING only when it genuinely could not fetch data.
+  const aiStatus: HealthStatus =
+    input.aiModulesTotal === 0
+      ? 'FAILED'
+      : input.aiScanError !== null
+        ? 'FAILED'
+        : input.aiModulesRun === 0
+          ? 'NOT_TESTED'
+          : input.aiModulesActive === 0
+            ? 'WARNING'
+            : 'HEALTHY';
   checks.push({
     id: 'ai-modules',
     label: 'AI modules',
-    status:
-      input.aiModulesTotal === 0
-        ? 'FAILED'
-        : input.aiModulesActive === 0
-          ? 'WARNING'
-          : 'HEALTHY',
+    status: aiStatus,
     detail:
       input.aiModulesTotal === 0
         ? 'No AI modules are registered.'
-        : `${input.aiModulesActive}/${input.aiModulesTotal} AI modules have produced analysis for the selected instrument.`,
-    metric: `${input.aiModulesActive}/${input.aiModulesTotal}`,
+        : input.aiScanError !== null
+          ? `AI sweep could not analyse any instrument: ${input.aiScanError}`
+          : input.aiModulesRun === 0
+            ? `${input.aiModulesTotal} AI modules are registered and idle — they run automatically once the feed is live, or press Scan on any module.`
+            : `${input.aiModulesRun}/${input.aiModulesTotal} modules completed a pass; ${input.aiModulesActive} produced analysis for the selected instrument.`,
+    metric: `${input.aiModulesRun}/${input.aiModulesTotal} run · ${input.aiModulesActive} active`,
     critical: true,
   });
 
@@ -404,6 +422,17 @@ export function summarizeHealth(checks: readonly HealthCheck[]): HealthSummary {
 }
 
 /** Timeframe granularities the health centre synchronises. */
-export const HEALTH_TIMEFRAMES: readonly TimeframeKey[] = ['M1', 'M5', 'M15'];
+export const HEALTH_TIMEFRAMES: readonly TimeframeKey[] = [
+  'M30',
+  'M15',
+  'M10',
+  'M7',
+  'M6',
+  'M5',
+  'M4',
+  'M3',
+  'M2',
+  'M1',
+];
 export { TIMEFRAME_MAP, ENTRY_MODEL_IDS };
 export type { Candle };

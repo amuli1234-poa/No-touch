@@ -33,7 +33,7 @@ export function SectionCard({
 }) {
   return (
     <Card className={className}>
-      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 px-4 py-3 border-b border-line-soft">
+      <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3 border-b border-line-soft">
         <div className="flex items-start gap-2 min-w-0">
           {icon && <span className="text-accent shrink-0 mt-0.5">{icon}</span>}
           <div className="min-w-0">
@@ -45,7 +45,7 @@ export function SectionCard({
             )}
           </div>
         </div>
-        {right && <div className="shrink min-w-0 ml-auto">{right}</div>}
+        {right && <div className="shrink-0 max-w-full">{right}</div>}
       </div>
       <div className="p-4">{children}</div>
     </Card>

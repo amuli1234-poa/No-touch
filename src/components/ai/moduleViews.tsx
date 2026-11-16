@@ -6,6 +6,7 @@ import {
   Braces,
   Crosshair,
   Gauge,
+  GitBranch,
   Layers,
   LineChart,
   Radar,
@@ -17,9 +18,12 @@ import {
 } from 'lucide-react';
 import type { AiScannerValue } from '../../hooks/useAiScanner';
 import { AiModuleView, type AiModuleMeta } from './AiModuleView';
+import { BosRetracementPanel } from './BosRetracementPanel';
 import { ConfluenceView } from './ConfluenceView';
+import { ConsolidationPanel } from './ConsolidationPanel';
 import { LiveScannerView } from './LiveScannerView';
 import { PerformanceView } from './PerformanceView';
+import { TimeframeAlignmentPanel } from './TimeframeAlignmentPanel';
 import type { AiJournalHookValue } from '../../hooks/useAiJournal';
 
 interface ModuleMetaConfig {
@@ -27,6 +31,8 @@ interface ModuleMetaConfig {
   subtitle: string;
   icon: ReactNode;
   settingsSubtitle: string;
+  /** Optional module-specific panel rendered inside the module view (below the reads). */
+  extraPanel?: AiModuleMeta['extraPanel'];
 }
 
 const ICON_CLASS = 'w-4 h-4';
@@ -34,9 +40,10 @@ const ICON_CLASS = 'w-4 h-4';
 const META: Record<string, ModuleMetaConfig> = {
   boschoch: {
     title: 'BOS & CHOCH AI',
-    subtitle: 'Break-of-structure & change-of-character intelligence',
+    subtitle: 'BOS retracement & rejection — structure break is a setup, not an entry',
     icon: <TrendingUp className={ICON_CLASS} aria-hidden="true" />,
-    settingsSubtitle: 'Structure breaks are read on M15, refined on M5 and confirmed on M1.',
+    settingsSubtitle: 'Structure breaks are read on M30 → M15 → M10 → M7 → M6 → M5 → M4 → M3 → M2 → M1.',
+    extraPanel: (analysis) => <BosRetracementPanel analysis={analysis} />,
   },
   technical: {
     title: 'Technical AI',
@@ -79,6 +86,20 @@ const META: Record<string, ModuleMetaConfig> = {
     subtitle: 'Trend vs range classification and transitions',
     icon: <Layers className={ICON_CLASS} aria-hidden="true" />,
     settingsSubtitle: 'Classifies the regime and rates trading conditions before any setup.',
+  },
+  timeframealignment: {
+    title: 'Timeframe Alignment AI',
+    subtitle: 'Top-down multi-timeframe alignment — pullback vs reversal',
+    icon: <GitBranch className={ICON_CLASS} aria-hidden="true" />,
+    settingsSubtitle: 'Reads M30 → M15 → M10 → M7 → M5 → M3 → M1 top-down and resolves one bias.',
+    extraPanel: (analysis) => <TimeframeAlignmentPanel analysis={analysis} />,
+  },
+  consolidation: {
+    title: 'Consolidation & Momentum AI',
+    subtitle: 'Compression detection and breakout / momentum read',
+    icon: <Gauge className={ICON_CLASS} aria-hidden="true" />,
+    settingsSubtitle: 'Detects consolidation, compression and volatility contraction, then reads expansion.',
+    extraPanel: (analysis) => <ConsolidationPanel analysis={analysis} />,
   },
 };
 

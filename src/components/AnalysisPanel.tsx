@@ -41,7 +41,7 @@ interface AnalysisPanelProps {
   onRecordSignal: (params: { direction: 'RISE' | 'FALL'; entryPrice: number }) => void;
 }
 
-const TOP_DOWN_TFS: readonly TimeframeKey[] = ['H4', 'H1', 'M15', 'M5', 'M1'];
+const TOP_DOWN_TFS: readonly TimeframeKey[] = ['H4', 'H1', 'M15', 'M7', 'M5', 'M3', 'M1'];
 
 function directionColorClass(dir: MarketDirection): string {
   if (dir === 'BULLISH') return 'text-emerald-400';
@@ -111,7 +111,7 @@ export function AnalysisPanel({
     <aside
       aria-label="AI Analysis Panel"
       data-testid="ai-analysis-panel"
-      className="w-full shrink-0 border-t border-line bg-surface flex flex-col min-h-0 overflow-y-auto"
+      className="w-full lg:w-[400px] xl:w-[430px] shrink-0 border-t lg:border-t-0 lg:border-l border-line bg-surface flex flex-col min-h-0 lg:h-full overflow-y-auto"
     >
       <div className="px-4 py-3 border-b border-line flex items-center justify-between gap-2 bg-panel sticky top-0 z-10">
         <div className="min-w-0">

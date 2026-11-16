@@ -1,4 +1,5 @@
 import type { Candle, MarketFamily, TimeframeKey } from '../types/market';
+import type { AiTimeframeRead } from '../types/aiModule';
 import type {
   TrendlineCandidate,
   TrendlineInstrumentAnalysis,
@@ -7,6 +8,7 @@ import type {
   TrendlineSignal,
 } from '../types/trendline';
 import { TRENDLINE_MODEL_LABELS } from '../types/trendline';
+import { buildTimeframeReads, ladderTimeframeReads, timeframeConditionRead } from './aiCommon';
 import { assessMomentum } from './momentum';
 import { detectRangeAnalysis } from './rangeAnalysis';
 import { analyzeMarketStructure } from './structure';
@@ -34,12 +36,57 @@ export interface AnalyzeTrendlineParams {
   entryCandles: readonly Candle[];
   /** Confirmed M1 candles (precise entry confirmation timeframe). */
   m1Candles?: readonly Candle[];
+  /** Confirmed M7 candles (trend & market-structure confirmation). Built internally from M1. */
+  trendCandles?: readonly Candle[];
+  /** Confirmed M3 candles (entry-setup confirmation). */
+  confirmCandles?: readonly Candle[];
+  /** ALL TEN analysis timeframes for this index (M30/M15/M10/M7/M6/M5/M4/M3/M2/M1). */
+  candlesByTimeframe?: Partial<Record<TimeframeKey, readonly Candle[]>>;
   dataHealth?: 'HEALTHY' | 'STALE' | 'DISCONNECTED';
 }
 
 const STRUCTURE_TF: TimeframeKey = 'M15';
+const TREND_TF: TimeframeKey = 'M7';
 const SETUP_TF: TimeframeKey = 'M5';
+const CONFIRM_TF: TimeframeKey = 'M3';
 const ENTRY_TF: TimeframeKey = 'M1';
+
+/**
+ * Top-down timeframe reads for the Trendline AI. M7 (trend & structure) and M3
+ * (entry-setup confirmation) are included only when those series were supplied, so a
+ * timeframe is never fabricated.
+ */
+function trendlineTimeframeReads(params: {
+  trendCandles?: readonly Candle[];
+  confirmCandles?: readonly Candle[];
+  candlesByTimeframe?: Partial<Record<TimeframeKey, readonly Candle[]>>;
+  m15: string;
+  m15Tone?: AiTimeframeRead['tone'];
+  m5: string;
+  m5Tone?: AiTimeframeRead['tone'];
+  m1: string;
+  m1Tone?: AiTimeframeRead['tone'];
+}): AiTimeframeRead[] {
+  const trendRead = params.trendCandles
+    ? timeframeConditionRead(params.trendCandles, 'M7 trend & structure')
+    : null;
+  const confirmRead = params.confirmCandles
+    ? timeframeConditionRead(params.confirmCandles, 'M3 confirmation')
+    : null;
+  return buildTimeframeReads({
+    m7: trendRead?.detail,
+    m7Tone: trendRead?.tone,
+    m3: confirmRead?.detail,
+    m3Tone: confirmRead?.tone,
+    m15: params.m15,
+    m15Tone: params.m15Tone,
+    m5: params.m5,
+    m5Tone: params.m5Tone,
+    m1: params.m1,
+    m1Tone: params.m1Tone,
+    ladder: ladderTimeframeReads(params.candlesByTimeframe),
+  });
+}
 
 /**
  * The Trendline Strategy Engine — fully independent of the price-action engine.
@@ -114,6 +161,14 @@ export function analyzeTrendlineInstrument(
     structureTimeframe: STRUCTURE_TF,
     setupTimeframe: SETUP_TF,
     entryTimeframe: ENTRY_TF,
+    timeframes: trendlineTimeframeReads({
+      trendCandles: params.trendCandles,
+      confirmCandles: params.confirmCandles,
+      candlesByTimeframe: params.candlesByTimeframe,
+      m15: 'Awaiting confirmed M15 structure.',
+      m5: 'Awaiting M5 data.',
+      m1: 'Awaiting M1 data.',
+    }),
     atr: 0,
     dataHealth,
     lastUpdated: now,
@@ -284,6 +339,34 @@ export function analyzeTrendlineInstrument(
     structureTimeframe: STRUCTURE_TF,
     setupTimeframe: SETUP_TF,
     entryTimeframe: ENTRY_TF,
+    timeframes: trendlineTimeframeReads({
+      trendCandles: params.trendCandles,
+      confirmCandles: params.confirmCandles,
+      candlesByTimeframe: params.candlesByTimeframe,
+      m15: marketStructure.structureLabel
+        ? `${marketStructure.structureLabel} · ${condition.toLowerCase()}`
+        : 'No clear M15 structure.',
+      m15Tone:
+        alignment.dominantTrend === 'UPTREND'
+          ? 'bull'
+          : alignment.dominantTrend === 'DOWNTREND'
+            ? 'bear'
+            : 'neutral',
+      m5: candidate
+        ? `Setup developing at ${candidate.entryPrice.toFixed(precision)} — ${
+            candidate.rejection.confirmed ? 'rejection confirmed.' : 'awaiting rejection.'
+          }`
+        : 'No trend-side rejection in play yet.',
+      m5Tone: candidate ? (candidate.direction === 'RISE' ? 'bull' : 'bear') : 'neutral',
+      m1: entryConfirmation.confirmed
+        ? entryConfirmation.reason
+        : 'no confirmed M1 entry trigger yet — a rejection alone is not an entry',
+      m1Tone: entryConfirmation.confirmed
+        ? entryConfirmation.agreesWithTrend
+          ? 'bull'
+          : 'warn'
+        : 'warn',
+    }),
     atr: structureAtr,
     dataHealth,
     lastUpdated: now,
@@ -322,6 +405,9 @@ function buildSignal(params: {
     modelLabel: candidate.modelLabel,
     condition,
     structureTimeframe: STRUCTURE_TF,
+    trendTimeframe: TREND_TF,
+    setupTimeframe: SETUP_TF,
+    confirmTimeframe: CONFIRM_TF,
     entryTimeframe: ENTRY_TF,
     score: candidate.scores.total,
     entryPrice: candidate.entryPrice,

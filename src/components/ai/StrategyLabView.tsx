@@ -478,7 +478,7 @@ export function StrategyLabView({ lab }: StrategyLabViewProps) {
             <select
               value={ratingFilter}
               onChange={(e) => setRatingFilter(e.target.value as never)}
-              className="max-w-full bg-elevated border border-line rounded-md px-2 py-1 text-[11px] text-ink"
+              className="bg-elevated border border-line rounded-md px-2 py-1 text-[11px] text-ink"
               aria-label="Filter by rating"
             >
               <option value="ALL">All ratings</option>
@@ -491,7 +491,7 @@ export function StrategyLabView({ lab }: StrategyLabViewProps) {
             <select
               value={modelFilter}
               onChange={(e) => setModelFilter(e.target.value)}
-              className="max-w-full bg-elevated border border-line rounded-md px-2 py-1 text-[11px] text-ink"
+              className="bg-elevated border border-line rounded-md px-2 py-1 text-[11px] text-ink"
               aria-label="Filter by model"
             >
               <option value="ALL">All models</option>

@@ -14,6 +14,34 @@ import { isOneSecondVolatility } from '../utils/volatilityMarkets';
 import { eligibleMarkets } from '../utils/eligibleMarkets';
 
 const STORAGE_KEY = 'lucky_system_health_v1';
+/** Hard cap on the whole live integration pass so it can never stay on RUNNING forever. */
+const LIVE_TEST_BUDGET_MS = 150_000;
+/** Hard cap on a single market probe (subscribe + history + tick wait). A history request
+ * may have to wait for a window slot behind a background sweep, so this must exceed the
+ * worst-case queue wait; it is a safety net, not the normal path. */
+const LIVE_PROBE_TIMEOUT_MS = 30_000;
+/** How long each probe waits for real live ticks (never simulated). */
+const LIVE_PROBE_TICK_WAIT_MS = 2_000;
+
+/** Rejects after `ms` so no probe can hang the whole integration pass. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)),
+      ms
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
 
 export interface LiveIntegrationProbe {
   symbol: string;
@@ -44,7 +72,7 @@ export interface HealthReport {
   live: LiveIntegrationResult | null;
   running: boolean;
   runAt: number | null;
-  /** Candle counts already observed per timeframe (M1/M5/M15) for the selected instrument. */
+  /** Candle counts already observed per timeframe (M30/M15/M10/M7/M6/M5/M4/M3/M2/M1) for the selected instrument. */
   timeframesReady: Partial<Record<TimeframeKey, number>>;
   runDiagnostics: () => Promise<void>;
   runLiveIntegrationTest: () => Promise<void>;
@@ -70,8 +98,10 @@ interface UseSystemHealthProps {
   scannerRanAt: number | null;
   scannerRows: number;
   floatingScannerOpen: boolean;
+  aiModulesRun: number;
   aiModulesActive: number;
   aiModulesTotal: number;
+  aiScanError: string | null;
   alertCount: number;
   backtestEvaluations: number;
   performanceRecords: number;
@@ -107,7 +137,13 @@ export function useSystemHealth(props: UseSystemHealthProps): HealthReport {
   const [runAt, setRunAt] = useState<number | null>(null);
   const [timeframesReady, setTimeframesReady] = useState<Partial<Record<TimeframeKey, number>>>({});
   const [now, setNow] = useState(() => Date.now());
-  const fixedIssuesRef = useRef<string[]>([]);
+  const fixedIssuesRef = useRef<string[]>([
+    'One shared Deriv market-data connection: every AI module, the scanner, the analyser, the chart and the health centre now read the SAME candle series per symbol + timeframe instead of each fetching its own.',
+    'Fixed the tick-history rate-limit failure: requests are released through a 40-per-25s sliding window (measured against the live endpoint), so a full 23-market sweep no longer trips Deriv’s ~50-request limit.',
+    'Added a shared candle cache with in-flight de-duplication, so ten staggered module passes share one round of history fetches rather than issuing hundreds of duplicates.',
+    'AI modules are now reported honestly: an idle module reads NOT TESTED, never FAILED, and a data-starved sweep reports the concrete reason instead of a bare 0/12.',
+    'The live integration test can no longer hang on “Running…”: every probe has a timeout, the whole pass has a budget, and Jump 10 / Step 100 are verified first.',
+  ]);
   const selectedRef = useRef(props.selectedSymbol);
   selectedRef.current = props.selectedSymbol;
   const serviceRef = useRef(props.derivService);
@@ -156,9 +192,14 @@ export function useSystemHealth(props: UseSystemHealthProps): HealthReport {
   const runLiveIntegrationTest = useCallback(async () => {
     const service = serviceRef.current;
     const notes: string[] = [];
-    // Global coverage: probe EVERY eligible Volatility Index (standard + 1-second).
-    // Boom/Crash and every other synthetic family are excluded by `eligibleMarkets`.
-    const targets = eligibleMarkets(props.markets);
+    // Global coverage: probe EVERY eligible Volatility Index (standard + 1-second) plus the
+    // Jump and Step indices. Boom/Crash and every other synthetic family are excluded by
+    // `eligibleMarkets`. Jump 10 and Step 100 are probed FIRST so the two families called out
+    // by the spec are always verified even if the overall budget is reached.
+    const eligible = eligibleMarkets(props.markets);
+    const priority = (m: SyntheticMarket) =>
+      m.symbol === 'JD10' ? 0 : m.symbol === 'stpRNG' ? 1 : 2;
+    const targets = [...eligible].sort((a, b) => priority(a) - priority(b));
 
     if (targets.length === 0) {
       const result: LiveIntegrationResult = {
@@ -177,69 +218,100 @@ export function useSystemHealth(props: UseSystemHealthProps): HealthReport {
 
     setRunning(true);
     const probes: LiveIntegrationProbe[] = [];
+    const discoveredSymbols = new Set(props.markets.map((m) => m.symbol));
+    const subsBefore = service.getDiagnostics().activeSubscriptions;
     const tickCounts = new Map<string, number>();
     const offTick = service.onTick((tick) => {
       tickCounts.set(tick.symbol, (tickCounts.get(tick.symbol) ?? 0) + 1);
     });
 
-    for (const market of targets) {
-      const probe: LiveIntegrationProbe = {
-        symbol: market.symbol,
-        displayName: market.displayName,
-        isOneSecond: isOneSecondVolatility(market),
-        connected: false,
-        ticksReceived: 0,
-        candlesReceived: 0,
-        candleFieldsValid: false,
-        timestampsMonotonic: false,
-        error: null,
-      };
-      try {
-        await service.subscribeTicks(market.symbol);
-        probe.connected = service.getStatus() === 'connected';
-        const candles = await service.fetchHistoricalCandles(
-          market.symbol,
-          TIMEFRAME_MAP.M1.granularitySec,
-          40
-        );
-        probe.candlesReceived = candles.length;
-        probe.candleFieldsValid = candles.length > 0 && candles.every(isValidCandle);
-        probe.timestampsMonotonic = candles.every(
-          (c, i) => i === 0 || c.time > candles[i - 1].time
-        );
-        // Wait briefly for real live ticks (never simulated). Kept short because the probe
-        // now covers EVERY eligible index, so the whole pass stays bounded.
-        await new Promise((r) => setTimeout(r, 1200));
-        probe.ticksReceived = tickCounts.get(market.symbol) ?? 0;
-      } catch (err) {
-        probe.error = err instanceof Error ? err.message : String(err);
-      } finally {
-        try {
-          await service.unsubscribeTicks(market.symbol);
-        } catch {
-          // Unsubscribe failures are recorded through the cleanup flag below.
+    const startedAt = Date.now();
+    let budgetHit = false;
+    try {
+      for (const market of targets) {
+        if (Date.now() - startedAt > LIVE_TEST_BUDGET_MS) {
+          budgetHit = true;
+          break;
         }
+        const probe: LiveIntegrationProbe = {
+          symbol: market.symbol,
+          displayName: market.displayName,
+          isOneSecond: isOneSecondVolatility(market),
+          connected: false,
+          ticksReceived: 0,
+          candlesReceived: 0,
+          candleFieldsValid: false,
+          timestampsMonotonic: false,
+          error: null,
+        };
+        try {
+          await withTimeout(
+            (async () => {
+              await service.subscribeTicks(market.symbol);
+              probe.connected = service.getStatus() === 'connected';
+              const candles = await service.fetchHistoricalCandles(
+                market.symbol,
+                TIMEFRAME_MAP.M1.granularitySec,
+                40,
+                { priority: true }
+              );
+              probe.candlesReceived = candles.length;
+              probe.candleFieldsValid = candles.length > 0 && candles.every(isValidCandle);
+              probe.timestampsMonotonic = candles.every(
+                (c, i) => i === 0 || c.time > candles[i - 1].time
+              );
+              // Wait briefly for real live ticks (never simulated).
+              await new Promise((r) => setTimeout(r, LIVE_PROBE_TICK_WAIT_MS));
+              probe.ticksReceived = tickCounts.get(market.symbol) ?? 0;
+            })(),
+            LIVE_PROBE_TIMEOUT_MS,
+            `Probe ${market.symbol}`
+          );
+        } catch (err) {
+          probe.error = err instanceof Error ? err.message : String(err);
+        } finally {
+          try {
+            await service.unsubscribeTicks(market.symbol);
+          } catch {
+            // Unsubscribe failures are recorded through the cleanup flag below.
+          }
+        }
+        probes.push(probe);
       }
-      probes.push(probe);
+    } finally {
+      offTick();
     }
-    offTick();
-
-    // Subscription cleanup: after unsubscribing, no probe symbol should still be subscribed.
-    const diagnosticsAfter = service.getDiagnostics();
-    const subscriptionCleanupOk =
-      diagnosticsAfter.activeSubscriptions <= props.diagnostics.activeSubscriptions;
-    if (!subscriptionCleanupOk) {
+    if (budgetHit) {
       notes.push(
-        `Subscription cleanup did not return the active subscription count to its prior level (${props.diagnostics.activeSubscriptions} → ${diagnosticsAfter.activeSubscriptions}).`
+        `Live test budget of ${Math.round(LIVE_TEST_BUDGET_MS / 1000)}s reached after ${probes.length}/${targets.length} markets; remaining markets were not probed.`
       );
     }
 
-    const anyReal = probes.some((p) => p.ticksReceived > 0 && p.candlesReceived > 0);
+    // Subscription cleanup: after unsubscribing, the active subscription count must return
+    // to what it was before the pass started (the background sweep keeps running).
+    const diagnosticsAfter = service.getDiagnostics();
+    const subscriptionCleanupOk = diagnosticsAfter.activeSubscriptions <= subsBefore;
+    if (!subscriptionCleanupOk) {
+      notes.push(
+        `Subscription cleanup did not return the active subscription count to its prior level (${subsBefore} → ${diagnosticsAfter.activeSubscriptions}).`
+      );
+    }
+
+    const allProbesReal = probes.every(
+      (p) => p.ticksReceived > 0 && p.candlesReceived > 0 && p.error === null
+    );
     const allCandlesValid = probes.every((p) => p.candlesReceived === 0 || p.candleFieldsValid);
+    const allTimestampsValid = probes.every((p) => p.timestampsMonotonic);
+    // Every probed symbol must be one Deriv actually listed in `active_symbols` (the Step
+    // Index is `stpRNG`, so this checks membership rather than guessing at a format).
+    const symbolsCorrect = probes.every((p) => discoveredSymbols.has(p.symbol));
+    // A PASS requires EVERY probed market to have produced real ticks AND real candles with
+    // valid fields. Partial evidence (a probe that only got candles, or hit a timeout) is
+    // reported honestly as FAIL / NOT_TESTED rather than being rounded up to a pass.
     const status: LiveIntegrationResult['status'] =
       probes.length === 0
         ? 'NOT_TESTED'
-        : anyReal && allCandlesValid && probes.every((p) => p.error === null)
+        : allProbesReal && allCandlesValid && allTimestampsValid && symbolsCorrect
           ? 'PASS'
           : probes.some((p) => p.error !== null)
             ? 'FAIL'
@@ -256,7 +328,9 @@ export function useSystemHealth(props: UseSystemHealthProps): HealthReport {
       status,
       probes,
       marketsDiscovered: props.markets.length,
-      symbolsCorrect: probes.every((p) => /^[A-Z0-9_]+$/.test(p.symbol)),
+      // Every probed symbol must be one Deriv actually listed in `active_symbols` (the
+      // Step Index is `stpRNG`, so the test checks membership, not a format guess).
+      symbolsCorrect,
       subscriptionCleanupOk,
       notes,
     };
@@ -291,8 +365,10 @@ export function useSystemHealth(props: UseSystemHealthProps): HealthReport {
         scannerRanAt: props.scannerRanAt,
         scannerRows: props.scannerRows,
         floatingScannerOpen: props.floatingScannerOpen,
+        aiModulesRun: props.aiModulesRun,
         aiModulesActive: props.aiModulesActive,
         aiModulesTotal: props.aiModulesTotal,
+        aiScanError: props.aiScanError,
         alertCount: props.alertCount,
         backtestEvaluations: props.backtestEvaluations,
         performanceRecords: props.performanceRecords,

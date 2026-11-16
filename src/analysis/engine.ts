@@ -32,7 +32,7 @@ import { detectSupportResistance } from './supportResistance';
 import { computeAtrSeries, detectSwings } from './swings';
 import { detectChartPatterns, detectTrendlines } from './trendlinesAndPatterns';
 
-const TOP_DOWN_ORDER: readonly TimeframeKey[] = ['H4', 'H1', 'M15', 'M5', 'M1'];
+const TOP_DOWN_ORDER: readonly TimeframeKey[] = ['H4', 'H1', 'M15', 'M7', 'M5', 'M3', 'M1'];
 
 interface SingleTimeframeDetails {
   summary: TimeframeAnalysisSummary;
@@ -144,6 +144,14 @@ export function deriveMultiTimeframe(viewed: TimeframeKey): MultiTimeframeSummar
         entryTf: 'M5',
         rationale: 'M15 view: H1 trend → M15 structure and setup → M5 entry trigger.',
       };
+    case 'M7':
+      return {
+        macroTf: 'M15',
+        structuralTf: 'M7',
+        setupTf: 'M7',
+        entryTf: 'M3',
+        rationale: 'M7 view: M15 bias → M7 structure and setup → M3 entry confirmation.',
+      };
     case 'M5':
       return {
         macroTf: 'H1',
@@ -151,6 +159,14 @@ export function deriveMultiTimeframe(viewed: TimeframeKey): MultiTimeframeSummar
         setupTf: 'M5',
         entryTf: 'M1',
         rationale: 'M5 view: H1 trend → M15 zones → M5 setup → M1 precision entry.',
+      };
+    case 'M3':
+      return {
+        macroTf: 'M15',
+        structuralTf: 'M5',
+        setupTf: 'M3',
+        entryTf: 'M1',
+        rationale: 'M3 view: M15 bias → M5 setup → M3 entry confirmation → M1 execution.',
       };
     case 'M1':
     default:

@@ -163,6 +163,36 @@ analysis engines in `src/analysis/` (`signalEngine`, `structureEngine`,
 across engines by `coAnalysis.ts`. The Market Scanner rows are monitor-only:
 they carry price, health and descriptive range, never a direction or confidence.
 
+
+## Chart markup + live subscription model (2026-11 fork reconciliation)
+
+The `2nd .zip` import was a **parallel fork**, not a superset of this repo: it
+replaced the whole chart-markup layer (`chartMarkupStyle.ts` → `chart/markupStyle.ts`,
+every primitive rewritten) and added derived timeframes + outbound request pacing to
+`derivWebSocket.ts`, but it predated two of this repo's own commits — `463d73c`
+(subscription-leak fix) and `6261303` (minimalist markup). When reconciling, keep the
+zip's integrated layer and fold this repo's fixes into it; never blindly overwrite.
+
+- **One markup module:** `src/components/chart/markupStyle.ts` is canonical. The old
+  `chartMarkupStyle.ts` (and its static guard test) was retired. Every primitive draws
+  through the shared tokens (`MARKUP_LINE` ≤ 1.35, `MARKUP_ALPHA.fill` ≤ 0.08,
+  `drawTag`). The runtime guard `chartPrimitivesMarkup.test.ts` drives each primitive's
+  real draw path against a recording canvas — keep it green when editing a primitive.
+- **Badge vocabulary:** level badges read `ENTRY` / `SL` / `TP`, zone tokens come from
+  `shortZoneLabel` (`DZ` / `SZ` / `BOS` / `CHoCH` / `R` / `S` / `WATCH`). No sentence
+  labels (`NO TRADE` → `NT`).
+- **Zone lifecycle:** `DsChartPrimitive` skips `INVALIDATED` / `FULLY_MITIGATED` zones
+  unless `flipped`. `UserDrawingsPrimitive` uses the shared tokens (never a literal
+  1.6px stroke).
+- **Request pacing:** `derivWebSocket` paces outbound requests (`WS_MIN_REQUEST_INTERVAL_MS`,
+  capped in-flight, FIFO with priority jumps). Tests that burst subscriptions must wait
+  for the queue to drain (`getDiagnostics().queuedRequests === 0`) before asserting on
+  `activeSubscriptions`.
+- **Subscription leak:** `subscribeCandles` / `subscribeTicks` register intent before
+  issuing the request and forget an orphaned subscription whose key no longer maps to
+  the registered entry; `useDerivChartData` checks its staleness guard *before* opening
+  a tick stream. `registerCandleSubscription` returns the subscription entry.
+
 ## WhatsApp alerts (server-side)
 
 `server/routes/whatsapp.ts` mounts on the existing Express app (no separate

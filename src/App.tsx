@@ -3,6 +3,8 @@ import { Radar } from 'lucide-react';
 import { reconcileEngines } from './analysis/coAnalysis';
 import { createModelPerformanceRecord } from './analysis/modelPerformance';
 import { ChartAnalyserView } from './components/ChartAnalyserView';
+import { ChartAnalysisView } from './components/ChartAnalysisView';
+import { EntryModelAIView } from './components/EntryModelAIView';
 import { ConnectionBadge } from './components/ConnectionBadge';
 import { SingleChartCanvas } from './components/chart/SingleChartCanvas';
 import { FloatingScanner } from './components/FloatingScanner';
@@ -37,6 +39,8 @@ import {
 import { useAppSettings } from './hooks/useAppSettings';
 import { useDerivChartData } from './hooks/useDerivChartData';
 import { usePriceActionAnalysis } from './hooks/usePriceActionAnalysis';
+import { useAnalyserCycle } from './hooks/useAnalyserCycle';
+import { completedTradeToLearningRecord } from './analysis/analyserCycle';
 import { useSignalManager } from './hooks/useSignalManager';
 import { useTheme, useSystemStatus } from './hooks/useTheme';
 import { useTrainingEngine } from './hooks/useTrainingEngine';
@@ -59,7 +63,14 @@ import { useSystemHealth } from './hooks/useSystemHealth';
 import { onReconnect, refreshBalances, resetBalances } from './lib/balances';
 import { useAuth } from './lib/auth';
 import { useVolatilityScanner } from './hooks/useVolatilityScanner';
+import { useSignalRanking } from './hooks/useSignalRanking';
+import type { CentralCandidateIntelligence } from './analysis/centralRanking';
+import { useEntryModelAI } from './hooks/useEntryModelAI';
+import { useLearningIntelligence } from './hooks/useLearningIntelligence';
+import { buildLearningRecord, realisedRFrom } from './analysis/learningIntelligence';
+import type { LearningOutcomeRecord } from './types/learning';
 import type { SignalSnapshot } from './types/analysis';
+import type { SetupOrigin } from './types/ranking';
 import type { AiSignal } from './types/aiModule';
 import type { TimeframeKey } from './types/market';
 import type { SignalFeedItem } from './types/signals';
@@ -77,6 +88,8 @@ import { SignalToastStack, type SignalToast } from './components/SignalToasts';
 const VALID_SECTIONS: AppSection[] = [
   'dashboard',
   'trade',
+  'chart',
+  'chartanalysis',
   'analyser',
   'scanner',
   'trendlines',
@@ -89,8 +102,11 @@ const VALID_SECTIONS: AppSection[] = [
   'orderblock',
   'momentum',
   'regime',
+  'timeframealignment',
+  'consolidation',
   'confluence',
   'live',
+  'entrymodel',
   'performance',
   'risk',
   'alerts',
@@ -103,8 +119,7 @@ const VALID_SECTIONS: AppSection[] = [
 
 const LEGACY_HASH: Record<string, AppSection> = {
   analysis: 'analyser',
-  signal: 'analyser',
-  chart: 'analyser',
+  signal: 'entrymodel',
 };
 
 function sectionFromHash(): AppSection {
@@ -126,21 +141,6 @@ export default function App() {
   });
   const [moduleOverlay, setModuleOverlay] = useState<ModuleChartOverlay | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem('wicksentinel_sidebar_collapsed') === 'true';
-    } catch {
-      return false;
-    }
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('wicksentinel_sidebar_collapsed', String(sidebarCollapsed));
-    } catch {
-      // ignore storage errors
-    }
-  }, [sidebarCollapsed]);
 
   useEffect(() => {
     try {
@@ -256,6 +256,7 @@ export default function App() {
   } = useVolatilityScanner({
     derivService,
     markets,
+    connectionStatus,
   });
 
   const training = useTrainingEngine({ derivService, markets });
@@ -263,17 +264,136 @@ export default function App() {
   const trendlineScanner = useTrendlineScanner({
     derivService,
     markets,
+    connectionStatus,
+    autoStartDelayMs: 3_000,
   });
 
   const demandSupplyScanner = useDemandSupplyScanner({
     derivService,
     markets,
+    connectionStatus,
+    autoStartDelayMs: 6_000,
   });
 
-  const aiModules = useAiModules({ derivService, markets });
+  // ONE LEARNING INTELLIGENCE AI — the single owner of the permanent outcome ledger. It is
+  // created FIRST so the AI modules can consume its learned per-index timeframe plans.
+  const learning = useLearningIntelligence();
+
+  const aiModules = useAiModules({ derivService, markets, connectionStatus, learnerPlans: learning.planBySymbol });
   const aiJournal = useAiJournal();
   const alertManager = useAlertManager();
   const strategyLab = useStrategyLab({ derivService, markets });
+
+  // CENTRAL SETUP VALIDATION & RANKING ENGINE — aggregates every AI's confirmed setups,
+  // re-validates them live and exposes only the strongest currently valid opportunities
+  // to the floating scanner. It never restarts the background market scanner.
+  const aiSignalSubmissions = useMemo(() => {
+    const out: { moduleLabel: string; signal: AiSignal }[] = [];
+    for (const def of AI_MODULE_DEFINITIONS) {
+      const scanner = aiModules[def.id];
+      if (!scanner) continue;
+      for (const sig of scanner.summary?.opportunities ?? []) {
+        out.push({ moduleLabel: def.label, signal: sig });
+      }
+    }
+    return out;
+  }, [aiModules]);
+
+  // UNIVERSAL ENTRY MODEL AI — evaluates the best entry model for EVERY qualified setup
+  // from every specialised strategy before the ranking sees it. Only setups with a selected
+  // entry model qualify for the final ranking (prioritise entry quality over quantity).
+  const entryModelAI = useEntryModelAI({
+    derivService,
+    engineSignals: scanSummary?.winner ? [scanSummary.winner] : [],
+    trendlineSignals: trendlineScanner.summary?.opportunities ?? [],
+    dsSignals: demandSupplyScanner.summary?.opportunities ?? [],
+    aiSignals: aiSignalSubmissions,
+    indexProfiles: learning.profileBySymbol,
+    bonusBySymbol: learning.bonusBySymbol,
+    performance: learning.entryModelPerformance,
+  });
+  const entryModelKeys = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const d of entryModelAI.decisions) {
+      if (d.model) map.set(d.key, d.modelLabel);
+    }
+    return map;
+  }, [entryModelAI.decisions]);
+
+  // Advisory intelligence for the central ranking — the Timeframe Alignment AI's alignment
+  // score and the Consolidation & Momentum AI's momentum/consolidation read, per index.
+  const intelligenceBySymbol = useMemo(() => {
+    const map = new Map<string, CentralCandidateIntelligence>();
+    const put = (symbol: string, patch: CentralCandidateIntelligence) => {
+      map.set(symbol, { ...(map.get(symbol) ?? {}), ...patch });
+    };
+    for (const a of aiModules['timeframealignment']?.analyses ?? []) {
+      const read = a.intelligence;
+      if (read && 'character' in read) put(a.symbol, { alignmentScore: read.alignmentScore });
+    }
+    for (const a of aiModules['consolidation']?.analyses ?? []) {
+      const read = a.intelligence;
+      if (read && 'classification' in read) {
+        put(a.symbol, { momentumStrength: read.momentumStrength, consolidationScore: read.consolidationScore });
+      }
+    }
+    return map;
+  }, [aiModules]);
+
+  const ranking = useSignalRanking({
+    derivService,
+    engineSignals: scanSummary?.winner ? [scanSummary.winner] : [],
+    trendlineSignals: trendlineScanner.summary?.opportunities ?? [],
+    dsSignals: demandSupplyScanner.summary?.opportunities ?? [],
+    aiSignals: aiSignalSubmissions,
+    entryModelByKey: entryModelKeys,
+    entryDecisionByKey: entryModelAI.decisionByKey,
+    indexProfiles: learning.profileBySymbol,
+    learningPlans: learning.planBySymbol,
+    intelligenceBySymbol,
+    connectionStatus,
+  });
+
+  // ONE LEARNING INTELLIGENCE AI — permanently record the realised outcome of every settled
+  // setup against the entry model the Entry Model AI selected for it, with FULL attribution
+  // (originating AI, strategy, entry model, index, timeframe, direction, realised R). The
+  // ledger dedupes by setup key and never overwrites a recorded outcome.
+  const settledEntryModelKeysRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const records: LearningOutcomeRecord[] = [];
+    for (const setup of ranking.settledSetups) {
+      if (settledEntryModelKeysRef.current.has(setup.key)) continue;
+      settledEntryModelKeysRef.current.add(setup.key);
+      const decision = entryModelAI.decisionByKey.get(setup.key);
+      if (!decision || decision.model === null || !setup.outcome) continue;
+      const plannedRr = setup.riskRewardRatio;
+      const realisedRr = realisedRFrom(setup.outcome, plannedRr);
+      records.push(
+        buildLearningRecord({
+          id: setup.key,
+          sourceLabel: setup.sourceLabel,
+          strategyId: setup.source,
+          strategyLabel: setup.sourceLabel,
+          entryModel: decision.model,
+          entryModelLabel: decision.modelLabel,
+          symbol: setup.symbol,
+          displayName: setup.displayName,
+          marketFamily: setup.marketFamily,
+          timeframe: setup.timeframe,
+          direction: setup.direction,
+          plannedRr,
+          realisedRr,
+          highestTargetReached: setup.outcome === 'TARGET_HIT' ? 1 : 0,
+          reachedBreakeven: false,
+          outcome: setup.outcome,
+          conditions: setup.reasons ?? [],
+          confirmedAt: setup.createdAt,
+          settledAt: setup.settledAt ?? Date.now(),
+        })
+      );
+    }
+    if (records.length > 0) learning.recordOutcomes(records);
+  }, [ranking.settledSetups, entryModelAI.decisionByKey, learning]);
 
   const marketName = selectedMarket?.displayName ?? selectedSymbol;
   const precision = selectedMarket?.precision ?? 2;
@@ -283,7 +403,7 @@ export default function App() {
   const {
     controlMode,
     runState,
-    report,
+    report: rawReport,
     isAnalyzing,
     analysisError,
     startAnalysis,
@@ -305,44 +425,9 @@ export default function App() {
     fetchCandlesSnapshot,
   });
 
-  // Auto-run analysis when opening the Chart Analyser with a ready market.
+  // Declared before the cycle hook so the completion callback and re-analysis request can
+  // reference them (hoisted as refs/state, not as function bodies).
   const autoRunTriggeredRef = useRef(false);
-  useEffect(() => {
-    const wantsAutoRun = section === 'analyser';
-    if (
-      wantsAutoRun &&
-      connectionStatus === 'connected' &&
-      loadState === 'ready' &&
-      candles.length >= 26 &&
-      !autoRunTriggeredRef.current &&
-      !isAnalyzing
-    ) {
-      autoRunTriggeredRef.current = true;
-      startAnalysis();
-    }
-  }, [section, connectionStatus, loadState, candles.length, isAnalyzing, startAnalysis]);
-
-  const openChart = useCallback(
-    (symbol: string, tf: TimeframeKey, snapshot?: SignalSnapshot | null) => {
-      autoRunTriggeredRef.current = false;
-      setPendingSnapshot(snapshot ?? null);
-      selectMarket(symbol);
-      selectTimeframe(tf);
-      selectSection('analyser');
-    },
-    [selectMarket, selectTimeframe, selectSection]
-  );
-
-  const openAnalyser = useCallback(
-    (symbol: string, tf: TimeframeKey, snapshot?: SignalSnapshot | null) => {
-      autoRunTriggeredRef.current = false;
-      setPendingSnapshot(snapshot ?? null);
-      selectMarket(symbol);
-      selectTimeframe(tf);
-      selectSection('analyser');
-    },
-    [selectMarket, selectTimeframe, selectSection]
-  );
 
   // Account balances (DEMO + REAL, kept separate). Loaded once the session is
   // authenticated, revalidated whenever the market feed recovers (a fresh
@@ -377,6 +462,137 @@ export default function App() {
   useEffect(() => {
     setHistoryRecords(performanceRecords);
   }, [performanceRecords]);
+  const livePrice = candles.length > 0 ? candles[candles.length - 1].close : null;
+
+  // AUTOMATIC CHART RESET & FRESH-ENTRY CYCLE — detects TP/SL completion of the displayed
+  // analyser setup, records the trade, clears its markings and re-analyses for a fresh
+  // entry. `report` is the cleared view the rest of the app consumes; `rawReport` stays
+  // the engine's own output so a completion is detected exactly once.
+  const analyserCycle = useAnalyserCycle({
+    report: rawReport,
+    candles,
+    livePrice,
+    active: controlMode === 'running',
+    requestReanalysis: () => {
+      autoRunTriggeredRef.current = true;
+      resumeAnalysis();
+    },
+    entryDecisionByKey: entryModelAI.decisionByKey,
+    onTradeCompleted: (trade) => {
+      // Trade Recording — append the completed analyser trade to the permanent history
+      // ledger (never deleted) and feed the outcome into the ONE Learning Intelligence AI.
+      setHistoryRecords((prev) => {
+        if (prev.some((r) => r.id === trade.id)) return prev;
+        const record = createModelPerformanceRecord({
+          id: trade.id,
+          symbol: trade.symbol,
+          displayName: trade.displayName,
+          marketFamily: trade.marketFamily,
+          precision: trade.precision,
+          direction: trade.direction,
+          model: trade.modelId,
+          modelLabel: trade.modelLabel,
+          condition: trade.chartAnalysis.condition,
+          analysisTimeframe: trade.timeframe,
+          quality: trade.chartAnalysis.quality,
+          entryPrice: trade.entry,
+          entryZone: trade.entryZone,
+          invalidationPrice: trade.invalidationPrice,
+          invalidationCondition: `Verified ${trade.outcome} at ${trade.exitPrice}.`,
+          target1: trade.takeProfit,
+          target2: null,
+          stopLoss: trade.stopLoss,
+          riskRewardRatio: trade.riskRewardRatio,
+          confirmationExplanation: trade.chartAnalysis.confirmationExplanation,
+          bosChochEvidence: trade.chartAnalysis.bosChochEvidence,
+          supportResistance: [],
+          momentumEvidence: trade.chartAnalysis.momentumEvidence,
+          reasons: trade.chartAnalysis.reasons,
+          invalidations: [],
+          availableSpaceAtr: trade.chartAnalysis.availableSpaceAtr,
+          availableSpaceLabel: trade.chartAnalysis.availableSpaceLabel,
+          indicators: {
+            ema20: null,
+            ema50: null,
+            rsi14: null,
+            macdLine: null,
+            macdSignal: null,
+            macdHistogram: null,
+            adx14: null,
+            trendConfirm: 'NEUTRAL',
+            momentumConfirm: 'NEUTRAL',
+            strengthConfirm: false,
+            notes: [],
+          },
+          state: trade.outcome === 'TARGET_HIT' ? 'CONFIRMED' : 'INVALIDATED',
+          instrumentLabel: 'Chart Analyser',
+          explanation: trade.chartAnalysis.confirmationExplanation,
+          createdAt: trade.confirmedAt,
+          confirmedBarTime: trade.chartAnalysis.confirmedBarTime,
+          lastUpdated: trade.settledAt,
+        });
+        return [record, ...prev].slice(0, 400);
+      });
+      learning.recordOutcomes([completedTradeToLearningRecord(trade)]);
+    },
+  });
+
+  const report = analyserCycle.effectiveReport;
+
+  // Auto-run analysis when opening the Chart Analyser with a ready market.
+  useEffect(() => {
+    const wantsAutoRun = section === 'analyser';
+    if (
+      wantsAutoRun &&
+      connectionStatus === 'connected' &&
+      loadState === 'ready' &&
+      candles.length >= 26 &&
+      !autoRunTriggeredRef.current &&
+      !isAnalyzing
+    ) {
+      autoRunTriggeredRef.current = true;
+      startAnalysis();
+    }
+  }, [section, connectionStatus, loadState, candles.length, isAnalyzing, startAnalysis]);
+
+  const openChart = useCallback(
+    (symbol: string, tf: TimeframeKey, snapshot?: SignalSnapshot | null) => {
+      autoRunTriggeredRef.current = false;
+      setPendingSnapshot(snapshot ?? null);
+      selectMarket(symbol);
+      selectTimeframe(tf);
+      // Selecting a signal opens the dedicated full-screen Chart tab with its exact market,
+      // timeframe and entry/SL/TP levels (master spec §3).
+      selectSection('chart');
+    },
+    [selectMarket, selectTimeframe, selectSection]
+  );
+
+  const openAnalyser = useCallback(
+    (symbol: string, tf: TimeframeKey, snapshot?: SignalSnapshot | null) => {
+      autoRunTriggeredRef.current = false;
+      setPendingSnapshot(snapshot ?? null);
+      selectMarket(symbol);
+      selectTimeframe(tf);
+      selectSection('analyser');
+    },
+    [selectMarket, selectTimeframe, selectSection]
+  );
+
+  // CHART ANALYSIS — open a ranked setup (from the floating scanner) in the dedicated tab,
+  // preserving its originating AI + analysis details.
+  const [chartAnalysisSetup, setChartAnalysisSetup] = useState<SetupOrigin | null>(null);
+  const clearChartAnalysisSetup = useCallback(() => setChartAnalysisSetup(null), []);
+  const openSetupInChartAnalysis = useCallback(
+    (symbol: string, tf: TimeframeKey, origin: SetupOrigin | null) => {
+      autoRunTriggeredRef.current = false;
+      setChartAnalysisSetup(origin);
+      selectMarket(symbol);
+      selectTimeframe(tf);
+      selectSection('chart');
+    },
+    [selectMarket, selectTimeframe, selectSection]
+  );
 
   // Record a confirmed Chart Analyser signal into trade history. This is the only
   // place analyser setups are recorded.
@@ -674,6 +890,21 @@ export default function App() {
 
   // SYSTEM HEALTH & DIAGNOSTICS — collects real runtime evidence and runs the live
   // integration test. Results are also pushed into the alert manager as system alerts.
+  // `run` counts modules that COMPLETED a pass; `active` counts modules that produced an
+  // analysis for the selected instrument. A module that has not run yet is NOT_TESTED,
+  // never a failure — that distinction is what keeps the health board honest.
+  const aiModulesRun = useMemo(() => {
+    let n = 0;
+    for (const scanner of Object.values(aiModules)) if (scanner.hasRun) n += 1;
+    if (trendlineScanner.hasRun) n += 1;
+    if (demandSupplyScanner.hasRun) n += 1;
+    return n;
+  }, [
+    aiModules,
+    trendlineScanner.hasRun,
+    demandSupplyScanner.hasRun,
+  ]);
+
   const aiModulesActive = useMemo(() => {
     let n = 0;
     for (const scanner of Object.values(aiModules)) {
@@ -683,6 +914,15 @@ export default function App() {
     if (demandSupplyScanner.analyses.length > 0) n += 1;
     return n;
   }, [aiModules, trendlineScanner.analyses, demandSupplyScanner.analyses]);
+
+  // Surface a concrete reason when the modules ran but produced nothing (e.g. a rate limit
+  // starved every data fetch) instead of a bare "0/12".
+  const aiScanError = useMemo(() => {
+    const errors = Object.values(aiModules)
+      .map((s) => s.lastScanError)
+      .filter((e): e is string => e !== null);
+    return errors.length > 0 ? errors[0] : null;
+  }, [aiModules]);
 
   const health = useSystemHealth({
     derivService,
@@ -703,8 +943,10 @@ export default function App() {
     scannerRanAt: lastScannedAt,
     scannerRows: monitorSummary?.readings.length ?? 0,
     floatingScannerOpen,
+    aiModulesRun,
     aiModulesActive,
     aiModulesTotal: AI_MODULE_DEFINITIONS.length + 2,
+    aiScanError,
     alertCount: alertManager.alerts.length,
     backtestEvaluations: strategyLab.report?.evaluations.length ?? 0,
     performanceRecords: historyRecords.length,
@@ -716,7 +958,6 @@ export default function App() {
 
   const canRunAnalysis =
     connectionStatus === 'connected' && loadState === 'ready' && candles.length >= 26;
-  const livePrice = candles.length > 0 ? candles[candles.length - 1].close : null;
   const lifecycle = useMemo(
     () =>
       deriveSignalLifecycle(report, {
@@ -823,6 +1064,11 @@ export default function App() {
     recordValidatedSignal,
     openChart,
     openAnalyser,
+    openSetupInChartAnalysis,
+    chartAnalysisSetup,
+    clearChartAnalysisSetup,
+    entryModelAI,
+    analyserCycle,
     navigate: (target: NavSection) => {
       autoRunTriggeredRef.current = false;
       selectSection(target);
@@ -846,8 +1092,12 @@ export default function App() {
     'history',
     'alerts',
     'strategylab',
+    'entrymodel',
   ];
   const isFullWidth = FULL_WIDTH_SECTIONS.includes(section);
+  // The dedicated Chart tab is the master spec's "CHART ONLY" workspace: the shared canvas
+  // fills the whole viewport and the sidebar / top bar / bottom nav are hidden.
+  const isChartOnly = section === 'chart';
 
   return (
     <WorkspaceProvider value={workspaceValue}>
@@ -863,22 +1113,22 @@ export default function App() {
             active={section}
             onSelect={selectSection}
             badges={{ alerts: alertManager.unreadCount }}
-            collapsed={sidebarCollapsed}
-            onToggleCollapsed={() => setSidebarCollapsed((v) => !v)}
-            connectionStatus={connectionStatus}
             statusBadge={
               <ConnectionBadge status={connectionStatus} onReconnect={() => void reconnect()} />
             }
+            hidden={isChartOnly}
           />
 
           <div className="flex flex-col flex-1 min-w-0">
-            <TopBar />
+            {!isChartOnly && <TopBar />}
 
             <div className="flex flex-1 min-h-0 min-w-0">
               {isFullWidth ? (
                 <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
                   <div key={section} className="animate-view-enter flex flex-col min-h-full">
                     {section === 'dashboard' && <DashboardView />}
+                    {section === 'trade' && <TradeView />}
+                    {section === 'entrymodel' && <EntryModelAIView />}
                     {section === 'health' && <SystemHealthView health={health} />}
                     {section === 'settings' && <SettingsView />}
                     {section === 'training' && <TrainingView />}
@@ -887,6 +1137,14 @@ export default function App() {
                     {section === 'strategylab' && <StrategyLabView lab={strategyLab} />}
                   </div>
                 </main>
+              ) : isChartOnly ? (
+                <section className="flex flex-col flex-1 min-w-0 min-h-0">
+                  <SingleChartCanvas
+                    moduleOverlay={moduleOverlay}
+                    fullScreen
+                    onBack={() => selectSection('dashboard')}
+                  />
+                </section>
               ) : (
                 <>
                   <section className="flex flex-col flex-1 min-w-0 min-h-0">
@@ -897,12 +1155,13 @@ export default function App() {
                   </section>
 
                   <aside
-                    className={`@container shrink-0 border-l border-line bg-app min-h-0 overflow-hidden transition-[width] duration-200 ${
+                    className={`shrink-0 border-l border-line bg-app min-h-0 overflow-hidden transition-[width] duration-200 ${
                       panelOpen ? 'w-full xl:w-[420px]' : 'hidden xl:block xl:w-[420px]'
                     }`}
                   >
                     <div className="h-full min-h-0 overflow-hidden flex flex-col">
                       {section === 'analyser' && <ChartAnalyserView />}
+                      {section === 'chartanalysis' && <ChartAnalysisView />}
                       {section === 'scanner' && (
                         <div className="h-full overflow-y-auto">
                           <VolatilityScannerView
@@ -943,6 +1202,8 @@ export default function App() {
                         section === 'orderblock' ||
                         section === 'momentum' ||
                         section === 'regime' ||
+                        section === 'timeframealignment' ||
+                        section === 'consolidation' ||
                         section === 'confluence' ||
                         section === 'live' ||
                         section === 'performance') && (
@@ -950,7 +1211,6 @@ export default function App() {
                           <AiTabView id={section} scanners={aiModules} journal={aiJournal} />
                         </div>
                       )}
-                      {section === 'trade' && <TradeView />}
                       {section === 'risk' && (
                         <div className="h-full overflow-y-auto">
                           <RiskView />
@@ -962,12 +1222,14 @@ export default function App() {
               )}
             </div>
 
-            <MobileNav
-              active={section}
-              onSelect={selectSection}
-              badges={{ alerts: alertManager.unreadCount }}
-              onOpenMenu={() => setMobileMenuOpen(true)}
-            />
+            {!isChartOnly && (
+              <MobileNav
+                active={section}
+                onSelect={selectSection}
+                badges={{ alerts: alertManager.unreadCount }}
+                onOpenMenu={() => setMobileMenuOpen(true)}
+              />
+            )}
           </div>
         </div>
 
@@ -989,6 +1251,28 @@ export default function App() {
           selectedSymbol={selectedSymbol}
           onOpenMarket={openChart}
           onOpenAnalyser={openAnalyser}
+          rankedSetups={ranking.topSetups}
+          activeSetupCount={ranking.activeSetups.length}
+          onRunScan={ranking.runScan}
+          isValidating={ranking.isValidating}
+          lastRankedAt={ranking.lastRankedAt}
+          filterConfig={ranking.filterConfig}
+          onFilterConfigChange={ranking.setFilterConfig}
+          filterAccepted={ranking.filterAccepted}
+          filterRejected={ranking.filterRejected}
+          central={ranking.central}
+          onOpenSetup={(setup) =>
+            openSetupInChartAnalysis(setup.symbol, setup.timeframe, {
+              sourceLabel: setup.sourceLabel,
+              modelLabel: setup.modelLabel,
+              direction: setup.direction,
+              timeframe: setup.timeframe,
+              symbol: setup.symbol,
+              displayName: setup.displayName,
+              score: setup.score,
+              entryModelLabel: setup.entryModelLabel ?? null,
+            })
+          }
         />
 
         {!isFullWidth && !floatingScannerOpen && (

@@ -1,5 +1,11 @@
-import type { SyntheticMarket } from '../types/market';
-import { eligibleMarkets, isEligibleMarket, isOneSecondMarket } from './eligibleMarkets';
+import type { MarketFamily, SyntheticMarket } from '../types/market';
+import {
+  eligibleMarkets,
+  isEligibleMarket,
+  isJumpMarket,
+  isOneSecondMarket,
+  isStepMarket,
+} from './eligibleMarkets';
 
 export interface VolatilityGroup {
   id: string;
@@ -14,19 +20,38 @@ export function isOneSecondVolatility(market: SyntheticMarket): boolean {
 }
 
 /**
- * Returns true for genuine eligible Volatility indices only (standard + 1-second).
- * Delegates to the canonical eligibility rule so every caller shares one definition:
- * Boom, Crash, Jump, Step, Range Break and every other synthetic family are rejected.
+ * True for a genuine analysable index — a standard or 1-second Volatility Index, a Jump
+ * Index, or the Step Index. Delegates to the canonical eligibility rule so every caller
+ * shares one definition: Boom, Crash, Range Break and every other synthetic family are
+ * rejected. (The name is kept for backwards compatibility; the definition is the canonical
+ * eligibility rule.)
  */
 export function isVolatilityIndex(market: SyntheticMarket): boolean {
   return isEligibleMarket(market);
 }
 
-/** Every eligible Volatility Index (standard + 1-second), ordered for display. */
+export { isJumpMarket, isStepMarket };
+
+/** Every eligible index (Volatility standard + 1-second, Jump, Step), ordered for display. */
 export function selectVolatilityMarkets(
   markets: readonly SyntheticMarket[]
 ): SyntheticMarket[] {
   return eligibleMarkets(markets, { requireOpen: false });
+}
+
+/** Human label for a market family, used by list rows and badges. */
+export function marketFamilyLabel(market: SyntheticMarket): string {
+  if (market.family === 'JUMP') return 'Jump';
+  if (market.family === 'STEP') return 'Step';
+  return isOneSecondVolatility(market) ? 'Volatility · 1s' : 'Volatility';
+}
+
+/** Family-only label (no symbol available), e.g. for ranked setups. */
+export function familyLabel(family: MarketFamily): string {
+  if (family === 'JUMP') return 'Jump';
+  if (family === 'STEP') return 'Step';
+  if (family === 'RANGE_BREAK') return 'Range Break';
+  return 'Volatility';
 }
 
 export function groupVolatilityMarkets(
@@ -34,8 +59,13 @@ export function groupVolatilityMarkets(
 ): VolatilityGroup[] {
   const standard: SyntheticMarket[] = [];
   const oneSecond: SyntheticMarket[] = [];
+  const jump: SyntheticMarket[] = [];
+  const step: SyntheticMarket[] = [];
   for (const market of selectVolatilityMarkets(markets)) {
-    (isOneSecondVolatility(market) ? oneSecond : standard).push(market);
+    if (market.family === 'JUMP') jump.push(market);
+    else if (market.family === 'STEP') step.push(market);
+    else if (isOneSecondVolatility(market)) oneSecond.push(market);
+    else standard.push(market);
   }
   const groups: VolatilityGroup[] = [];
   if (standard.length > 0) {
@@ -52,6 +82,22 @@ export function groupVolatilityMarkets(
       label: '1-Second Volatility',
       subtitle: 'High-frequency 1-second tick instruments',
       markets: oneSecond,
+    });
+  }
+  if (jump.length > 0) {
+    groups.push({
+      id: 'jump',
+      label: 'Jump Indices',
+      subtitle: 'Periodic jump instruments — stabilise after spikes',
+      markets: jump,
+    });
+  }
+  if (step.length > 0) {
+    groups.push({
+      id: 'step',
+      label: 'Step Index',
+      subtitle: 'Fixed-increment trending instrument',
+      markets: step,
     });
   }
   return groups;

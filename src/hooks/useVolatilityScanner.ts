@@ -9,13 +9,17 @@ import { analyzeInstrument, selectStrongestSignal } from '../analysis/signalEngi
 import { TIMEFRAME_MAP, TIMEFRAMES } from '../config/deriv';
 import { DerivWebSocketService } from '../services/derivWebSocket';
 import type { EngineScanSummary, EngineSignal, ModelPerformanceRecord } from '../types/engine';
-import type { Candle, MarketFamily, SyntheticMarket, TimeframeKey } from '../types/market';
+import type { Candle, ConnectionStatus, MarketFamily, SyntheticMarket, TimeframeKey } from '../types/market';
 import type { InstrumentMonitorReading, MonitorScanSummary } from '../types/scanner';
 import { eligibleMarkets } from '../utils/eligibleMarkets';
 
 interface UseVolatilityScannerProps {
   derivService: DerivWebSocketService;
   markets: SyntheticMarket[];
+  /** Live connection status — the background sweep only runs while connected. */
+  connectionStatus?: ConnectionStatus;
+  /** When false, the automatic background sweep is disabled (default: true). */
+  autoStart?: boolean;
 }
 
 /**
@@ -23,36 +27,51 @@ interface UseVolatilityScannerProps {
  * descriptive monitor data (price/activity/health so the user can pick an instrument)
  * AND runs the duration-free signal engine so the scanner can surface its own single
  * best setup. Nothing here references contract duration.
+ *
+ * The scanner runs AUTOMATICALLY in the background: it starts as soon as markets are
+ * available and the connection is live, and then sweeps continuously. Scanning never
+ * stops while setups are completed or invalidated — those events only change what is
+ * ranked, never whether the sweep runs.
  */
-export function useVolatilityScanner({ derivService, markets }: UseVolatilityScannerProps) {
+export function useVolatilityScanner({
+  derivService,
+  markets,
+  connectionStatus = 'connected',
+  autoStart = true,
+}: UseVolatilityScannerProps) {
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState(
-    'Ready to scan every eligible Deriv Volatility Index (standard + 1-second) for the single best setup.'
+    'Ready to scan every eligible Deriv index (Volatility standard + 1-second, Jump, Step) for the single best setup.'
   );
   const [monitorSummary, setMonitorSummary] = useState<MonitorScanSummary | null>(null);
   const [scanSummary, setScanSummary] = useState<EngineScanSummary | null>(null);
   const [timeframe, setTimeframe] = useState<TimeframeKey>('M5');
-  // All eligible markets by default: standard + 1-second Volatility Indices.
+  // All eligible markets by default: standard + 1-second Volatility, Jump and Step.
   const [include1Sec, setInclude1Sec] = useState(true);
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastScannedAt, setLastScannedAt] = useState<number | null>(null);
   const [performanceRecords, setPerformanceRecords] = useState<ModelPerformanceRecord[]>(() =>
     loadModelPerformance()
   );
 
   const scanAbortRef = useRef(false);
+  const autoStartedRef = useRef(false);
+  const isScanningRef = useRef(isScanning);
+  isScanningRef.current = isScanning;
+  const marketsRef = useRef(markets);
+  marketsRef.current = markets;
 
   const scanMarkets = useCallback(async () => {
-    if (isScanning) return;
+    if (isScanningRef.current) return;
     scanAbortRef.current = false;
     setIsScanning(true);
     setScanProgress(0);
     setProgressMessage(`Scanning Deriv indices on ${timeframe} for the single best setup…`);
 
     try {
-      // Every eligible market (standard + 1-second Volatility Indices). Boom/Crash and
-      // all non-Volatility families are excluded structurally by `eligibleMarkets`.
+      // Every eligible market (standard + 1-second Volatility, Jump and Step). Boom/Crash
+      // and all other synthetic families are excluded structurally by `eligibleMarkets`.
       const targetMarkets = eligibleMarkets(markets, { include1Sec });
 
       const familyCounts: Record<'VOLATILITY' | 'JUMP' | 'STEP' | 'RANGE_BREAK', number> = {
@@ -228,7 +247,7 @@ export function useVolatilityScanner({ derivService, markets }: UseVolatilitySca
     } finally {
       setIsScanning(false);
     }
-  }, [derivService, include1Sec, isScanning, markets, performanceRecords, timeframe]);
+  }, [derivService, include1Sec, markets, performanceRecords, timeframe]);
 
   const cancelScan = useCallback(() => {
     scanAbortRef.current = true;
@@ -260,15 +279,29 @@ export function useVolatilityScanner({ derivService, markets }: UseVolatilitySca
     setProgressMessage('Settled open model records against fresh price action.');
   }, [derivService, performanceRecords, timeframe]);
 
+  // AUTOMATIC BACKGROUND SCANNER — start one pass as soon as markets are available and
+  // the connection is live, then keep sweeping. Setup completion/invalidation never stops
+  // this loop; it only changes what is ranked.
   useEffect(() => {
-    if (!autoRefresh) return;
+    if (!autoStart) return;
+    if (connectionStatus !== 'connected') return;
+    if (markets.length === 0) return;
+    if (autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    void scanMarkets();
+  }, [autoStart, connectionStatus, markets.length, scanMarkets]);
+
+  // Continuous sweep while connected. The scanner keeps running for the whole session.
+  useEffect(() => {
+    if (!autoStart || !autoRefresh) return;
+    if (connectionStatus !== 'connected') return;
     const interval = setInterval(() => {
-      if (!isScanning && markets.length > 0) {
+      if (!isScanningRef.current && marketsRef.current.length > 0) {
         void scanMarkets();
       }
     }, 45_000);
     return () => clearInterval(interval);
-  }, [autoRefresh, isScanning, markets.length, scanMarkets]);
+  }, [autoStart, autoRefresh, connectionStatus, scanMarkets]);
 
   return {
     isScanning,

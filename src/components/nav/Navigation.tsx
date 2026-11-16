@@ -9,27 +9,32 @@ import {
   Crosshair,
   FlaskConical,
   Gauge,
+  GitBranch,
   GraduationCap,
   HeartPulse,
   Layers,
   LineChart,
-  PanelLeftClose,
-  PanelLeftOpen,
   Radar,
   ScanSearch,
   Settings as SettingsIcon,
-  Wallet,
   ShieldCheck,
   Sparkles,
   TrendingUp,
+  Wallet,
   Waves,
 } from 'lucide-react';
-import { CONNECTION_STATUS_DOT } from '../ConnectionBadge';
-import type { ConnectionStatus } from '../../types/market';
 
+/**
+ * Every reachable section. These are NOT all main tabs — the app exposes exactly SEVEN
+ * main tabs (see `MAIN_TABS`); the remaining sections are sub-views inside a hub tab
+ * (Strategy AIs, Performance, Settings). Keeping the full union means every existing
+ * deep link, hash and `navigate()` call keeps working after the consolidation.
+ */
 export type AppSection =
   | 'dashboard'
   | 'trade'
+  | 'chart'
+  | 'chartanalysis'
   | 'analyser'
   | 'scanner'
   | 'trendlines'
@@ -42,8 +47,11 @@ export type AppSection =
   | 'orderblock'
   | 'momentum'
   | 'regime'
+  | 'timeframealignment'
+  | 'consolidation'
   | 'confluence'
   | 'live'
+  | 'entrymodel'
   | 'performance'
   | 'risk'
   | 'alerts'
@@ -60,70 +68,117 @@ export interface SectionMeta {
   icon: ReactNode;
 }
 
-export interface SectionGroup {
+export interface MainTab {
+  key: string;
   label: string;
-  items: SectionMeta[];
+  shortLabel: string;
+  icon: ReactNode;
+  /** Section shown when the tab is opened with no explicit sub-section. */
+  defaultSection: AppSection;
+  /** Every section reachable inside this main tab, in display order. */
+  sections: readonly SectionMeta[];
 }
 
+const ICON = 'w-[18px] h-[18px]';
+
 /**
- * Grouped navigation. Every module stays reachable, but the sidebar is organised so the single
- * shared chart and the primary tools are never buried. Selecting a module opens its panel
- * beside the ONE shared chart.
+ * EXACTLY SEVEN main navigation tabs. Each hub tab (Strategy AIs / Performance / Settings)
+ * contains its specialised modules as sub-views so no individual strategy ever becomes a
+ * top-level tab of its own.
  */
-export const SECTION_GROUPS: readonly SectionGroup[] = [
+export const MAIN_TABS: readonly MainTab[] = [
   {
-    label: 'Workspace',
-    items: [
-      { key: 'dashboard', label: 'Dashboard', shortLabel: 'Home', icon: <BarChart3 className="w-[18px] h-[18px]" /> },
-      { key: 'trade', label: 'Trade', shortLabel: 'Trade', icon: <Wallet className="w-[18px] h-[18px]" /> },
-      { key: 'analyser', label: 'Chart Analyser', shortLabel: 'Analyser', icon: <ScanSearch className="w-[18px] h-[18px]" /> },
-      { key: 'scanner', label: 'Market Scanner', shortLabel: 'Scanner', icon: <Sparkles className="w-[18px] h-[18px]" /> },
-      { key: 'live', label: 'Live Market Scanner', shortLabel: 'Live', icon: <Radar className="w-[18px] h-[18px]" /> },
+    key: 'overview',
+    label: 'Overview',
+    shortLabel: 'Overview',
+    icon: <BarChart3 className={ICON} />,
+    defaultSection: 'dashboard',
+    sections: [
+      { key: 'dashboard', label: 'Overview', shortLabel: 'Overview', icon: <BarChart3 className={ICON} /> },
+      { key: 'trade', label: 'Trade', shortLabel: 'Trade', icon: <Wallet className={ICON} /> },
     ],
   },
   {
-    label: 'Structure AI',
-    items: [
-      { key: 'trendlines', label: 'Trendline AI', shortLabel: 'Trendlines', icon: <TrendingUp className="w-[18px] h-[18px]" /> },
-      { key: 'demandsupply', label: 'Demand & Supply AI', shortLabel: 'D&S', icon: <Boxes className="w-[18px] h-[18px]" /> },
-      { key: 'boschoch', label: 'BOS & CHOCH AI', shortLabel: 'BOS', icon: <TrendingUp className="w-[18px] h-[18px]" /> },
-      { key: 'smc', label: 'SMC, ICT & Price Action AI', shortLabel: 'SMC', icon: <Crosshair className="w-[18px] h-[18px]" /> },
-      { key: 'liquidity', label: 'Liquidity AI', shortLabel: 'Liquidity', icon: <Waves className="w-[18px] h-[18px]" /> },
-      { key: 'fvg', label: 'FVG & Imbalance AI', shortLabel: 'FVG', icon: <Braces className="w-[18px] h-[18px]" /> },
-      { key: 'orderblock', label: 'Order Block & Breaker Block AI', shortLabel: 'OB', icon: <Boxes className="w-[18px] h-[18px]" /> },
+    key: 'scanner',
+    label: 'Scanner',
+    shortLabel: 'Scanner',
+    icon: <Sparkles className={ICON} />,
+    defaultSection: 'scanner',
+    sections: [
+      { key: 'scanner', label: 'Market Scanner', shortLabel: 'Scanner', icon: <Sparkles className={ICON} /> },
+      { key: 'live', label: 'Live Market Scanner', shortLabel: 'Live', icon: <Radar className={ICON} /> },
+      { key: 'trendlines', label: 'Trendline AI', shortLabel: 'Trendlines', icon: <TrendingUp className={ICON} /> },
+      { key: 'demandsupply', label: 'Demand & Supply AI', shortLabel: 'D&S', icon: <Boxes className={ICON} /> },
+      { key: 'boschoch', label: 'BOS & CHOCH AI', shortLabel: 'BOS', icon: <TrendingUp className={ICON} /> },
+      { key: 'smc', label: 'SMC, ICT & Price Action AI', shortLabel: 'SMC', icon: <Crosshair className={ICON} /> },
+      { key: 'liquidity', label: 'Liquidity AI', shortLabel: 'Liquidity', icon: <Waves className={ICON} /> },
+      { key: 'fvg', label: 'FVG & Imbalance AI', shortLabel: 'FVG', icon: <Braces className={ICON} /> },
+      { key: 'orderblock', label: 'Order Block & Breaker Block AI', shortLabel: 'OB', icon: <Boxes className={ICON} /> },
+      { key: 'technical', label: 'Technical AI', shortLabel: 'Technical', icon: <Activity className={ICON} /> },
+      { key: 'momentum', label: 'Momentum & Volatility AI', shortLabel: 'Momentum', icon: <Gauge className={ICON} /> },
+      { key: 'regime', label: 'Market Regime & Consolidation AI', shortLabel: 'Regime', icon: <Layers className={ICON} /> },
+      { key: 'timeframealignment', label: 'Timeframe Alignment AI', shortLabel: 'Alignment', icon: <GitBranch className={ICON} /> },
+      { key: 'consolidation', label: 'Consolidation & Momentum AI', shortLabel: 'Consolidation', icon: <Gauge className={ICON} /> },
+      { key: 'confluence', label: 'Confluence & Trade Validation AI', shortLabel: 'Confluence', icon: <ShieldCheck className={ICON} /> },
     ],
   },
   {
-    label: 'Momentum & Regime AI',
-    items: [
-      { key: 'technical', label: 'Technical AI', shortLabel: 'Technical', icon: <Activity className="w-[18px] h-[18px]" /> },
-      { key: 'momentum', label: 'Momentum & Volatility AI', shortLabel: 'Momentum', icon: <Gauge className="w-[18px] h-[18px]" /> },
-      { key: 'regime', label: 'Market Regime & Consolidation AI', shortLabel: 'Regime', icon: <Layers className="w-[18px] h-[18px]" /> },
-      { key: 'confluence', label: 'Confluence & Trade Validation AI', shortLabel: 'Confluence', icon: <ShieldCheck className="w-[18px] h-[18px]" /> },
-      { key: 'risk', label: 'Risk Management & Trade Execution AI', shortLabel: 'Risk', icon: <ShieldCheck className="w-[18px] h-[18px]" /> },
+    key: 'signals',
+    label: 'Signals',
+    shortLabel: 'Signals',
+    icon: <Crosshair className={ICON} />,
+    defaultSection: 'entrymodel',
+    sections: [
+      { key: 'entrymodel', label: 'Entry Model AI', shortLabel: 'Entry Model', icon: <Crosshair className={ICON} /> },
+      { key: 'alerts', label: 'AI Alerts & Notification Manager', shortLabel: 'Alerts', icon: <BellRing className={ICON} /> },
     ],
   },
   {
-    label: 'Intelligence',
-    items: [
-      { key: 'performance', label: 'Trade Performance & Learning AI', shortLabel: 'Performance', icon: <Award className="w-[18px] h-[18px]" /> },
-      { key: 'strategylab', label: 'Strategy Optimization & Market Intelligence AI', shortLabel: 'Strategy Lab', icon: <FlaskConical className="w-[18px] h-[18px]" /> },
-      { key: 'alerts', label: 'AI Alerts & Notification Manager', shortLabel: 'Alerts', icon: <BellRing className="w-[18px] h-[18px]" /> },
+    key: 'chart',
+    label: 'Chart',
+    shortLabel: 'Chart',
+    icon: <ScanSearch className={ICON} />,
+    defaultSection: 'chart',
+    sections: [
+      { key: 'chart', label: 'Chart Only', shortLabel: 'Chart Only', icon: <ScanSearch className={ICON} /> },
+      { key: 'chartanalysis', label: 'Chart Analysis', shortLabel: 'Analysis', icon: <Crosshair className={ICON} /> },
+      { key: 'analyser', label: 'Chart Analyser', shortLabel: 'Analyser', icon: <ScanSearch className={ICON} /> },
     ],
   },
   {
-    label: 'System',
-    items: [
-      { key: 'health', label: 'System Health & Diagnostics', shortLabel: 'Health', icon: <HeartPulse className="w-[18px] h-[18px]" /> },
-      { key: 'training', label: 'AI Training', shortLabel: 'Train', icon: <GraduationCap className="w-[18px] h-[18px]" /> },
-      { key: 'history', label: 'Trade History', shortLabel: 'History', icon: <LineChart className="w-[18px] h-[18px]" /> },
-      { key: 'settings', label: 'Settings', shortLabel: 'Settings', icon: <SettingsIcon className="w-[18px] h-[18px]" /> },
+    key: 'performance',
+    label: 'Performance',
+    shortLabel: 'Performance',
+    icon: <Award className={ICON} />,
+    defaultSection: 'performance',
+    sections: [
+      { key: 'performance', label: 'Trade Performance', shortLabel: 'Performance', icon: <Award className={ICON} /> },
+      { key: 'history', label: 'Trade History', shortLabel: 'History', icon: <LineChart className={ICON} /> },
+      { key: 'risk', label: 'Risk & Execution AI', shortLabel: 'Risk', icon: <ShieldCheck className={ICON} /> },
+      { key: 'strategylab', label: 'Strategy Optimization AI', shortLabel: 'Strategy Lab', icon: <FlaskConical className={ICON} /> },
+    ],
+  },
+  {
+    key: 'settings',
+    label: 'Settings',
+    shortLabel: 'Settings',
+    icon: <SettingsIcon className={ICON} />,
+    defaultSection: 'settings',
+    sections: [
+      { key: 'settings', label: 'Settings', shortLabel: 'Settings', icon: <SettingsIcon className={ICON} /> },
+      { key: 'health', label: 'System Health & Diagnostics', shortLabel: 'Health', icon: <HeartPulse className={ICON} /> },
+      { key: 'training', label: 'AI Training', shortLabel: 'Training', icon: <GraduationCap className={ICON} /> },
     ],
   },
 ] as const;
 
-/** Flat list of every section (order preserved) for lookups and legacy helpers. */
-export const SECTIONS: readonly SectionMeta[] = SECTION_GROUPS.flatMap((g) => g.items);
+/** Every section in display order, for lookups. */
+export const SECTIONS: readonly SectionMeta[] = MAIN_TABS.flatMap((t) => t.sections);
+
+/** The main tab that owns a section. */
+export function mainTabForSection(section: AppSection): MainTab {
+  return MAIN_TABS.find((t) => t.sections.some((s) => s.key === section)) ?? MAIN_TABS[0];
+}
 
 export type SectionBadges = Partial<Record<AppSection, number>>;
 
@@ -141,144 +196,85 @@ interface SidebarProps {
   onSelect: (section: AppSection) => void;
   statusBadge?: ReactNode;
   badges?: SectionBadges;
-  collapsed?: boolean;
-  onToggleCollapsed?: () => void;
-  connectionStatus?: ConnectionStatus;
+  /** Hide entirely (the Chart tab is full-screen and renders no chrome). */
+  hidden?: boolean;
 }
 
-export function Sidebar({
-  active,
-  onSelect,
-  statusBadge,
-  badges,
-  collapsed = false,
-  onToggleCollapsed,
-  connectionStatus,
-}: SidebarProps) {
+/**
+ * Desktop sidebar — the main tabs. The active hub tab expands to reveal its sub-views so
+ * every module stays one tap away without becoming a main tab of its own.
+ */
+export function Sidebar({ active, onSelect, statusBadge, badges, hidden = false }: SidebarProps) {
+  const activeTab = mainTabForSection(active);
   return (
     <nav
       aria-label="Primary"
-      data-collapsed={collapsed ? 'true' : 'false'}
-      className={`hidden lg:flex flex-col shrink-0 border-r border-line bg-nav transition-[width] duration-200 ${
-        collapsed ? 'w-[68px]' : 'w-[236px]'
-      }`}
+      className={`${hidden ? 'hidden' : 'hidden lg:flex'} flex-col w-[236px] shrink-0 border-r border-line bg-nav`}
     >
-      <div
-        className={`h-14 flex items-center border-b border-line shrink-0 ${
-          collapsed ? 'px-2 justify-center' : 'px-3 justify-between gap-2'
-        }`}
-      >
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-lg bg-accent/12 text-accent border border-accent/25 flex items-center justify-center shrink-0">
-            <ScanSearch className="w-4 h-4" />
-          </div>
-          {!collapsed && (
-            <div className="min-w-0">
-              <div className="text-[13px] font-extrabold tracking-tight text-ink leading-none">
-                Wick<span className="text-accent">Sentinel</span>
-              </div>
-              <div className="text-[9px] font-semibold uppercase tracking-wider text-faint leading-none mt-1">
-                Market Intelligence
-              </div>
+      <div className="h-14 px-4 flex items-center gap-2.5 border-b border-line">
+        <div className="w-8 h-8 rounded-lg bg-accent/12 text-accent border border-accent/25 flex items-center justify-center shrink-0">
+          <ScanSearch className="w-4 h-4" />
+        </div>
+        <div className="min-w-0">
+          <div className="text-[15px] font-bold tracking-tight text-ink leading-none">Deriv AI</div>
+          <div className="text-[11px] font-medium text-muted leading-none mt-0.5">Scanner</div>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
+        {MAIN_TABS.map((tab) => {
+          const isActive = tab.key === activeTab.key;
+          const tabBadge = tab.sections.reduce((n, s) => Math.max(n, badges?.[s.key] ?? 0), 0);
+          return (
+            <div key={tab.key}>
+              <button
+                type="button"
+                onClick={() => onSelect(tab.defaultSection)}
+                aria-current={isActive ? 'page' : undefined}
+                className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-semibold transition-colors duration-150 cursor-pointer border ${
+                  isActive
+                    ? 'bg-accent/10 text-accent border-accent/20'
+                    : 'text-muted border-transparent hover:bg-elevated hover:text-ink'
+                }`}
+              >
+                <span className={isActive ? 'text-accent' : 'text-faint'}>{tab.icon}</span>
+                <span className="truncate">{tab.label}</span>
+                <Badge count={tabBadge} />
+              </button>
+
+              {isActive && tab.sections.length > 1 && (
+                <ul className="mt-0.5 mb-1 ml-3 pl-2 border-l border-line space-y-0.5">
+                  {tab.sections.map((s) => {
+                    const sub = s.key === active;
+                    return (
+                      <li key={s.key}>
+                        <button
+                          type="button"
+                          onClick={() => onSelect(s.key)}
+                          aria-current={sub ? 'page' : undefined}
+                          className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[12px] font-medium transition-colors cursor-pointer ${
+                            sub ? 'bg-elevated text-accent' : 'text-faint hover:text-ink hover:bg-elevated/60'
+                          }`}
+                        >
+                          <span className="truncate">{s.label}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </div>
-          )}
-        </div>
-        {onToggleCollapsed && !collapsed && (
-          <button
-            type="button"
-            onClick={onToggleCollapsed}
-            aria-label="Collapse sidebar"
-            aria-expanded={true}
-            title="Collapse sidebar"
-            className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-faint hover:text-ink hover:bg-elevated transition-colors cursor-pointer"
-          >
-            <PanelLeftClose className="w-4 h-4" aria-hidden="true" />
-          </button>
-        )}
+          );
+        })}
       </div>
 
-      {onToggleCollapsed && collapsed && (
-        <div className="shrink-0 px-1.5 py-1.5 border-b border-line-soft flex justify-center">
-          <button
-            type="button"
-            onClick={onToggleCollapsed}
-            aria-label="Expand sidebar"
-            aria-expanded={false}
-            title="Expand sidebar"
-            className="w-full h-7 rounded-lg flex items-center justify-center text-faint hover:text-ink hover:bg-elevated transition-colors cursor-pointer"
-          >
-            <PanelLeftOpen className="w-4 h-4" aria-hidden="true" />
-          </button>
-        </div>
-      )}
-
-      <div className={`flex-1 min-h-0 overflow-y-auto py-2 space-y-3 ${collapsed ? 'px-1.5' : 'px-2'}`}>
-        {SECTION_GROUPS.map((group) => (
-          <div key={group.label}>
-            {collapsed ? (
-              <div className="mx-auto mb-1.5 w-5 border-t border-line-soft" aria-hidden="true" />
-            ) : (
-              <div className="px-2 pb-1 text-[9px] font-bold uppercase tracking-wider text-faint">
-                {group.label}
-              </div>
-            )}
-            <ul className="space-y-0.5">
-              {group.items.map((s) => {
-                const isActive = s.key === active;
-                return (
-                  <li key={s.key}>
-                    <button
-                      type="button"
-                      onClick={() => onSelect(s.key)}
-                      aria-current={isActive ? 'page' : undefined}
-                      aria-label={collapsed ? s.label : undefined}
-                      title={collapsed ? s.label : undefined}
-                      className={`w-full flex items-center rounded-lg transition-colors duration-150 cursor-pointer border ${
-                        collapsed ? 'justify-center px-0 py-2 gap-0' : 'gap-2.5 px-2.5 py-1.5'
-                      } ${isActive ? 'bg-accent/10 text-accent border-accent/20' : 'text-muted border-transparent hover:bg-elevated hover:text-ink'}`}
-                    >
-                      <span className={`relative shrink-0 ${isActive ? 'text-accent' : 'text-faint'}`}>
-                        {s.icon}
-                        {(badges?.[s.key] ?? 0) > 0 && (
-                          <span className="absolute -top-1 -right-1.5 inline-flex items-center justify-center min-w-[14px] h-[14px] px-0.5 rounded-full bg-accent text-white text-[8px] font-bold">
-                            {(badges?.[s.key] ?? 0) > 9 ? '9+' : badges?.[s.key]}
-                          </span>
-                        )}
-                      </span>
-                      {!collapsed && (
-                        <>
-                          <span className="truncate text-[11px] font-bold tracking-tight">{s.label}</span>
-                          <Badge count={badges?.[s.key] ?? 0} />
-                        </>
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        ))}
-      </div>
-
-      {statusBadge && (
-        <div className={`border-t border-line shrink-0 ${collapsed ? 'p-2 flex justify-center' : 'p-3'}`}>
-          {collapsed ? (
-            <span
-              className={`block w-2.5 h-2.5 rounded-full shrink-0 ${CONNECTION_STATUS_DOT[connectionStatus ?? 'disconnected']}`}
-              data-testid="connection-status"
-              title="Deriv Feed · connection status"
-              aria-hidden="true"
-            />
-          ) : (
-            statusBadge
-          )}
-        </div>
-      )}
+      {statusBadge && <div className="p-3 border-t border-line">{statusBadge}</div>}
     </nav>
   );
 }
 
-const MOBILE_PRIMARY: AppSection[] = ['analyser', 'scanner', 'live', 'strategylab', 'alerts'];
+/** Mobile bottom bar — the five primary destinations plus a "More" sheet (6 columns). */
+const MOBILE_PRIMARY: AppSection[] = ['dashboard', 'scanner', 'entrymodel', 'chart', 'performance'];
 
 interface MobileNavProps {
   active: AppSection;
@@ -288,34 +284,36 @@ interface MobileNavProps {
 }
 
 export function MobileNav({ active, onSelect, badges, onOpenMenu }: MobileNavProps) {
-  const items = MOBILE_PRIMARY.map((k) => SECTIONS.find((s) => s.key === k)!).filter(Boolean);
+  const activeTabKey = mainTabForSection(active).key;
+  const items = MOBILE_PRIMARY.map((k) => mainTabForSection(k));
   return (
     <nav
       aria-label="Primary mobile"
       className="lg:hidden shrink-0 border-t border-line bg-nav pb-[env(safe-area-inset-bottom)]"
     >
       <ul className="grid grid-cols-6">
-        {items.map((s) => {
-          const isActive = s.key === active;
+        {items.map((tab) => {
+          const isActive = tab.key === activeTabKey;
+          const tabBadge = tab.sections.reduce((n, s) => Math.max(n, badges?.[s.key] ?? 0), 0);
           return (
-            <li key={s.key}>
+            <li key={tab.key}>
               <button
                 type="button"
-                onClick={() => onSelect(s.key)}
+                onClick={() => onSelect(tab.defaultSection)}
                 aria-current={isActive ? 'page' : undefined}
                 className={`w-full flex flex-col items-center justify-center gap-1 py-2 min-h-[54px] transition-colors cursor-pointer ${
                   isActive ? 'text-accent' : 'text-faint'
                 }`}
               >
                 <span className="relative">
-                  {s.icon}
-                  {(badges?.[s.key] ?? 0) > 0 && (
+                  {tab.icon}
+                  {tabBadge > 0 && (
                     <span className="absolute -top-1.5 -right-2 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-accent text-white text-[9px] font-bold">
-                      {(badges?.[s.key] ?? 0) > 9 ? '9+' : badges?.[s.key]}
+                      {tabBadge > 9 ? '9+' : tabBadge}
                     </span>
                   )}
                 </span>
-                <span className="text-[9px] font-medium tracking-tight">{s.shortLabel}</span>
+                <span className="text-[9px] font-medium tracking-tight">{tab.shortLabel}</span>
               </button>
             </li>
           );
@@ -336,7 +334,7 @@ export function MobileNav({ active, onSelect, badges, onOpenMenu }: MobileNavPro
   );
 }
 
-/** Full module list for the mobile "More" sheet. */
+/** Full module list for the mobile "More" sheet — the six main tabs plus their sub-views. */
 export function MobileMenuSheet({
   active,
   onSelect,
@@ -351,22 +349,22 @@ export function MobileMenuSheet({
       <div className="absolute inset-0 bg-black/40 animate-[fade-in_150ms_ease-out]" onClick={onClose} />
       <div className="absolute inset-x-0 bottom-0 max-h-[80dvh] overflow-y-auto rounded-t-2xl bg-nav border-t border-line p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] animate-[sheet-up_220ms_cubic-bezier(0.16,1,0.3,1)]">
         <div className="flex items-center justify-between pb-2">
-          <span className="text-[13px] font-bold text-ink">All modules</span>
+          <span className="text-[15px] font-semibold text-ink">All modules</span>
           <button
             type="button"
             onClick={onClose}
-            className="h-8 px-3 bg-elevated border border-line rounded-lg cursor-pointer"
+            className="h-8 px-3 text-[12px] font-medium text-muted bg-elevated border border-line rounded-lg cursor-pointer"
           >
-            <span className="text-[11px] font-bold text-muted">Close</span>
+            Close
           </button>
         </div>
-        {SECTION_GROUPS.map((group) => (
-          <div key={group.label} className="mb-3">
-            <div className="text-[9px] font-bold uppercase tracking-wider text-faint px-1 pb-1">
-              {group.label}
+        {MAIN_TABS.map((tab) => (
+          <div key={tab.key} className="mb-3">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-faint px-1 pb-1">
+              {tab.label}
             </div>
             <ul className="space-y-0.5">
-              {group.items.map((s) => {
+              {tab.sections.map((s) => {
                 const isActive = s.key === active;
                 return (
                   <li key={s.key}>
@@ -376,12 +374,12 @@ export function MobileMenuSheet({
                         onSelect(s.key);
                         onClose();
                       }}
-                      className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-[11px] font-bold tracking-tight cursor-pointer border ${
+                      className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-[13px] font-medium cursor-pointer border ${
                         isActive ? 'bg-accent/10 text-accent border-accent/20' : 'text-muted border-transparent'
                       }`}
                     >
                       <span className={isActive ? 'text-accent' : 'text-faint'}>{s.icon}</span>
-                      <span className="truncate text-[11px] font-bold tracking-tight">{s.label}</span>
+                      <span className="truncate">{s.label}</span>
                     </button>
                   </li>
                 );

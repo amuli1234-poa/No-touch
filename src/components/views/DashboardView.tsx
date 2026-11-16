@@ -16,7 +16,6 @@ import { useWorkspace } from '../../context/WorkspaceContext';
 import { ManagedSignalsPanel } from '../ManagedSignalsPanel';
 import { SignalFeedList } from '../SignalFeed';
 import { Card, SectionCard, StatTile, StatusPill } from '../ui/primitives';
-import { AccountsOverview } from '../dashboard/AccountsOverview';
 import { AiLiveStatus } from '../dashboard/AiLiveStatus';
 import { BestSignalPanel } from '../dashboard/BestSignalPanel';
 import { LiveFeedDiagnostics } from '../dashboard/LiveFeedDiagnostics';
@@ -24,6 +23,70 @@ import { MarketCard } from '../dashboard/MarketCard';
 import { PerformanceStats } from '../dashboard/PerformanceStats';
 import { formatCandleTime, formatPrice } from '../../utils/derivParser';
 import { SIGNAL_STATUS_STYLE } from '../../utils/signalStatus';
+import { eligibleMarkets } from '../../utils/eligibleMarkets';
+
+/**
+ * PLATFORM STATUS STRIP — the Overview's at-a-glance system read: Deriv connection,
+ * eligible-market count (with Jump/Step families), automatic background scanning status
+ * and the active-setup summary. Counts are always derived from live state, never faked.
+ */
+function PlatformStatusStrip() {
+  const ws = useWorkspace();
+  const eligible = eligibleMarkets(ws.markets, { requireOpen: false });
+  const jump = eligible.filter((m) => m.family === 'JUMP').length;
+  const step = eligible.filter((m) => m.family === 'STEP').length;
+  const monitored = ws.monitorSummary?.monitoredCount ?? 0;
+  const scanning = ws.isScanning || monitored > 0;
+
+  return (
+    <div
+      data-testid="platform-status"
+      className="grid grid-cols-2 lg:grid-cols-4 gap-3"
+    >
+      <div className="bg-surface border border-line rounded-xl px-3 py-2.5">
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+          Deriv connection
+        </div>
+        <div
+          className={`text-sm font-bold mt-0.5 ${
+            ws.connectionStatus === 'connected' ? 'text-emerald-400' : 'text-warn'
+          }`}
+        >
+          {ws.connectionStatus === 'connected' ? 'Connected' : ws.connectionStatus}
+        </div>
+      </div>
+      <div className="bg-surface border border-line rounded-xl px-3 py-2.5">
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+          Eligible markets
+        </div>
+        <div className="text-sm font-bold font-mono text-ink mt-0.5">
+          {eligible.length}
+          <span className="text-[10px] font-normal text-faint ml-1">
+            ({jump} Jump · {step} Step)
+          </span>
+        </div>
+      </div>
+      <div className="bg-surface border border-line rounded-xl px-3 py-2.5">
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+          Automatic scanning
+        </div>
+        <div
+          className={`text-sm font-bold mt-0.5 ${scanning ? 'text-emerald-400' : 'text-muted'}`}
+        >
+          {scanning ? `Running · ${monitored} monitored` : 'Standby'}
+        </div>
+      </div>
+      <div className="bg-surface border border-line rounded-xl px-3 py-2.5">
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+          Active setups
+        </div>
+        <div className="text-sm font-bold font-mono text-ink mt-0.5">
+          {ws.monitorSummary?.activeCount ?? 0}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function directionMeta(dir: string) {
   if (dir === 'BULLISH')
@@ -49,7 +112,7 @@ export function DashboardView() {
   const lifecycleStyle = lifecycle ? SIGNAL_STATUS_STYLE[lifecycle.status] : null;
 
   return (
-    <div className="flex flex-col gap-3.5 p-3 sm:p-4 max-w-[1320px] w-full mx-auto min-w-0 overflow-x-hidden">
+    <div className="flex flex-col gap-4 p-3 sm:p-5 max-w-[1400px] w-full mx-auto">
       <Card className="p-4 sm:p-5">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="min-w-0">
@@ -121,13 +184,13 @@ export function DashboardView() {
         </div>
       </Card>
 
-      <AiLiveStatus />
+      <PlatformStatusStrip />
 
-      <AccountsOverview />
+      <AiLiveStatus />
 
       <LiveFeedDiagnostics />
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] gap-3.5">
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] gap-4">
         <BestSignalPanel />
         <SectionCard
           title="Live Market Readings"
@@ -168,7 +231,7 @@ export function DashboardView() {
 
       <SectionCard
         title="Trendline Scanner"
-        subtitle="Dedicated trendline module — M15 structure, M5 rejection entries, 4 models"
+        subtitle="Dedicated trendline module — M30 → M15 → M10 → M7 → M6 → M5 → M4 → M3 → M2 → M1, 4 models"
         icon={<TrendingUp className="w-4 h-4" />}
         right={
           <button
@@ -227,7 +290,7 @@ export function DashboardView() {
         <PerformanceStats />
       </SectionCard>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatTile
           label="Connection"
           value={
@@ -259,7 +322,7 @@ export function DashboardView() {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <SectionCard
           title="Market Activity"
           subtitle="Volatility, regime and momentum as measured on live candles"
@@ -321,7 +384,7 @@ export function DashboardView() {
         </SectionCard>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <SectionCard
           title="AI Training & Backtesting"
           subtitle="Eight entry models trained and tested on real Deriv history"

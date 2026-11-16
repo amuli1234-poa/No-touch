@@ -145,6 +145,22 @@ function restoreWebSocket() {
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
+/**
+ * Waits until the service has released every queued outbound request. The service paces
+ * requests (WS_MIN_REQUEST_INTERVAL_MS apart, capped in-flight), so a burst of switches
+ * settles over several send slots rather than instantly.
+ */
+async function waitForIdle(svc: DerivWebSocketService): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    if (svc.getDiagnostics().queuedRequests === 0) {
+      await tick();
+      if (svc.getDiagnostics().queuedRequests === 0) return;
+    }
+    await new Promise((r) => setTimeout(r, 20));
+  }
+}
+
 async function connectedService(): Promise<{ svc: DerivWebSocketService; socket: FakeSocket }> {
   const { sockets } = installFakeWebSocket();
   const svc = new DerivWebSocketService();
@@ -261,6 +277,7 @@ test('rapidly switching across every volatility keeps exactly one candle + one t
       await tick();
     }
     socket.resume();
+    await waitForIdle(svc);
     await tick();
     await tick();
 

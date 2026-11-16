@@ -362,6 +362,8 @@ export interface SweepEvent {
   /** True when a body-close breakout followed (not a sweep — a real break). */
   bodyBreakout: boolean;
   followedByDisplacement: boolean;
+  /** Touch count of the pool that was raided (equal highs/lows score higher). */
+  poolTouches: number;
   reason: string;
 }
 
@@ -394,6 +396,7 @@ export function detectSweeps(
         events.push({
           id: `sweep-bsl-${bar.time}`,
           side: 'BSL',
+          poolTouches: pool.touches,
           genuine: closedBack,
           time: bar.time,
           level: pool.upperPrice,
@@ -420,6 +423,7 @@ export function detectSweeps(
         events.push({
           id: `sweep-ssl-${bar.time}`,
           side: 'SSL',
+          poolTouches: pool.touches,
           genuine: closedBack,
           time: bar.time,
           level: pool.lowerPrice,

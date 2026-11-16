@@ -14,6 +14,8 @@ function baseInputs(overrides: Partial<HealthInputs> = {}): HealthInputs {
       lastMessageAt: 1_700_000_000_000,
       lastTickAt: 1_700_000_000_000,
       activeSubscriptions: 1,
+      queuedRequests: 0,
+      rateLimitedUntil: 0,
       hasReceivedData: true,
       isManual: false,
     },
@@ -25,15 +27,28 @@ function baseInputs(overrides: Partial<HealthInputs> = {}): HealthInputs {
     candleCount: 200,
     loadState: 'ready',
     dataError: null,
-    timeframesReady: { M1: 40, M5: 40, M15: 40 },
+    timeframesReady: {
+      M30: 40,
+      M15: 40,
+      M10: 40,
+      M7: 40,
+      M6: 40,
+      M5: 40,
+      M4: 40,
+      M3: 40,
+      M2: 40,
+      M1: 40,
+    },
     isAnalyzing: false,
     report: { overlays: { signal: { id: 's1' } } },
     analysisError: null,
     scannerRanAt: 1_700_000_000_000,
     scannerRows: 12,
     floatingScannerOpen: true,
+    aiModulesRun: 9,
     aiModulesActive: 9,
     aiModulesTotal: 9,
+    aiScanError: null,
     alertCount: 4,
     backtestEvaluations: 3,
     performanceRecords: 5,
@@ -108,7 +123,11 @@ describe('buildHealthChecks', () => {
   });
 
   it('warns when only some core timeframes have loaded candles', () => {
-    const checks = buildHealthChecks(baseInputs({ timeframesReady: { M1: 40, M5: 0, M15: 40 } }));
+    const checks = buildHealthChecks(
+      baseInputs({
+        timeframesReady: { M30: 40, M15: 40, M10: 40, M7: 40, M6: 40, M5: 0, M4: 40, M3: 40, M2: 40, M1: 40 },
+      })
+    );
     const tf = find(checks, 'timeframes');
     assert.equal(tf.status, 'WARNING');
     assert.match(tf.detail, /M5/);
@@ -138,5 +157,41 @@ describe('buildHealthChecks', () => {
     );
     assert.equal(summary.total, summary.healthy + summary.warning + summary.failed + summary.notTested);
     assert.equal(summary.overall, 'READY WITH WARNINGS');
+  });
+
+  it('reports un-run AI modules as NOT_TESTED, never as a failure', () => {
+    const check = find(
+      buildHealthChecks(baseInputs({ aiModulesRun: 0, aiModulesActive: 0 })),
+      'ai-modules'
+    );
+    assert.equal(check.status, 'NOT_TESTED');
+  });
+
+  it('reports AI modules as HEALTHY once they have run and produced analysis', () => {
+    const check = find(buildHealthChecks(baseInputs()), 'ai-modules');
+    assert.equal(check.status, 'HEALTHY');
+  });
+
+  it('reports AI modules as FAILED only when a run produced no data at all', () => {
+    const check = find(
+      buildHealthChecks(
+        baseInputs({
+          aiModulesRun: 10,
+          aiModulesActive: 0,
+          aiScanError: 'No instrument could be analysed (23/23 data fetches failed).',
+        })
+      ),
+      'ai-modules'
+    );
+    assert.equal(check.status, 'FAILED');
+    assert.match(check.detail, /could not analyse any instrument/);
+  });
+
+  it('reports AI modules as WARNING when they ran but nothing qualified', () => {
+    const check = find(
+      buildHealthChecks(baseInputs({ aiModulesRun: 10, aiModulesActive: 0, aiScanError: null })),
+      'ai-modules'
+    );
+    assert.equal(check.status, 'WARNING');
   });
 });

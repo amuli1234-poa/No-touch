@@ -39,6 +39,8 @@ import { formatPrice } from '../utils/derivParser';
 import { ModuleChartSlot } from './chart/ModuleChartSlot';
 import type { DsChartOverlay } from './chart/DsChartPrimitive';
 import { Card, SectionCard, StatTile, StatusPill } from './ui/primitives';
+import { TopDownPanel } from './ai/TopDownPanel';
+import { scoreColor, toneClass } from '../utils/signalVisuals';
 
 interface DemandSupplyAIViewProps {
   scanner: DemandSupplyScannerValue;
@@ -76,19 +78,6 @@ const STATE_TONE: Record<DsZone['state'], string> = {
   INVALIDATED: 'text-bear',
 };
 
-function scoreColor(score: number): string {
-  if (score >= 92) return 'text-emerald-400';
-  if (score >= 85) return 'text-accent';
-  if (score >= 70) return 'text-warn';
-  return 'text-muted';
-}
-
-function toneClass(tone: 'bull' | 'bear' | 'warn' | 'neutral'): string {
-  if (tone === 'bull') return 'text-emerald-400';
-  if (tone === 'bear') return 'text-bear';
-  if (tone === 'warn') return 'text-warn';
-  return 'text-muted';
-}
 
 function ZoneRow({
   zone,
@@ -189,7 +178,7 @@ function SignalCard({
           className="bg-elevated text-muted border-line"
         />
         <StatusPill
-          label={`${signal.structureTimeframe}→${signal.setupTimeframe}→${signal.entryTimeframe}`}
+          label={`${signal.structureTimeframe}→${signal.trendTimeframe}→${signal.setupTimeframe}→${signal.confirmTimeframe}→${signal.entryTimeframe}`}
           className="bg-elevated text-muted border-line"
         />
       </div>
@@ -328,7 +317,7 @@ function StatusBanner({ analysis }: { analysis: DsInstrumentAnalysis }) {
 
 function TimeframeReads({ analysis }: { analysis: DsInstrumentAnalysis }) {
   return (
-    <div className="grid grid-cols-1 @md:grid-cols-3 gap-2">
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
       {analysis.timeframes.map((tf) => (
         <div key={tf.timeframe} className="rounded-lg border border-line bg-panel px-3 py-2">
           <div className="flex items-center justify-between gap-2">
@@ -360,14 +349,14 @@ function ZoneDetail({ zone, precision, onClose }: { zone: DsZone; precision: num
         </button>
       }
     >
-      <div className="grid grid-cols-2 @lg:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <StatTile label="Proximal" value={formatPrice(zone.proximalPrice, precision)} />
         <StatTile label="Distal" value={formatPrice(zone.distalPrice, precision)} />
         <StatTile label="Displacement" value={`${zone.displacementAtr.toFixed(1)}× ATR`} />
         <StatTile label="Touches" value={String(zone.touches)} />
       </div>
 
-      <div className="mt-3 grid grid-cols-1 @lg:grid-cols-5 gap-2">
+      <div className="mt-3 grid grid-cols-1 sm:grid-cols-5 gap-2">
         <StatTile label="Formation" value={`${zone.score.formationQuality}/30`} />
         <StatTile label="Displacement" value={`${zone.score.displacement}/20`} />
         <StatTile label="Freshness" value={`${zone.score.freshness}/20`} />
@@ -451,7 +440,7 @@ export function DemandSupplyAIView({ scanner }: DemandSupplyAIViewProps) {
   const dark = ws.settings.theme === 'dark';
 
   return (
-    <div className="flex flex-col gap-3 p-3 @sm:p-5 max-w-[1400px] w-full mx-auto">
+    <div className="flex flex-col gap-3 p-3 sm:p-5 max-w-[1400px] w-full mx-auto">
       {/* Header */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-2">
@@ -463,7 +452,7 @@ export function DemandSupplyAIView({ scanner }: DemandSupplyAIViewProps) {
               Demand &amp; Supply AI
             </h1>
             <p className="text-[11px] text-muted leading-none mt-0.5">
-              M15 zones · M5 setup · M1 confirmation · independent of every other engine
+              M30 → M15 → M10 → M7 → M6 → M5 → M4 → M3 → M2 → M1 · independent of every other engine
             </p>
           </div>
         </div>
@@ -506,7 +495,7 @@ export function DemandSupplyAIView({ scanner }: DemandSupplyAIViewProps) {
         )}
         <span className="text-[11px] text-muted truncate flex-1">{scanner.progressMessage}</span>
         <span className="text-[10px] font-mono text-faint shrink-0">
-          {scanner.targetMarketCount} markets · M15 → M5 → M1
+          {scanner.targetMarketCount} markets · M30 → M15 → M10 → M7 → M6 → M5 → M4 → M3 → M2 → M1
           {scanner.lastScannedAt ? ` · last scan ${new Date(scanner.lastScannedAt).toLocaleTimeString()}` : ''}
         </span>
       </Card>
@@ -521,7 +510,7 @@ export function DemandSupplyAIView({ scanner }: DemandSupplyAIViewProps) {
           subtitle="Toggle the six demand & supply entry models and set the publication gate"
           icon={<Activity className="w-3.5 h-3.5" aria-hidden="true" />}
         >
-          <div className="grid grid-cols-1 @sm:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {DS_MODEL_IDS.map((id) => {
               const Icon = MODEL_ICON[id];
               const enabled = scanner.settings.enabledModels[id];
@@ -546,7 +535,7 @@ export function DemandSupplyAIView({ scanner }: DemandSupplyAIViewProps) {
             })}
           </div>
 
-          <div className="mt-4 grid grid-cols-1 @sm:grid-cols-2 gap-3">
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="text-[11px] font-semibold text-muted">Direction</label>
               <div className="mt-1 flex gap-1.5">
@@ -620,7 +609,7 @@ export function DemandSupplyAIView({ scanner }: DemandSupplyAIViewProps) {
       )}
 
       {/* Main grid: chart + panels */}
-      <div className="grid grid-cols-1 @3xl:grid-cols-[1.6fr_1fr] gap-3">
+      <div className="grid grid-cols-1 xl:grid-cols-[1.6fr_1fr] gap-3">
         {/* Chart column */}
         <div className="flex flex-col gap-3 min-w-0">
           <ModuleChartSlot dsOverlay={dsOverlay} onDsZoneSelect={setSelectedZone} />
@@ -634,6 +623,7 @@ export function DemandSupplyAIView({ scanner }: DemandSupplyAIViewProps) {
           )}
 
           {chartAnalysis && <TimeframeReads analysis={chartAnalysis} />}
+          {chartAnalysis?.topDown && <TopDownPanel analysis={chartAnalysis.topDown} />}
 
           {/* Current zones */}
           <SectionCard
@@ -828,11 +818,13 @@ export function DemandSupplyAIView({ scanner }: DemandSupplyAIViewProps) {
         <Loader2 className="w-3.5 h-3.5 text-faint mt-0.5 shrink-0" aria-hidden="true" />
         <p className="text-[11px] text-faint leading-snug">
           The Demand &amp; Supply AI runs independently of the price-action engine and the Trendline
-          AI, reusing the same live Deriv feed. M15 identifies the primary zones (DBR / RBR / RBD /
-          DBD with strong displacement), M5 refines them and develops the setup, and M1 confirms the
-          rejection entry. A signal is published only when a confirmed M1 rejection clears the score
-          gate — a zone touch alone never triggers a signal, and Boom &amp; Crash indices are
-          excluded.
+          AI, reusing the same live Deriv feed. It reads the full top-down ladder
+          (M30 → M15 → M10 → M7 → M6 → M5 → M4 → M3 → M2 → M1): M30/M15 set the bias, M10/M7/M6
+          develop the structure, M15 identifies the primary zones (DBR / RBR / RBD / DBD with
+          strong displacement), M5 refines them and develops the setup, M4/M3 refine the setup and
+          confirm the entry, and M2/M1 confirm the rejection entry. A signal is published only when
+          a confirmed M1 rejection clears the score gate — a zone touch alone never triggers a
+          signal, and Boom &amp; Crash indices are excluded.
         </p>
       </Card>
     </div>

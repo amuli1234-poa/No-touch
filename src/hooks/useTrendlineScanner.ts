@@ -5,9 +5,9 @@ import {
   trendlineSignalStatus,
 } from '../analysis/trendlineEngine';
 import { TRENDLINE_PUBLICATION_MIN_SCORE } from '../analysis/trendlineModels';
-import { TIMEFRAME_MAP } from '../config/deriv';
+import { TIMEFRAME_MAP, AI_TIMEFRAME_KEYS } from '../config/deriv';
 import { DerivWebSocketService } from '../services/derivWebSocket';
-import type { Candle, MarketFamily, SyntheticMarket, TimeframeKey } from '../types/market';
+import type { Candle, ConnectionStatus, MarketFamily, SyntheticMarket, TimeframeKey } from '../types/market';
 import type {
   TrendlineEntryModelId,
   TrendlineInstrumentAnalysis,
@@ -17,9 +17,13 @@ import type {
 import { TRENDLINE_MODEL_IDS } from '../types/trendline';
 import { eligibleMarkets } from '../utils/eligibleMarkets';
 
-/** Trendline structure is built on M15, the setup/rejection develops on M5, entries confirm on M1. */
+/** Trendline structure is built on M15, trend & market structure on M7, the setup/rejection develops on M5, the entry setup confirms on M3 and entries confirm on M1. */
 export const TRENDLINE_STRUCTURE_TF: TimeframeKey = 'M15';
+/** M7 trend & market-structure confirmation (derived from M1). */
+export const TRENDLINE_TREND_TF: TimeframeKey = 'M7';
 export const TRENDLINE_SETUP_TF: TimeframeKey = 'M5';
+/** M3 entry-setup confirmation (native on Deriv). */
+export const TRENDLINE_CONFIRM_TF: TimeframeKey = 'M3';
 export const TRENDLINE_ENTRY_TF: TimeframeKey = 'M1';
 
 export interface TrendlineScannerSettings {
@@ -27,7 +31,7 @@ export interface TrendlineScannerSettings {
   /** Minimum score gate (defaults to the shared 85 publication minimum). */
   minScore: number;
   directionPreference: 'RISE' | 'FALL' | 'BOTH';
-  /** Timeframe shown on the chart (analysis still uses M15/M5/M1). */
+  /** Timeframe shown on the chart (analysis still uses M30/M15/M10/M7/M6/M5/M4/M3/M2/M1). */
   chartTimeframe: TimeframeKey;
   /** Include the 1-second Volatility variants in the breadth scan. */
   include1Sec: boolean;
@@ -49,29 +53,50 @@ const DEFAULT_SETTINGS: TrendlineScannerSettings = {
 interface UseTrendlineScannerProps {
   derivService: DerivWebSocketService;
   markets: SyntheticMarket[];
+  /** Live connection status — gates the automatic background sweep. */
+  connectionStatus?: ConnectionStatus;
+  /** When false the module never auto-scans (default: true). */
+  autoStart?: boolean;
+  /** Delay before the first automatic pass (staggering). */
+  autoStartDelayMs?: number;
+  /** Continuous background re-scan interval (default 180s). */
+  autoRefreshMs?: number;
 }
 
 /**
  * TRENDLINE SCANNER — a dedicated strategy module that runs independently of the
  * price-action engine. It reuses the shared live Deriv connection and candle feeds:
- * M15 drives structure/trendlines, M5 develops the rejection setup, and M1 confirms the
- * precise entry. It analyses EVERY available Volatility Index (standard + 1-second),
- * never just Volatility 75, and completely excludes Boom & Crash indices.
+ * M15 drives structure/trendlines, M7 reads trend & market structure, M5 develops the
+ * rejection setup, M3 confirms the entry setup, and M1 confirms the precise entry. It
+ * analyses EVERY eligible index (standard + 1-second Volatility, Jump,
+ * Step), never just Volatility 75, and completely excludes Boom & Crash indices.
  */
-export function useTrendlineScanner({ derivService, markets }: UseTrendlineScannerProps) {
+export function useTrendlineScanner({
+  derivService,
+  markets,
+  connectionStatus = 'connected',
+  autoStart = true,
+  autoStartDelayMs = 0,
+  autoRefreshMs = 180_000,
+}: UseTrendlineScannerProps) {
   const [settings, setSettings] = useState<TrendlineScannerSettings>(DEFAULT_SETTINGS);
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState(
-    'Ready to scan Deriv indices for high-quality trendline setups (M15 structure, M5 setup, M1 entry).'
+    'Ready to scan Deriv indices for high-quality trendline setups (M15 structure, M7 trend, M5 setup, M3 confirmation, M1 entry).'
   );
   const [summary, setSummary] = useState<TrendlineScanSummary | null>(null);
   const [analyses, setAnalyses] = useState<TrendlineInstrumentAnalysis[]>([]);
   const [history, setHistory] = useState<TrendlineSignal[]>([]);
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastScannedAt, setLastScannedAt] = useState<number | null>(null);
 
   const scanAbortRef = useRef(false);
+  const autoStartedRef = useRef(false);
+  const isScanningRef = useRef(isScanning);
+  isScanningRef.current = isScanning;
+  const marketsRef = useRef(markets);
+  marketsRef.current = markets;
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
 
@@ -121,20 +146,31 @@ export function useTrendlineScanner({ derivService, markets }: UseTrendlineScann
   );
 
   /**
-   * Runs the trendline engine for one instrument on M15 (structure), M5 (setup) and
-   * M1 (precise entry). Shared by the breadth scan and the live single-instrument view.
+   * Runs the trendline engine for one instrument on M15 (structure), M7 (trend & structure),
+   * M5 (setup), M3 (confirmation) and M1 (precise entry). Shared by the breadth scan and the
+   * live single-instrument view.
    */
   const analyzeSymbol = useCallback(
     async (market: SyntheticMarket): Promise<TrendlineInstrumentAnalysis | null> => {
-      const structureGranularity = TIMEFRAME_MAP[TRENDLINE_STRUCTURE_TF].granularitySec;
-      const setupGranularity = TIMEFRAME_MAP[TRENDLINE_SETUP_TF].granularitySec;
       const entryGranularity = TIMEFRAME_MAP[TRENDLINE_ENTRY_TF].granularitySec;
       try {
-        const [structureCandles, entryCandles, m1Candles] = await Promise.all([
-          derivService.fetchHistoricalCandles(market.symbol, structureGranularity, 180),
-          derivService.fetchHistoricalCandles(market.symbol, setupGranularity, 180),
-          derivService.fetchHistoricalCandles(market.symbol, entryGranularity, 180),
-        ]);
+        // EVERY AI module independently analyses this index across ALL TEN timeframes.
+        const series = await Promise.all(
+          AI_TIMEFRAME_KEYS.map((tf) =>
+            derivService
+              .fetchHistoricalCandles(market.symbol, TIMEFRAME_MAP[tf].granularitySec, 180)
+              .catch(() => [] as Candle[])
+          )
+        );
+        const candlesByTimeframe: Partial<Record<TimeframeKey, readonly Candle[]>> = {};
+        AI_TIMEFRAME_KEYS.forEach((tf, i) => {
+          candlesByTimeframe[tf] = series[i];
+        });
+        const structureCandles = candlesByTimeframe[TRENDLINE_STRUCTURE_TF] ?? [];
+        const trendCandles = candlesByTimeframe[TRENDLINE_TREND_TF] ?? [];
+        const entryCandles = candlesByTimeframe[TRENDLINE_SETUP_TF] ?? [];
+        const confirmCandles = candlesByTimeframe[TRENDLINE_CONFIRM_TF] ?? [];
+        const m1Candles = candlesByTimeframe[TRENDLINE_ENTRY_TF] ?? [];
         const nowSec = Math.floor(Date.now() / 1000);
         let dataHealth: 'HEALTHY' | 'STALE' | 'DISCONNECTED' = 'HEALTHY';
         if (structureCandles.length === 0 || entryCandles.length === 0) {
@@ -153,6 +189,9 @@ export function useTrendlineScanner({ derivService, markets }: UseTrendlineScann
           structureCandles,
           entryCandles,
           m1Candles,
+          trendCandles,
+          confirmCandles,
+          candlesByTimeframe,
           dataHealth,
         });
       } catch {
@@ -187,11 +226,11 @@ export function useTrendlineScanner({ derivService, markets }: UseTrendlineScann
   );
 
   const scanMarkets = useCallback(async () => {
-    if (isScanning) return;
+    if (isScanningRef.current) return;
     scanAbortRef.current = false;
     setIsScanning(true);
     setScanProgress(0);
-    setProgressMessage('Scanning Deriv indices for trendline setups (M15 structure → M5 setup → M1 entry)…');
+    setProgressMessage('Scanning Deriv indices for trendline setups (M30 → M15 → M10 → M7 → M6 → M5 → M4 → M3 → M2 → M1)…');
 
     const results: TrendlineInstrumentAnalysis[] = [];
     try {
@@ -225,7 +264,7 @@ export function useTrendlineScanner({ derivService, markets }: UseTrendlineScann
       setIsScanning(false);
       setScanProgress(0);
     }
-  }, [isScanning, targetMarkets, analyzeSymbol, applyFilters]);
+  }, [targetMarkets, analyzeSymbol, applyFilters]);
 
   const cancelScan = useCallback(() => {
     scanAbortRef.current = true;
@@ -235,14 +274,27 @@ export function useTrendlineScanner({ derivService, markets }: UseTrendlineScann
 
   const clearHistory = useCallback(() => setHistory([]), []);
 
-  // Auto-refresh: re-scan on an interval while enabled.
+  // AUTOMATIC BACKGROUND SWEEP — one staggered pass once ready, then continuous re-scans.
   useEffect(() => {
-    if (!autoRefresh) return;
+    if (!autoStart) return;
+    if (connectionStatus !== 'connected') return;
+    if (markets.length === 0) return;
+    if (autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    const timer = setTimeout(() => {
+      if (!isScanningRef.current && marketsRef.current.length > 0) void scanMarkets();
+    }, autoStartDelayMs);
+    return () => clearTimeout(timer);
+  }, [autoStart, connectionStatus, markets.length, autoStartDelayMs, scanMarkets]);
+
+  useEffect(() => {
+    if (!autoStart || !autoRefresh) return;
+    if (connectionStatus !== 'connected') return;
     const id = setInterval(() => {
-      void scanMarkets();
-    }, 30_000);
+      if (!isScanningRef.current && marketsRef.current.length > 0) void scanMarkets();
+    }, autoRefreshMs);
     return () => clearInterval(id);
-  }, [autoRefresh, scanMarkets]);
+  }, [autoStart, autoRefresh, connectionStatus, autoRefreshMs, scanMarkets]);
 
   /**
    * Live trendline read for the currently selected chart instrument (re-runs when the
@@ -291,6 +343,8 @@ export function useTrendlineScanner({ derivService, markets }: UseTrendlineScann
     autoRefresh,
     setAutoRefresh,
     lastScannedAt,
+    /** True once this module has completed at least one pass (even a zero-result one). */
+    hasRun: lastScannedAt !== null,
     scanMarkets,
     cancelScan,
     clearHistory,

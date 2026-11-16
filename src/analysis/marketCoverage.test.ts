@@ -7,9 +7,10 @@ import { analyzeTrendlineInstrument } from './trendlineEngine';
 import { analyzeDsInstrument } from './demandSupplyEngine';
 
 /**
- * GLOBAL ALL-MARKETS COVERAGE — every AI module must analyse EVERY eligible Volatility
- * Index (standard + 1-second) without throwing, and must return a well-formed analysis.
- * Boom/Crash and every other synthetic family must never appear in the eligible set.
+ * GLOBAL ALL-MARKETS COVERAGE — every AI module must analyse EVERY eligible index
+ * (standard + 1-second Volatility, Jump, Step) without throwing, and must return a
+ * well-formed analysis. Boom/Crash and the other excluded synthetic families must never
+ * appear in the eligible set.
  */
 
 function mk(
@@ -42,10 +43,12 @@ const UNIVERSE: SyntheticMarket[] = [
   mk('1HZ50V', 'Volatility 50 (1s) Index', 'random_index', 'VOLATILITY'),
   mk('1HZ75V', 'Volatility 75 (1s) Index', 'random_index', 'VOLATILITY'),
   mk('1HZ100V', 'Volatility 100 (1s) Index', 'random_index', 'VOLATILITY'),
+  mk('JD10', 'Jump 10 Index', 'jump_index', 'JUMP'),
+  mk('JD25', 'Jump 25 Index', 'jump_index', 'JUMP'),
+  mk('JD100', 'Jump 100 Index', 'jump_index', 'JUMP'),
+  mk('stpRNG', 'Step Index', 'step_index', 'STEP'),
   mk('BOOM500', 'Boom 500 Index', 'crash_index', 'OTHER'),
   mk('CRASH500', 'Crash 500 Index', 'crash_index', 'OTHER'),
-  mk('JD10', 'Jump 10 Index', 'jump_index', 'JUMP'),
-  mk('stpRNG', 'Step Index', 'step_index', 'STEP'),
 ];
 
 /** Deterministic pseudo-random walk so every instrument gets real, varied candles. */
@@ -69,8 +72,13 @@ function candlesFor(symbol: string, count = 200, start = 1000): Candle[] {
 
 test('coverage matrix: every eligible market is present and no excluded family leaks in', () => {
   const symbols = eligibleMarkets(UNIVERSE).map((m) => m.symbol);
-  assert.equal(symbols.length, 10);
-  for (const bad of ['BOOM500', 'CRASH500', 'JD10', 'stpRNG']) {
+  assert.equal(symbols.length, 14);
+  // Jump + Step must be included…
+  for (const good of ['JD10', 'JD25', 'JD100', 'stpRNG']) {
+    assert.equal(symbols.includes(good), true, `${good} must be eligible`);
+  }
+  // …Boom/Crash must not.
+  for (const bad of ['BOOM500', 'CRASH500']) {
     assert.equal(symbols.includes(bad), false, `${bad} must be excluded`);
   }
 });

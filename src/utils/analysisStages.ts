@@ -43,7 +43,12 @@ export function deriveAnalysisStage(input: AnalysisStageInput): AnalysisStageInf
   const { connectionStatus, loadState, isAnalyzing, report, hasCandles, hasRanAnalysis } =
     input;
 
-  if (connectionStatus === 'connecting' || connectionStatus === 'reconnecting') {
+  if (
+    connectionStatus === 'connecting' ||
+    connectionStatus === 'reconnecting' ||
+    connectionStatus === 'rate_limited' ||
+    connectionStatus === 'stale'
+  ) {
     return { stage: 'CONNECTING', tone: 'progress', progress: 0.1 };
   }
   if (connectionStatus === 'error' || connectionStatus === 'disconnected') {

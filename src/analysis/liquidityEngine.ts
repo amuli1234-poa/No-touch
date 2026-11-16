@@ -2,14 +2,19 @@ import {
   aiAtr,
   buildAiSignal,
   buildTimeframeReads,
+  ladderTimeframeReads,
+  timeframeConditionRead,
   clamp,
+  structurallyValidDrafts,
+  resolveTargets,
   makeZone,
-  orderTargets,
+  confluenceBonus,
   readAiCondition,
   statusForScore,
+  m1BodyConfirm,
 } from './aiCommon';
 import { analyzeMarketStructure } from './structure';
-import { computeAtrSeries, detectSwings, getCandleStats } from './swings';
+import { computeAtrSeries, detectSwings } from './swings';
 import { detectFvgs, detectLiquidityPools, detectOrderBlocks, detectSweeps } from './smcTools';
 import { confirmedOnly } from './trendlineDetection';
 import type {
@@ -19,7 +24,7 @@ import type {
   AiTimeframeRead,
   AiZone,
 } from '../types/aiModule';
-import type { Candle, MarketFamily } from '../types/market';
+import type { Candle, MarketFamily, TimeframeKey } from '../types/market';
 import { formatPrice } from '../utils/derivParser';
 
 /**
@@ -48,6 +53,12 @@ export interface LiquidityEngineParams {
   structureCandles: readonly Candle[];
   setupCandles: readonly Candle[];
   entryCandles: readonly Candle[];
+  /** M7 (trend & structure) candles — optional. */
+  trendCandles?: readonly Candle[];
+  /** M3 (entry confirmation) candles — optional. */
+  confirmCandles?: readonly Candle[];
+  /** ALL TEN analysis timeframes for this index (M30/M15/M10/M7/M6/M5/M4/M3/M2/M1). */
+  candlesByTimeframe?: Partial<Record<TimeframeKey, readonly Candle[]>>;
   dataHealth: 'HEALTHY' | 'STALE' | 'DISCONNECTED';
 }
 
@@ -56,22 +67,17 @@ function m1Confirm(
   direction: AiDirection,
   atr: number
 ): { confirmed: boolean; time: number; detail: string } {
-  const bars = confirmedOnly(entry);
-  for (let i = bars.length - 1; i >= Math.max(0, bars.length - 5); i--) {
-    const bar = bars[i];
-    const stats = getCandleStats(bar);
-    const dirOk = direction === 'RISE' ? stats.isBullish : stats.isBearish;
-    if (dirOk && stats.body >= atr * 0.35) {
-      return {
-        confirmed: true,
-        time: bar.time,
-        detail: `M1 confirmed the ${direction === 'RISE' ? 'bullish' : 'bearish'} reaction with a ${
-          (stats.body / atr).toFixed(2)
-        }× ATR body.`,
-      };
-    }
-  }
-  return { confirmed: false, time: 0, detail: 'M1 reaction confirmation pending.' };
+  return m1BodyConfirm(
+    entry,
+    direction,
+    atr,
+    0.35,
+    (stats) =>
+      `M1 confirmed the ${direction === 'RISE' ? 'bullish' : 'bearish'} reaction with a ${(
+        stats.body / atr
+      ).toFixed(2)}× ATR body.`,
+    'M1 reaction confirmation pending.'
+  );
 }
 
 export function analyzeLiquidityInstrument(params: LiquidityEngineParams): AiInstrumentAnalysis {
@@ -152,12 +158,13 @@ export function analyzeLiquidityInstrument(params: LiquidityEngineParams): AiIns
   }
   const drafts: Draft[] = [];
 
-  const poolTargets = (direction: AiDirection): number[] =>
-    orderTargets(
+  const poolTargets = (direction: AiDirection, entryRef: number = price): number[] =>
+    resolveTargets(
       direction,
-      price,
-      (direction === 'RISE' ? bsl : ssl).map((p) => p.price)
-    ).slice(0, 3);
+      entryRef,
+      (direction === 'RISE' ? bsl : ssl).map((p) => p.price),
+      atr
+    );
 
   // 1. Sweep → displacement → MSS.
   if (latestGenuine && latestBreak && latestGenuine.followedByDisplacement) {
@@ -172,7 +179,21 @@ export function analyzeLiquidityInstrument(params: LiquidityEngineParams): AiIns
         entry: price,
         stop: dir === 'RISE' ? latestGenuine.extremePrice - atr * 0.6 : latestGenuine.extremePrice + atr * 0.6,
         targets,
-        score: clamp(64 + (conf.confirmed ? 12 : 0) + (targets.length >= 2 ? 8 : 0), 0, 100),
+        score: clamp(
+          62 +
+            (conf.confirmed ? 12 : 0) +
+            (targets.length >= 2 ? 8 : 0) +
+            confluenceBonus({
+              obQuality: obs.find((o) => (o.kind === 'BULLISH' ? 'RISE' : 'FALL') === dir)?.quality,
+              fvgQuality: fvgs.find((f) => (f.kind === 'BULLISH' ? 'RISE' : 'FALL') === dir)?.quality,
+              momentumConfirmed: latestBreak.momentumConfirmed,
+              poolTouches: latestGenuine.poolTouches,
+              trendAligned: condition.bias === (dir === 'RISE' ? 'bullish' : 'bearish'),
+              displacement: latestGenuine.followedByDisplacement,
+            }),
+          0,
+          100
+        ),
         reasons: [latestGenuine.reason, latestBreak.reason, conf.detail],
         confirmations: ['Sweep → displacement → MSS'],
         confirmed: conf.confirmed,
@@ -194,8 +215,12 @@ export function analyzeLiquidityInstrument(params: LiquidityEngineParams): AiIns
         direction: dir,
         entry: entryLevel,
         stop: dir === 'RISE' ? fvg.lowerPrice - atr * 0.5 : fvg.upperPrice + atr * 0.5,
-        targets: poolTargets(dir),
-        score: clamp(60 + (conf.confirmed ? 12 : 0) + 6, 0, 100),
+        targets: poolTargets(dir, entryLevel),
+        score: clamp(
+          60 + (conf.confirmed ? 12 : 0) + 6 + confluenceBonus({ fvgQuality: fvg.quality, momentumConfirmed: latestBreak.momentumConfirmed, displacement: latestGenuine.followedByDisplacement }),
+          0,
+          100
+        ),
         reasons: [latestGenuine.reason, latestBreak.reason, fvg.reason, conf.detail],
         confirmations: ['Sweep → CHOCH → FVG'],
         confirmed: conf.confirmed,
@@ -218,7 +243,7 @@ export function analyzeLiquidityInstrument(params: LiquidityEngineParams): AiIns
       entry: price,
       stop: sweptEqualHigh.extremePrice + atr * 0.5,
       targets: poolTargets('FALL'),
-      score: clamp(58 + (conf.confirmed ? 12 : 0), 0, 100),
+      score: clamp(56 + (conf.confirmed ? 12 : 0) + confluenceBonus({ poolTouches: equalHighPool?.touches, displacement: sweptEqualHigh.followedByDisplacement }), 0, 100),
       reasons: [sweptEqualHigh.reason, 'Equal highs swept — bearish confirmation expected.', conf.detail],
       confirmations: ['Equal-high sweep'],
       confirmed: conf.confirmed,
@@ -234,7 +259,7 @@ export function analyzeLiquidityInstrument(params: LiquidityEngineParams): AiIns
       entry: price,
       stop: sweptEqualLow.extremePrice - atr * 0.5,
       targets: poolTargets('RISE'),
-      score: clamp(58 + (conf.confirmed ? 12 : 0), 0, 100),
+      score: clamp(56 + (conf.confirmed ? 12 : 0) + confluenceBonus({ poolTouches: equalLowPool?.touches, displacement: sweptEqualLow.followedByDisplacement }), 0, 100),
       reasons: [sweptEqualLow.reason, 'Equal lows swept — bullish confirmation expected.', conf.detail],
       confirmations: ['Equal-low sweep'],
       confirmed: conf.confirmed,
@@ -255,7 +280,7 @@ export function analyzeLiquidityInstrument(params: LiquidityEngineParams): AiIns
         entry: price,
         stop: dir === 'RISE' ? latestGenuine.extremePrice - atr * 0.6 : latestGenuine.extremePrice + atr * 0.6,
         targets: poolTargets(dir),
-        score: clamp(57 + (conf.confirmed ? 12 : 0), 0, 100),
+        score: clamp(57 + (conf.confirmed ? 12 : 0) + confluenceBonus({ trendAligned: true, momentumConfirmed: latestBreak?.momentumConfirmed, displacement: latestGenuine.followedByDisplacement }), 0, 100),
         reasons: [latestGenuine.reason, `Sweep agrees with the dominant ${condition.bias} bias — continuation favoured.`, conf.detail],
         confirmations: ['Trend-aligned liquidity raid'],
         confirmed: conf.confirmed,
@@ -277,7 +302,7 @@ export function analyzeLiquidityInstrument(params: LiquidityEngineParams): AiIns
         entry: price,
         stop: dir === 'RISE' ? latestGenuine.extremePrice - atr * 0.6 : latestGenuine.extremePrice + atr * 0.6,
         targets: [external.price],
-        score: clamp(56 + (conf.confirmed ? 12 : 0), 0, 100),
+        score: clamp(56 + (conf.confirmed ? 12 : 0) + confluenceBonus({ poolTouches: (dir === 'RISE' ? nearestBsl : nearestSsl)?.touches, displacement: latestGenuine.followedByDisplacement }), 0, 100),
         reasons: [
           `Internal liquidity taken; external ${dir === 'RISE' ? 'buy-side' : 'sell-side'} liquidity at ${formatPrice(external.price, precision)} is the draw.`,
           conf.detail,
@@ -302,8 +327,8 @@ export function analyzeLiquidityInstrument(params: LiquidityEngineParams): AiIns
         direction: dir,
         entry: entryLevel,
         stop: dir === 'RISE' ? ob.lowerPrice - atr * 0.6 : ob.upperPrice + atr * 0.6,
-        targets: poolTargets(dir),
-        score: clamp(58 + (conf.confirmed ? 12 : 0), 0, 100),
+        targets: poolTargets(dir, entryLevel),
+        score: clamp(56 + (conf.confirmed ? 12 : 0) + confluenceBonus({ obQuality: ob.quality, poolTouches: latestGenuine.poolTouches, displacement: latestGenuine.followedByDisplacement }), 0, 100),
         reasons: [latestGenuine.reason, ob.reason, conf.detail],
         confirmations: ['Liquidity grab → OB retest'],
         confirmed: conf.confirmed,
@@ -313,10 +338,10 @@ export function analyzeLiquidityInstrument(params: LiquidityEngineParams): AiIns
     }
   }
 
-  const best = drafts.sort((a, b) => b.score - a.score)[0] ?? null;
+  const best = structurallyValidDrafts(drafts).sort((a, b) => b.score - a.score)[0] ?? null;
   const bestScore = best?.score ?? 0;
   const gate = LIQUIDITY_PUBLICATION_MIN_SCORE;
-  const status = statusForScore(bestScore, gate);
+  const status = statusForScore(bestScore, gate, best?.confirmed === true);
 
   // ---- Chart zones: unswept pools (future targets) + swept pools (dimmer) ----
   const zones: AiZone[] = [];
@@ -336,7 +361,18 @@ export function analyzeLiquidityInstrument(params: LiquidityEngineParams): AiIns
     );
   }
 
+  const trendRead = params.trendCandles
+    ? timeframeConditionRead(params.trendCandles, 'M7 trend & structure')
+    : null;
+  const confirmRead = params.confirmCandles
+    ? timeframeConditionRead(params.confirmCandles, 'M3 confirmation')
+    : null;
+
   const timeframes: AiTimeframeRead[] = buildTimeframeReads({
+    m7: trendRead?.detail,
+    m7Tone: trendRead?.tone,
+    m3: confirmRead?.detail,
+    m3Tone: confirmRead?.tone,
     m15: `${condition.condition.replace(/_/g, ' ').toLowerCase()} — ${condition.detail}`,
     m15Tone: condition.bias === 'bullish' ? 'bull' : condition.bias === 'bearish' ? 'bear' : 'neutral',
     m5: `${pools.filter((p) => !p.swept).length} unswept pool(s) · ${
@@ -345,6 +381,7 @@ export function analyzeLiquidityInstrument(params: LiquidityEngineParams): AiIns
     m5Tone: latestGenuine ? 'warn' : 'neutral',
     m1: best ? (best.confirmed ? 'M1 reaction confirmed.' : 'M1 reaction pending.') : 'No M1 confirmation.',
     m1Tone: best?.confirmed ? 'bull' : 'neutral',
+    ladder: ladderTimeframeReads(params.candlesByTimeframe),
   });
 
   let signal: AiSignal | null = null;
