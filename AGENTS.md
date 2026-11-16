@@ -431,9 +431,13 @@ at runtime.
   a hex or `rgba()` in a component — add or reuse a token instead.
 - `src/lib/theme.ts` owns the runtime. The choice is stored in `localStorage`
   (`ws-theme`) and applied to `<html data-theme>`; an inline script in
-  `index.html` resolves it before React mounts so there is no flash. Dark is the
-  default; a stored choice overrides it. Use the `useTheme()` hook;
-  `setTheme`/`toggle` write the attribute.
+  `index.html` resolves it before React mounts so there is no flash. **Light is
+  the default** (matching the reatech360.com design reference); a stored choice
+  overrides it. Use the `useTheme()` hook; `setTheme`/`toggle` write the
+  attribute. The workspace also persists its own `theme` in
+  `deriv_ai_scanner_settings_v1` (`AppSettings.theme`, default `'light'`) and
+  applies it via `src/hooks/useTheme.ts` — both defaults must agree, and a
+  returning visitor's stored value wins over either.
 - `src/components/ui/ThemeToggle.tsx` is the control (`icon` and `switch`
   variants). It is wired into the landing nav and the workspace top bar.
 - Chart colours cannot be CSS classes. `src/theme/designTokens.ts` is the
@@ -532,6 +536,12 @@ git fetch origin <name>   # populate the remote-tracking ref
 - Layout: `src/App.tsx` mounts a flex row where the chart column is `flex-1`
   and the analysis panel is a fixed aside; below `xl` the panel is a slide-over
   drawer, so the chart stays full-width on tablet/Android.
+- Section routing is a **two-part registry**: an `AppSection` union
+  (`src/components/nav/Navigation.tsx` + `src/context/WorkspaceContext.tsx`)
+  and the `FULL_WIDTH_SECTIONS` array in `src/App.tsx`. Adding a section to the
+  union and wiring its view is not enough — a section missing from
+  `FULL_WIDTH_SECTIONS` falls into the chart+aside branch and, with no `case`
+  in the aside's switch, renders a blank right pane. Add new sections to both.
 - Module registry: `src/hooks/useAiModules.ts` exports
   `AI_MODULE_DEFINITIONS`, the single source of truth for the AI tabs. Each
   entry names an `AiEngine` and its publication gate; adding a module is a
