@@ -22,10 +22,10 @@ function fmtPct(v: number | null): string {
 }
 
 function SegmentTable({ rows, emptyLabel }: { rows: SegmentedPerformance[]; emptyLabel: string }) {
-  if (rows.length === 0) return <div className="text-[11px] text-faint py-4 text-center">{emptyLabel}</div>;
+  if (rows.length === 0) return <div className="text-[12px] text-faint py-4 text-center">{emptyLabel}</div>;
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-[11px]">
+      <table className="w-full text-[12px]">
         <thead>
           <tr className="text-faint text-left">
             <th className="py-1.5 pr-2 font-semibold">Label</th>
@@ -45,7 +45,7 @@ function SegmentTable({ rows, emptyLabel }: { rows: SegmentedPerformance[]; empt
               <td className="py-1.5 pr-2 text-right font-mono text-muted">{r.avgRiskReward ?? '—'}</td>
               <td className="py-1.5 pr-2 text-right font-mono text-muted">{fmtPct(r.tp1Rate)}</td>
               <td className="py-1.5 pr-2">
-                <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${RATING_STYLE[r.rating]}`}>
+                <span className={`text-[11px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${RATING_STYLE[r.rating]}`}>
                   {r.rating}
                 </span>
               </td>
@@ -87,7 +87,7 @@ export function PerformanceView({ journal }: PerformanceViewProps) {
         </span>
         <div>
           <h1 className="text-base font-extrabold tracking-tight text-ink leading-none">Trade Performance &amp; Learning AI</h1>
-          <p className="text-[11px] text-muted leading-none mt-0.5">
+          <p className="text-[12px] text-muted leading-none mt-0.5">
             Independently verified outcomes across every AI module · sample sizes always shown
           </p>
         </div>
@@ -95,7 +95,7 @@ export function PerformanceView({ journal }: PerformanceViewProps) {
           <button
             type="button"
             onClick={() => setShowFilters((v) => !v)}
-            className="h-8 px-3 text-[11px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-accent/50 cursor-pointer inline-flex items-center gap-1.5"
+            className="h-8 px-3 text-[12px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-accent/50 cursor-pointer inline-flex items-center gap-1.5"
           >
             <Filter className="w-3.5 h-3.5" aria-hidden="true" />
             Filters
@@ -103,7 +103,7 @@ export function PerformanceView({ journal }: PerformanceViewProps) {
           <button
             type="button"
             onClick={downloadCsv}
-            className="h-8 px-3 text-[11px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-accent/50 cursor-pointer inline-flex items-center gap-1.5"
+            className="h-8 px-3 text-[12px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-accent/50 cursor-pointer inline-flex items-center gap-1.5"
           >
             <Download className="w-3.5 h-3.5" aria-hidden="true" />
             Export CSV
@@ -111,7 +111,7 @@ export function PerformanceView({ journal }: PerformanceViewProps) {
           <button
             type="button"
             onClick={journal.clear}
-            className="h-8 px-3 text-[11px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-bear/50 cursor-pointer inline-flex items-center gap-1.5"
+            className="h-8 px-3 text-[12px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-bear/50 cursor-pointer inline-flex items-center gap-1.5"
           >
             <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
             Clear
@@ -126,11 +126,11 @@ export function PerformanceView({ journal }: PerformanceViewProps) {
               const options = Array.from(new Set(journal.records.map((r) => String(r[field === 'model' ? 'modelId' : field]))));
               return (
                 <label key={field} className="flex flex-col gap-1">
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-faint">{field}</span>
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-faint">{field}</span>
                   <select
                     value={journal.filters[field]}
                     onChange={(e) => journal.setFilters({ [field]: e.target.value } as never)}
-                    className="h-8 px-2 text-[11px] bg-elevated border border-line rounded-md text-ink cursor-pointer"
+                    className="h-8 px-2 text-[12px] bg-elevated border border-line rounded-md text-ink cursor-pointer"
                   >
                     <option value="ALL">All</option>
                     {options.map((o) => (
@@ -146,7 +146,7 @@ export function PerformanceView({ journal }: PerformanceViewProps) {
           <button
             type="button"
             onClick={journal.resetFilters}
-            className="mt-3 text-[11px] font-semibold text-accent hover:underline cursor-pointer"
+            className="mt-3 text-[12px] font-semibold text-accent hover:underline cursor-pointer"
           >
             Reset filters
           </button>
@@ -192,7 +192,7 @@ export function PerformanceView({ journal }: PerformanceViewProps) {
                 }`}
               >
                 <div className="text-xs font-bold text-ink">{a.title}</div>
-                <div className="text-[11px] text-muted leading-snug mt-0.5">{a.evidence}</div>
+                <div className="text-[12px] text-muted leading-snug mt-0.5">{a.evidence}</div>
               </div>
             ))}
           </div>
@@ -227,7 +227,7 @@ export function PerformanceView({ journal }: PerformanceViewProps) {
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-[11px]">
+            <table className="w-full text-[12px]">
               <thead>
                 <tr className="text-faint text-left">
                   <th className="py-1.5 pr-2 font-semibold">Entry model</th>
@@ -267,7 +267,7 @@ export function PerformanceView({ journal }: PerformanceViewProps) {
           <EmptyState title="No signals recorded" description="Run any AI module scan — published signals are journaled here automatically." />
         ) : (
           <div className="overflow-x-auto max-h-[420px]">
-            <table className="w-full text-[11px]">
+            <table className="w-full text-[12px]">
               <thead>
                 <tr className="text-faint text-left">
                   <th className="py-1.5 pr-2 font-semibold">Index</th>
@@ -293,7 +293,7 @@ export function PerformanceView({ journal }: PerformanceViewProps) {
                     <td className="py-1.5 pr-2 text-right font-mono text-muted">{r.takeProfit1.toFixed(2)}</td>
                     <td className="py-1.5 pr-2">
                       <span
-                        className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${
+                        className={`text-[11px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${
                           r.outcome === 'WIN'
                             ? 'bg-emerald-500/12 text-emerald-400 border-emerald-500/30'
                             : r.outcome === 'LOSS'
@@ -314,7 +314,7 @@ export function PerformanceView({ journal }: PerformanceViewProps) {
       </SectionCard>
 
       <Card className="px-4 py-3">
-        <p className="text-[11px] text-muted leading-snug">
+        <p className="text-[12px] text-muted leading-snug">
           Proposed improvements are presented for review only — no module is modified automatically. Historical records are
           preserved when strategies change so versions can be compared fairly.
         </p>

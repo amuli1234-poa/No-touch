@@ -26,19 +26,19 @@ export function AnalyserCyclePanel({ cycle }: { cycle: AnalyserCycleValue }) {
   return (
     <div data-testid="analyser-cycle-panel" data-phase={state.phase} className="rounded-xl border border-line bg-panel p-3 space-y-2">
       <div className="flex items-center gap-2">
-        <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-ink">
+        <span className="inline-flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-wide text-ink">
           <RefreshCw className={`w-3.5 h-3.5 text-accent ${busy ? 'animate-spin' : ''}`} aria-hidden="true" />
           Auto Cycle
         </span>
         <span
           data-testid="analyser-cycle-phase"
-          className={`ml-auto inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[10px] font-bold uppercase tracking-wide ${tone}`}
+          className={`ml-auto inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[11px] font-bold uppercase tracking-wide ${tone}`}
         >
           {state.phase.replace('_', ' ')}
         </span>
       </div>
 
-      <p className="text-[11px] text-muted leading-snug">{state.message}</p>
+      <p className="text-[12px] text-muted leading-snug">{state.message}</p>
 
       {lastTrade && (
         <div className="rounded-lg border border-line-soft bg-surface/60 p-2 space-y-1.5">
@@ -48,19 +48,19 @@ export function AnalyserCyclePanel({ cycle }: { cycle: AnalyserCycleValue }) {
             ) : (
               <XCircle className="w-3.5 h-3.5 text-bear shrink-0" aria-hidden="true" />
             )}
-            <span className="text-[11px] font-semibold text-ink truncate">
+            <span className="text-[12px] font-semibold text-ink truncate">
               {lastTrade.displayName} · {lastTrade.timeframe} · {lastTrade.direction}
             </span>
             <span
               data-testid="analyser-cycle-outcome"
-              className={`ml-auto text-[10px] font-bold uppercase ${
+              className={`ml-auto text-[11px] font-bold uppercase ${
                 lastTrade.outcome === 'TARGET_HIT' ? 'text-emerald-400' : 'text-bear'
               }`}
             >
               {lastTrade.outcome === 'TARGET_HIT' ? 'TP HIT' : 'SL HIT'}
             </span>
           </div>
-          <div className="grid grid-cols-4 gap-1.5 text-[10px]">
+          <div className="grid grid-cols-4 gap-1.5 text-[11px]">
             <div>
               <div className="text-faint">Entry</div>
               <div className="font-mono text-ink">{formatPrice(lastTrade.entry, lastTrade.precision)}</div>
@@ -86,13 +86,13 @@ export function AnalyserCyclePanel({ cycle }: { cycle: AnalyserCycleValue }) {
         </div>
       )}
 
-      <div className="flex items-center gap-1.5 text-[10px] text-faint">
+      <div className="flex items-center gap-1.5 text-[11px] text-faint">
         <Target className="w-3 h-3" aria-hidden="true" />
         {state.completedCount} completed trade{state.completedCount === 1 ? '' : 's'} recorded this session · history is permanent.
       </div>
 
       {busy && (
-        <div className="flex items-center gap-1.5 text-[10px] text-accent">
+        <div className="flex items-center gap-1.5 text-[11px] text-accent">
           <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" />
           Running the fresh-entry cycle…
         </div>

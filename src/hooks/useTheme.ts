@@ -10,7 +10,7 @@ export function useTheme(theme: AppSettings['theme']): void {
     const root = document.documentElement;
     root.setAttribute('data-theme', theme);
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', theme === 'dark' ? '#0a0f1a' : '#eef2f8');
+    if (meta) meta.setAttribute('content', theme === 'dark' ? '#0a1628' : '#0068b5');
   }, [theme]);
 }
 

@@ -186,7 +186,7 @@ export function ExecutionPositions() {
                 type="button"
                 aria-pressed={mode === accountMode}
                 onClick={() => setMode(accountMode)}
-                className={`px-2.5 py-1 text-[10px] font-bold uppercase rounded ${
+                className={`px-2.5 py-1 text-[11px] font-bold uppercase rounded ${
                   mode === accountMode ? 'bg-accent text-app' : 'text-muted hover:text-ink'
                 }`}
               >
@@ -207,17 +207,17 @@ export function ExecutionPositions() {
       }
     >
       {error && (
-        <div role="alert" className="mb-3 rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-[11px] text-warn">
+        <div role="alert" className="mb-3 rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-[12px] text-warn">
           {error}
         </div>
       )}
       {closeError && (
-        <div role="alert" className="mb-3 rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-[11px] text-warn">
+        <div role="alert" className="mb-3 rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-[12px] text-warn">
           {closeError}
         </div>
       )}
       {historyError && (
-        <div role="alert" className="mb-3 rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-[11px] text-warn">
+        <div role="alert" className="mb-3 rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-[12px] text-warn">
           {historyError}
         </div>
       )}
@@ -227,7 +227,7 @@ export function ExecutionPositions() {
           aria-label="Confirm position close"
           className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-warn/30 bg-warn/10 px-3 py-2"
         >
-          <p className="text-[11px] text-ink">
+          <p className="text-[12px] text-ink">
             Sell {closeConfirmContract.symbol} at Deriv&apos;s current market price? Final proceeds and P/L may differ
             from the live estimate.
           </p>
@@ -236,7 +236,7 @@ export function ExecutionPositions() {
               type="button"
               onClick={() => void submitClose()}
               disabled={closingId !== null}
-              className="rounded-md border border-bear/30 bg-bear/10 px-2.5 py-1.5 text-[10px] font-bold text-bear hover:bg-bear/20 disabled:opacity-50 cursor-pointer"
+              className="rounded-md border border-bear/30 bg-bear/10 px-2.5 py-1.5 text-[11px] font-bold text-bear hover:bg-bear/20 disabled:opacity-50 cursor-pointer"
             >
               {closingId === closeConfirmContract.id ? 'Closing…' : 'Confirm sale'}
             </button>
@@ -244,7 +244,7 @@ export function ExecutionPositions() {
               type="button"
               onClick={() => setCloseConfirmId(null)}
               disabled={closingId !== null}
-              className="rounded-md border border-line bg-surface px-2.5 py-1.5 text-[10px] font-bold text-muted hover:bg-elevated disabled:opacity-50 cursor-pointer"
+              className="rounded-md border border-line bg-surface px-2.5 py-1.5 text-[11px] font-bold text-muted hover:bg-elevated disabled:opacity-50 cursor-pointer"
             >
               Cancel
             </button>
@@ -256,7 +256,7 @@ export function ExecutionPositions() {
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 mb-4">
           {summaries.map((summary) => (
             <Card key={`${summary.accountId}:${summary.currency}`} className="p-3">
-              <div className="text-[11px] font-bold text-ink truncate">
+              <div className="text-[12px] font-bold text-ink truncate">
                 Account {summary.accountId} · {summary.currency}
               </div>
               <div className="grid grid-cols-2 gap-2 mt-2">
@@ -302,7 +302,7 @@ export function ExecutionPositions() {
               type="button"
               aria-pressed={tab === positionsTab}
               onClick={() => setTab(positionsTab)}
-              className={`px-3 py-1.5 text-[10px] font-bold capitalize rounded ${
+              className={`px-3 py-1.5 text-[11px] font-bold capitalize rounded ${
                 tab === positionsTab ? 'bg-elevated text-ink' : 'text-muted hover:text-ink'
               }`}
             >
@@ -318,7 +318,7 @@ export function ExecutionPositions() {
               type="button"
               onClick={hideClosedHistory}
               disabled={!historyStorageKey}
-              className="rounded-md border border-line bg-surface px-2 py-1 text-[10px] font-semibold text-muted hover:bg-elevated disabled:opacity-50 cursor-pointer"
+              className="rounded-md border border-line bg-surface px-2 py-1 text-[11px] font-semibold text-muted hover:bg-elevated disabled:opacity-50 cursor-pointer"
             >
               <span>Hide closed history</span>
             </button>
@@ -328,13 +328,13 @@ export function ExecutionPositions() {
               type="button"
               onClick={restoreClosedHistory}
               disabled={!historyStorageKey}
-              className="rounded-md border border-line bg-surface px-2 py-1 text-[10px] font-semibold text-muted hover:bg-elevated disabled:opacity-50 cursor-pointer"
+              className="rounded-md border border-line bg-surface px-2 py-1 text-[11px] font-semibold text-muted hover:bg-elevated disabled:opacity-50 cursor-pointer"
             >
               <span>Restore hidden ({hiddenClosedCount})</span>
             </button>
           )}
           {updatedAt !== null && (
-            <span className="text-[10px] text-faint">
+            <span className="text-[11px] text-faint">
               Updated {new Date(updatedAt).toLocaleTimeString()}
             </span>
           )}
@@ -358,7 +358,7 @@ export function ExecutionPositions() {
         <div className="overflow-x-auto -mx-4 px-4">
           <table className="w-full min-w-[820px] text-left text-xs">
             <thead className="text-faint border-b border-line">
-              <tr className="text-[10px] uppercase tracking-wide">
+              <tr className="text-[11px] uppercase tracking-wide">
                 <th className="py-2 pr-3 font-semibold">Market / contract</th>
                 <th className="py-2 pr-3 font-semibold">Account</th>
                 <th className="py-2 pr-3 font-semibold">Opened</th>
@@ -373,7 +373,7 @@ export function ExecutionPositions() {
                 <tr key={contract.id} className="hover:bg-elevated">
                   <td className="py-2.5 pr-3">
                     <div className="font-sans font-semibold text-ink">{contract.symbol}</div>
-                    <div className="text-[10px] text-muted">
+                    <div className="text-[11px] text-muted">
                       {directionLabel(contract.contractType)} · {contract.contractType}
                     </div>
                   </td>
@@ -389,7 +389,7 @@ export function ExecutionPositions() {
                   </td>
                   <td className="py-2.5 text-right">
                     <span
-                      className={`inline-flex px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
+                      className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                         contract.status === 'won'
                           ? 'bg-success/10 text-success'
                           : contract.status === 'lost'
@@ -407,7 +407,7 @@ export function ExecutionPositions() {
                   <td className="py-2 pl-3 text-right whitespace-nowrap">
                     {contract.status === 'open' &&
                       (contract.closePending ? (
-                        <span className="text-[10px] font-semibold text-warn">Waiting for Deriv</span>
+                        <span className="text-[11px] font-semibold text-warn">Waiting for Deriv</span>
                       ) : (
                         <button
                           type="button"
@@ -417,7 +417,7 @@ export function ExecutionPositions() {
                           }}
                           disabled={closingId !== null}
                           aria-label={`Close ${contract.symbol} at market`}
-                          className="rounded-md border border-bear/30 bg-bear/10 px-2 py-1 text-[10px] font-bold text-bear hover:bg-bear/20 disabled:opacity-50 cursor-pointer"
+                          className="rounded-md border border-bear/30 bg-bear/10 px-2 py-1 text-[11px] font-bold text-bear hover:bg-bear/20 disabled:opacity-50 cursor-pointer"
                         >
                           Close at market
                         </button>

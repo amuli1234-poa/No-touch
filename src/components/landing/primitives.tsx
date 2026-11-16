@@ -72,7 +72,7 @@ export const Eyebrow: React.FC<{ children: React.ReactNode; className?: string }
   className = ''
 }) => (
   <span
-    className={`inline-flex items-center gap-2 rounded-full border border-[var(--ws-hairline)] bg-surface/70 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-accent-soft ${className}`}
+    className={`inline-flex items-center gap-2 rounded-full border border-[var(--ws-hairline)] bg-surface/70 px-3.5 py-1.5 text-[12px] font-semibold uppercase tracking-[0.16em] text-accent-soft ${className}`}
   >
     {children}
   </span>
@@ -128,7 +128,7 @@ export const WsButton: React.FC<{
     size === 'lg'
       ? 'h-12 px-6 text-[14.5px] gap-2'
       : size === 'sm'
-        ? 'h-9 px-3.5 text-[12.5px] gap-1.5'
+        ? 'h-9 px-3.5 text-[13.5px] gap-1.5'
         : 'h-11 px-5 text-[13.5px] gap-2';
 
   const cls = `group inline-flex items-center justify-center rounded-[11px] border font-semibold tracking-tight transition-colors ${WS_BUTTON[variant]} ${sizing} ${className}`;

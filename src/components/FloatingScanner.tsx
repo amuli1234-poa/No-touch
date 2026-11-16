@@ -297,7 +297,7 @@ export function FloatingScanner({
         {!isMobile && <GripHorizontal className="w-4 h-4 text-faint shrink-0" aria-hidden="true" />}
         <Radar className="w-4 h-4 text-accent shrink-0" aria-hidden="true" />
         <span className="text-[13px] font-semibold text-ink truncate">Setup Ranking</span>
-        <span className="text-[10px] font-medium text-faint">
+        <span className="text-[11px] font-medium text-faint">
           {tab === 'setups'
             ? `${rankedSetups.length}/${activeSetupCount} valid`
             : tab === 'filter'
@@ -333,7 +333,7 @@ export function FloatingScanner({
                 type="button"
                 onClick={() => setTab('setups')}
                 aria-pressed={tab === 'setups'}
-                className={`h-7 px-2.5 rounded-md text-[11px] font-semibold cursor-pointer ${
+                className={`h-7 px-2.5 rounded-md text-[12px] font-semibold cursor-pointer ${
                   tab === 'setups' ? 'bg-accent text-white' : 'text-muted hover:text-ink'
                 }`}
               >
@@ -344,7 +344,7 @@ export function FloatingScanner({
                 onClick={() => setTab('filter')}
                 aria-pressed={tab === 'filter'}
                 data-testid="floating-tab-filter"
-                className={`h-7 px-2.5 rounded-md text-[11px] font-semibold cursor-pointer ${
+                className={`h-7 px-2.5 rounded-md text-[12px] font-semibold cursor-pointer ${
                   tab === 'filter' ? 'bg-accent text-white' : 'text-muted hover:text-ink'
                 }`}
               >
@@ -354,7 +354,7 @@ export function FloatingScanner({
                 type="button"
                 onClick={() => setTab('markets')}
                 aria-pressed={tab === 'markets'}
-                className={`h-7 px-2.5 rounded-md text-[11px] font-semibold cursor-pointer ${
+                className={`h-7 px-2.5 rounded-md text-[12px] font-semibold cursor-pointer ${
                   tab === 'markets' ? 'bg-accent text-white' : 'text-muted hover:text-ink'
                 }`}
               >
@@ -366,7 +366,7 @@ export function FloatingScanner({
               onClick={onRunScan}
               disabled={isValidating}
               data-testid="floating-run-scan"
-              className="ml-auto inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-accent text-white text-[11px] font-bold hover:bg-accent-soft active:scale-[0.98] disabled:opacity-60 transition-all cursor-pointer"
+              className="ml-auto inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-accent text-white text-[12px] font-bold hover:bg-accent-soft active:scale-[0.98] disabled:opacity-60 transition-all cursor-pointer"
             >
               {isValidating ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
@@ -382,12 +382,12 @@ export function FloatingScanner({
               className="overflow-y-auto px-2 pt-2 pb-3"
               style={{ height: isMobile ? undefined : box.h - 108, maxHeight: isMobile ? '60dvh' : undefined }}
             >
-              <div className="flex items-center justify-between px-1 pb-1.5 text-[10px] text-faint">
+              <div className="flex items-center justify-between px-1 pb-1.5 text-[11px] text-faint">
                 <span>Top {rankedSetups.length} overall — ranked across all markets &amp; AIs</span>
                 <span>updated {relativeTime(lastRankedAt)}</span>
               </div>
               {rankedSetups.length === 0 ? (
-                <p className="px-3 py-8 text-center text-[11px] text-faint leading-snug">
+                <p className="px-3 py-8 text-center text-[12px] text-faint leading-snug">
                   {activeSetupCount === 0
                     ? 'No valid setup right now. The background scanner is still analysing every market — this list fills automatically.'
                     : 'All valid setups are above the display gate.'}
@@ -403,19 +403,19 @@ export function FloatingScanner({
                         className="w-full text-left rounded-xl border border-line bg-panel hover:border-accent/40 transition-colors p-2.5 cursor-pointer"
                       >
                         <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-md bg-accent/12 text-accent text-[11px] font-bold shrink-0">
+                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-md bg-accent/12 text-accent text-[12px] font-bold shrink-0">
                             {index + 1}
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block text-[12px] font-semibold text-ink truncate">
+                            <span className="block text-[13px] font-semibold text-ink truncate">
                               {setup.displayName}
                             </span>
-                            <span className="block text-[10px] text-faint truncate">
+                            <span className="block text-[11px] text-faint truncate">
                               {RANK_LABELS[index] ?? `#${index + 1}`} · {setup.sourceLabel} · {familyLabel(setup.marketFamily)}
                             </span>
                           </span>
                           <span
-                            className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold border ${
+                            className={`shrink-0 px-1.5 py-0.5 rounded text-[11px] font-bold border ${
                               setup.direction === 'RISE'
                                 ? 'bg-[#089981]/12 text-[#089981] border-[#089981]/30'
                                 : 'bg-[#f23645]/12 text-[#f23645] border-[#f23645]/30'
@@ -428,7 +428,7 @@ export function FloatingScanner({
                           </span>
                         </div>
 
-                        <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] tabular-nums">
+                        <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] tabular-nums">
                           <span className="flex justify-between gap-2">
                             <span className="text-faint">Entry</span>
                             <span className="text-ink font-medium">
@@ -456,30 +456,30 @@ export function FloatingScanner({
                         </div>
 
                         <div className="mt-2 flex items-center gap-2 flex-wrap">
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-elevated border border-line text-[10px] font-semibold text-muted">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-elevated border border-line text-[11px] font-semibold text-muted">
                             <Target className="w-3 h-3" aria-hidden="true" />
                             R:R {setup.riskRewardRatio === null ? '—' : setup.riskRewardRatio.toFixed(1)}
                           </span>
-                          <span className="px-1.5 py-0.5 rounded bg-elevated border border-line text-[10px] font-semibold text-muted">
+                          <span className="px-1.5 py-0.5 rounded bg-elevated border border-line text-[11px] font-semibold text-muted">
                             {setup.timeframe}
                           </span>
                           {setup.entryModelLabel && (
                             <span
-                              className="px-1.5 py-0.5 rounded bg-accent/12 border border-accent/30 text-[10px] font-semibold text-accent truncate max-w-[160px]"
+                              className="px-1.5 py-0.5 rounded bg-accent/12 border border-accent/30 text-[11px] font-semibold text-accent truncate max-w-[160px]"
                               title={setup.entryModelLabel}
                             >
                               {setup.entryModelLabel}
                             </span>
                           )}
                           <span
-                            className={`ml-auto px-1.5 py-0.5 rounded border text-[10px] font-bold ${statusStyle(setup.status)}`}
+                            className={`ml-auto px-1.5 py-0.5 rounded border text-[11px] font-bold ${statusStyle(setup.status)}`}
                           >
                             {setup.status === 'ACTIVE' ? 'ACTIVE' : setup.status === 'COMPLETED' ? 'TP HIT' : 'STOPPED'}
                           </span>
                         </div>
 
                         {setup.reasons.length > 0 && (
-                          <p className="mt-2 text-[10px] leading-snug text-muted line-clamp-2">
+                          <p className="mt-2 text-[11px] leading-snug text-muted line-clamp-2">
                             {setup.reasons.join(' · ')}
                           </p>
                         )}
@@ -488,7 +488,7 @@ export function FloatingScanner({
                   ))}
                 </ol>
               )}
-              <p className="mt-3 px-1 text-[10px] leading-snug text-faint">
+              <p className="mt-3 px-1 text-[11px] leading-snug text-faint">
                 Score ranks setup quality only — it is not a guaranteed win probability.
               </p>
             </div>
@@ -499,12 +499,12 @@ export function FloatingScanner({
               data-testid="floating-filter-panel"
             >
               <div className="rounded-lg border border-line bg-panel p-2.5">
-                <p className="text-[11px] font-semibold text-ink">Signal Quality Filter</p>
-                <p className="mt-0.5 text-[10px] leading-snug text-faint">
+                <p className="text-[12px] font-semibold text-ink">Signal Quality Filter</p>
+                <p className="mt-0.5 text-[11px] leading-snug text-faint">
                   One centralized gate sits between every AI strategy and the display. Each AI
                   submits its candidate setups here first; only accepted setups are published.
                 </p>
-                <div className="mt-2 flex items-center gap-2 text-[10px] font-semibold">
+                <div className="mt-2 flex items-center gap-2 text-[11px] font-semibold">
                   <span className="px-1.5 py-0.5 rounded bg-[#089981]/12 text-[#089981] border border-[#089981]/30">
                     {filterAccepted.length} accepted
                   </span>
@@ -515,7 +515,7 @@ export function FloatingScanner({
               </div>
 
               <label className="block">
-                <span className="flex items-center justify-between text-[10px] font-semibold text-muted">
+                <span className="flex items-center justify-between text-[11px] font-semibold text-muted">
                   <span>Minimum quality gate</span>
                   <span className="tabular-nums text-ink">{filterConfig.minQuality}/100</span>
                 </span>
@@ -544,8 +544,8 @@ export function FloatingScanner({
                       className="mt-0.5 accent-[var(--color-accent)]"
                     />
                     <span className="min-w-0">
-                      <span className="block text-[11px] font-semibold text-ink">{t.label}</span>
-                      <span className="block text-[10px] leading-snug text-faint">{t.hint}</span>
+                      <span className="block text-[12px] font-semibold text-ink">{t.label}</span>
+                      <span className="block text-[11px] leading-snug text-faint">{t.hint}</span>
                     </span>
                   </label>
                 ))}
@@ -553,7 +553,7 @@ export function FloatingScanner({
 
               {filterRejected.length > 0 && (
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-faint">
                     Filtered this pass
                   </p>
                   <ul className="mt-1 space-y-1">
@@ -563,21 +563,21 @@ export function FloatingScanner({
                         className="rounded-lg border border-line-soft bg-panel px-2 py-1.5"
                       >
                         <div className="flex items-center gap-2">
-                          <span className="min-w-0 flex-1 text-[11px] font-medium text-ink truncate">
+                          <span className="min-w-0 flex-1 text-[12px] font-medium text-ink truncate">
                             {f.displayName}
                           </span>
                           <span
-                            className={`shrink-0 text-[10px] font-bold ${
+                            className={`shrink-0 text-[11px] font-bold ${
                               f.direction === 'RISE' ? 'text-[#089981]' : 'text-[#f23645]'
                             }`}
                           >
                             {f.direction}
                           </span>
-                          <span className="shrink-0 text-[10px] font-semibold tabular-nums text-muted">
+                          <span className="shrink-0 text-[11px] font-semibold tabular-nums text-muted">
                             {f.score}/100
                           </span>
                         </div>
-                        <p className="mt-0.5 text-[10px] leading-snug text-faint">
+                        <p className="mt-0.5 text-[11px] leading-snug text-faint">
                           {f.reasons.join(' · ') || 'Below the quality gate.'}
                         </p>
                       </li>
@@ -587,19 +587,19 @@ export function FloatingScanner({
               )}
 
               {filterRejected.length === 0 && (
-                <p className="px-1 text-[10px] leading-snug text-faint">
+                <p className="px-1 text-[11px] leading-snug text-faint">
                   Nothing filtered yet — run a scan or wait for the next ranking pass.
                 </p>
               )}
 
               <div className="rounded-lg border border-line bg-panel p-2.5" data-testid="central-ranking-panel">
-                <p className="text-[11px] font-semibold text-ink">Central multi-market ranking</p>
-                <p className="mt-0.5 text-[10px] leading-snug text-faint">
+                <p className="text-[12px] font-semibold text-ink">Central multi-market ranking</p>
+                <p className="mt-0.5 text-[11px] leading-snug text-faint">
                   One engine collects every AI's candidates, verifies freshness, removes
                   duplicates and conflicting directions, applies the index-specific Entry Model
                   AI validation, then ranks with validated performance.
                 </p>
-                <div className="mt-2 flex items-center gap-2 text-[10px] font-semibold">
+                <div className="mt-2 flex items-center gap-2 text-[11px] font-semibold">
                   <span className="px-1.5 py-0.5 rounded bg-accent/12 text-accent border border-accent/30">
                     {central ? central.ranked.length : 0} ranked
                   </span>
@@ -621,21 +621,21 @@ export function FloatingScanner({
                         className="rounded-lg border border-line-soft bg-elevated px-2 py-1.5"
                       >
                         <div className="flex items-center gap-2">
-                          <span className="min-w-0 flex-1 text-[11px] font-medium text-ink truncate">
+                          <span className="min-w-0 flex-1 text-[12px] font-medium text-ink truncate">
                             {w.candidate.displayName}
                           </span>
                           <span
-                            className={`shrink-0 text-[10px] font-bold ${
+                            className={`shrink-0 text-[11px] font-bold ${
                               w.candidate.direction === 'RISE' ? 'text-[#089981]' : 'text-[#f23645]'
                             }`}
                           >
                             {w.candidate.direction}
                           </span>
-                          <span className="shrink-0 px-1 py-0.5 rounded bg-amber-500/10 text-warn text-[9px] font-bold">
+                          <span className="shrink-0 px-1 py-0.5 rounded bg-amber-500/10 text-warn text-[10px] font-bold">
                             WATCH {w.score.total}/100
                           </span>
                         </div>
-                        <p className="mt-0.5 text-[10px] leading-snug text-faint">
+                        <p className="mt-0.5 text-[11px] leading-snug text-faint">
                           Cleared quality and entry validation — tracked, not executable until it
                           enters the published top-N.
                         </p>
@@ -651,14 +651,14 @@ export function FloatingScanner({
                         className="rounded-lg border border-line-soft bg-elevated px-2 py-1.5"
                       >
                         <div className="flex items-center gap-2">
-                          <span className="min-w-0 flex-1 text-[11px] font-medium text-ink truncate">
+                          <span className="min-w-0 flex-1 text-[12px] font-medium text-ink truncate">
                             {r.displayName}
                           </span>
-                          <span className="shrink-0 px-1 py-0.5 rounded bg-[#f23645]/10 text-[#f23645] text-[9px] font-bold">
+                          <span className="shrink-0 px-1 py-0.5 rounded bg-[#f23645]/10 text-[#f23645] text-[10px] font-bold">
                             {r.reason.replace(/_/g, ' ')}
                           </span>
                         </div>
-                        <p className="mt-0.5 text-[10px] leading-snug text-faint">{r.detail}</p>
+                        <p className="mt-0.5 text-[11px] leading-snug text-faint">{r.detail}</p>
                       </li>
                     ))}
                   </ul>
@@ -675,7 +675,7 @@ export function FloatingScanner({
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Filter markets"
                     aria-label="Filter markets"
-                    className="w-full bg-transparent text-[12px] text-ink placeholder:text-faint outline-none min-w-0"
+                    className="w-full bg-transparent text-[13px] text-ink placeholder:text-faint outline-none min-w-0"
                   />
                 </div>
                 <button
@@ -683,7 +683,7 @@ export function FloatingScanner({
                   onClick={() =>
                     setSortKey((k) => (k === 'volatility' ? 'change' : k === 'change' ? 'name' : 'volatility'))
                   }
-                  className="inline-flex items-center gap-1 h-8 px-2 rounded-lg bg-elevated border border-line text-[11px] font-medium text-muted hover:text-ink cursor-pointer"
+                  className="inline-flex items-center gap-1 h-8 px-2 rounded-lg bg-elevated border border-line text-[12px] font-medium text-muted hover:text-ink cursor-pointer"
                   title="Cycle sort order"
                 >
                   <ArrowUpDown className="w-3 h-3" aria-hidden="true" />
@@ -693,7 +693,7 @@ export function FloatingScanner({
                   type="button"
                   onClick={() => setOneSecOnly((v) => !v)}
                   aria-pressed={oneSecOnly}
-                  className={`h-8 px-2 rounded-lg border text-[11px] font-medium cursor-pointer ${
+                  className={`h-8 px-2 rounded-lg border text-[12px] font-medium cursor-pointer ${
                     oneSecOnly ? 'bg-accent/10 text-accent border-accent/30' : 'bg-elevated text-muted border-line'
                   }`}
                   title="Show only 1-second indices"
@@ -707,7 +707,7 @@ export function FloatingScanner({
                 style={{ height: isMobile ? undefined : box.h - 148, maxHeight: isMobile ? '56dvh' : undefined }}
               >
                 {rows.length === 0 ? (
-                  <p className="px-3 py-6 text-center text-[11px] text-faint leading-snug">
+                  <p className="px-3 py-6 text-center text-[12px] text-faint leading-snug">
                     {monitorSummary
                       ? 'No market matches the current filter.'
                       : 'Waiting for the background scanner to populate live readings.'}
@@ -729,19 +729,19 @@ export function FloatingScanner({
                             }`}
                           >
                             <span className="min-w-0 flex-1">
-                              <span className="block text-[12px] font-medium text-ink truncate">
+                              <span className="block text-[13px] font-medium text-ink truncate">
                                 {r.displayName}
                               </span>
-                              <span className="block text-[10px] text-faint">
+                              <span className="block text-[11px] text-faint">
                                 {r.market ? marketFamilyLabel(r.market) : r.marketFamily}
                               </span>
                             </span>
                             <span className="text-right shrink-0">
-                              <span className="block text-[12px] font-semibold text-ink tabular-nums">
+                              <span className="block text-[13px] font-semibold text-ink tabular-nums">
                                 {formatPrice(price, r.precision)}
                               </span>
                               <span
-                                className={`block text-[10px] tabular-nums ${
+                                className={`block text-[11px] tabular-nums ${
                                   change === null || change === 0
                                     ? 'text-faint'
                                     : change > 0

@@ -87,7 +87,7 @@ function AlertCard({
     <Card className={`overflow-hidden ${alert.read ? '' : 'border-accent/40'}`}>
       <div className="px-3 py-2.5 flex items-start gap-2.5">
         <span
-          className={`mt-0.5 shrink-0 inline-flex items-center px-1.5 py-0.5 rounded border text-[9px] font-bold uppercase tracking-wide ${PRIORITY_STYLE[alert.priority]}`}
+          className={`mt-0.5 shrink-0 inline-flex items-center px-1.5 py-0.5 rounded border text-[10px] font-bold uppercase tracking-wide ${PRIORITY_STYLE[alert.priority]}`}
         >
           {ALERT_PRIORITY_LABELS[alert.priority]}
         </span>
@@ -96,7 +96,7 @@ function AlertCard({
             <span className="text-[13px] font-bold text-ink truncate">{alert.displayName}</span>
             {alert.direction && (
               <span
-                className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${
                   alert.direction === 'RISE'
                     ? 'bg-emerald-500/12 text-emerald-400'
                     : 'bg-red-500/12 text-bear'
@@ -106,7 +106,7 @@ function AlertCard({
               </span>
             )}
             <span
-              className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${STATUS_STYLE[alert.status]}`}
+              className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${STATUS_STYLE[alert.status]}`}
             >
               {ALERT_STATUS_LABELS[alert.status]}
             </span>
@@ -114,15 +114,15 @@ function AlertCard({
               <span className="w-1.5 h-1.5 rounded-full bg-accent" aria-label="Unread" />
             )}
           </div>
-          <div className="text-[11px] text-muted mt-0.5 truncate">
+          <div className="text-[12px] text-muted mt-0.5 truncate">
             {alert.module} · {alert.modelLabel} · {ALERT_CATEGORY_LABELS[alert.category]}
           </div>
-          <div className="text-[11px] text-faint mt-0.5">
+          <div className="text-[12px] text-faint mt-0.5">
             {fmtTime(alert.updatedAt)} · Q{alert.quality}/100 ·{' '}
             {alert.riskRewardRatio !== null ? `R:R ${alert.riskRewardRatio.toFixed(2)}` : 'R:R —'}
             {alert.revisions > 0 && ` · ${alert.revisions} update${alert.revisions > 1 ? 's' : ''}`}
           </div>
-          <p className="text-[11px] text-muted mt-1 leading-snug">{alert.explanation}</p>
+          <p className="text-[12px] text-muted mt-1 leading-snug">{alert.explanation}</p>
         </div>
         <button
           type="button"
@@ -157,7 +157,7 @@ function AlertCard({
           {alert.evidence.length > 0 && (
             <ul className="space-y-1">
               {alert.evidence.map((e, i) => (
-                <li key={i} className="text-[11px] text-muted flex items-start gap-1.5">
+                <li key={i} className="text-[12px] text-muted flex items-start gap-1.5">
                   <Info className="w-3 h-3 text-faint mt-0.5 shrink-0" aria-hidden="true" />
                   <span>{e}</span>
                 </li>
@@ -168,7 +168,7 @@ function AlertCard({
             <button
               type="button"
               onClick={() => onOpen(alert)}
-              className="inline-flex items-center gap-1.5 h-8 px-3 text-[11px] font-bold text-app bg-accent rounded-md hover:bg-accent-soft transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-bold text-app bg-accent rounded-md hover:bg-accent-soft transition-colors cursor-pointer"
             >
               <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
               Open in Chart Analyser
@@ -177,7 +177,7 @@ function AlertCard({
               <button
                 type="button"
                 onClick={() => onRead(alert.id)}
-                className="inline-flex items-center gap-1.5 h-8 px-3 text-[11px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-accent/50 transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-accent/50 transition-colors cursor-pointer"
               >
                 <CheckCheck className="w-3.5 h-3.5" aria-hidden="true" />
                 Mark read
@@ -186,7 +186,7 @@ function AlertCard({
             <button
               type="button"
               onClick={() => onDismiss(alert.id)}
-              className="inline-flex items-center gap-1.5 h-8 px-3 text-[11px] font-semibold text-muted bg-panel border border-line rounded-md hover:text-ink transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-semibold text-muted bg-panel border border-line rounded-md hover:text-ink transition-colors cursor-pointer"
             >
               <X className="w-3.5 h-3.5" aria-hidden="true" />
               Dismiss
@@ -218,7 +218,7 @@ function SettingsPanel({ manager }: { manager: AlertManagerHookValue }) {
     >
       <div className="space-y-4">
         <label className="flex items-center justify-between gap-3 cursor-pointer">
-          <span className="text-[12px] font-semibold text-ink">Enable all alerts</span>
+          <span className="text-[13px] font-semibold text-ink">Enable all alerts</span>
           <input
             type="checkbox"
             checked={s.enabled}
@@ -228,14 +228,14 @@ function SettingsPanel({ manager }: { manager: AlertManagerHookValue }) {
         </label>
 
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-wide text-faint mb-1.5">
+          <div className="text-[11px] font-bold uppercase tracking-wide text-faint mb-1.5">
             Notification channels
           </div>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => manager.toggleChannel('IN_APP')}
-              className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md border text-[11px] font-semibold transition-colors cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md border text-[12px] font-semibold transition-colors cursor-pointer ${
                 s.channels.IN_APP ? 'bg-accent/12 text-accent border-accent/30' : 'bg-elevated text-muted border-line'
               }`}
             >
@@ -244,7 +244,7 @@ function SettingsPanel({ manager }: { manager: AlertManagerHookValue }) {
             <button
               type="button"
               onClick={() => manager.toggleChannel('SOUND')}
-              className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md border text-[11px] font-semibold transition-colors cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md border text-[12px] font-semibold transition-colors cursor-pointer ${
                 s.channels.SOUND ? 'bg-accent/12 text-accent border-accent/30' : 'bg-elevated text-muted border-line'
               }`}
             >
@@ -264,7 +264,7 @@ function SettingsPanel({ manager }: { manager: AlertManagerHookValue }) {
                   ? `Browser notifications (${permission})`
                   : 'Browser notifications are not supported in this environment'
               }
-              className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md border text-[11px] font-semibold transition-colors ${
+              className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md border text-[12px] font-semibold transition-colors ${
                 !browserSupported
                   ? 'bg-panel text-faint border-line cursor-not-allowed'
                   : s.channels.BROWSER
@@ -276,14 +276,14 @@ function SettingsPanel({ manager }: { manager: AlertManagerHookValue }) {
               Browser {browserSupported ? '' : '(unsupported)'}
             </button>
           </div>
-          <p className="text-[10px] text-faint mt-1.5">
+          <p className="text-[11px] text-faint mt-1.5">
             Only implemented channels are shown. Email / external messaging are not connected in
             this build, so they are not offered.
           </p>
         </div>
 
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-wide text-faint mb-1.5">
+          <div className="text-[11px] font-bold uppercase tracking-wide text-faint mb-1.5">
             Alert priorities
           </div>
           <div className="flex flex-wrap gap-2">
@@ -292,7 +292,7 @@ function SettingsPanel({ manager }: { manager: AlertManagerHookValue }) {
                 key={p}
                 type="button"
                 onClick={() => manager.togglePriority(p)}
-                className={`h-8 px-3 rounded-md border text-[11px] font-bold uppercase tracking-wide transition-colors cursor-pointer ${
+                className={`h-8 px-3 rounded-md border text-[12px] font-bold uppercase tracking-wide transition-colors cursor-pointer ${
                   s.enabledPriorities[p] ? PRIORITY_STYLE[p] : 'bg-elevated text-faint border-line'
                 }`}
               >
@@ -304,7 +304,7 @@ function SettingsPanel({ manager }: { manager: AlertManagerHookValue }) {
 
         <div className="grid sm:grid-cols-2 gap-3">
           <label className="space-y-1">
-            <span className="text-[10px] font-bold uppercase tracking-wide text-faint">
+            <span className="text-[11px] font-bold uppercase tracking-wide text-faint">
               Minimum setup quality: {s.minQuality}
             </span>
             <input
@@ -318,7 +318,7 @@ function SettingsPanel({ manager }: { manager: AlertManagerHookValue }) {
             />
           </label>
           <label className="space-y-1">
-            <span className="text-[10px] font-bold uppercase tracking-wide text-faint">
+            <span className="text-[11px] font-bold uppercase tracking-wide text-faint">
               Max notifications / hour: {s.maxPerHour}
             </span>
             <input
@@ -334,7 +334,7 @@ function SettingsPanel({ manager }: { manager: AlertManagerHookValue }) {
         </div>
 
         <label className="flex items-center justify-between gap-3 cursor-pointer">
-          <span className="text-[12px] font-semibold text-ink">
+          <span className="text-[13px] font-semibold text-ink">
             Alert on developing (not-yet-confirmed) setups
           </span>
           <input
@@ -347,7 +347,7 @@ function SettingsPanel({ manager }: { manager: AlertManagerHookValue }) {
 
         <div className="rounded-lg border border-line p-2.5 space-y-2">
           <label className="flex items-center justify-between gap-3 cursor-pointer">
-            <span className="text-[12px] font-semibold text-ink">Quiet hours</span>
+            <span className="text-[13px] font-semibold text-ink">Quiet hours</span>
             <input
               type="checkbox"
               checked={s.quietHours.enabled}
@@ -359,7 +359,7 @@ function SettingsPanel({ manager }: { manager: AlertManagerHookValue }) {
               className="w-4 h-4 accent-sky-500"
             />
           </label>
-          <div className="flex items-center gap-2 text-[11px] text-muted">
+          <div className="flex items-center gap-2 text-[12px] text-muted">
             <span>From</span>
             <select
               value={s.quietHours.startHour}
@@ -393,13 +393,13 @@ function SettingsPanel({ manager }: { manager: AlertManagerHookValue }) {
               ))}
             </select>
           </div>
-          <p className="text-[10px] text-faint">
+          <p className="text-[11px] text-faint">
             Events are still recorded in the history during quiet hours; only delivery is paused.
           </p>
         </div>
 
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-wide text-faint mb-1.5">
+          <div className="text-[11px] font-bold uppercase tracking-wide text-faint mb-1.5">
             Timeframes
           </div>
           <div className="flex flex-wrap gap-1.5">
@@ -416,7 +416,7 @@ function SettingsPanel({ manager }: { manager: AlertManagerHookValue }) {
                         : [...s.enabledTimeframes, tf.key],
                     })
                   }
-                  className={`h-7 px-2.5 rounded-md border text-[11px] font-semibold transition-colors cursor-pointer ${
+                  className={`h-7 px-2.5 rounded-md border text-[12px] font-semibold transition-colors cursor-pointer ${
                     active ? 'bg-accent/12 text-accent border-accent/30' : 'bg-elevated text-faint border-line'
                   }`}
                 >
@@ -425,13 +425,13 @@ function SettingsPanel({ manager }: { manager: AlertManagerHookValue }) {
               );
             })}
           </div>
-          <p className="text-[10px] text-faint mt-1">
+          <p className="text-[11px] text-faint mt-1">
             No selection = all timeframes.
           </p>
         </div>
 
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-wide text-faint mb-1.5">
+          <div className="text-[11px] font-bold uppercase tracking-wide text-faint mb-1.5">
             AI modules
           </div>
           <div className="flex flex-wrap gap-1.5">
@@ -442,7 +442,7 @@ function SettingsPanel({ manager }: { manager: AlertManagerHookValue }) {
                   key={m.id}
                   type="button"
                   onClick={() => manager.toggleModule(m.id)}
-                  className={`h-7 px-2.5 rounded-md border text-[11px] font-semibold transition-colors cursor-pointer ${
+                  className={`h-7 px-2.5 rounded-md border text-[12px] font-semibold transition-colors cursor-pointer ${
                     enabled ? 'bg-accent/12 text-accent border-accent/30' : 'bg-elevated text-faint border-line'
                   }`}
                 >
@@ -495,18 +495,18 @@ export function AlertsView({ manager }: AlertsViewProps) {
   return (
     <div className="flex flex-col gap-3 p-3 sm:p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-accent">
+        <span className="inline-flex items-center gap-1.5 text-[12px] font-bold uppercase tracking-widest text-accent">
           <ShieldAlert className="w-3.5 h-3.5" aria-hidden="true" />
           AI Alerts &amp; Notification Manager
         </span>
-        <span className="text-[11px] text-faint">
+        <span className="text-[12px] text-faint">
           Collects verified events from every module — never generates a signal of its own.
         </span>
         <div className="ml-auto flex items-center gap-2">
           <button
             type="button"
             onClick={() => setShowSettings((v) => !v)}
-            className={`inline-flex items-center gap-1.5 h-8 px-3 text-[11px] font-semibold rounded-md border transition-colors cursor-pointer ${
+            className={`inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-semibold rounded-md border transition-colors cursor-pointer ${
               showSettings ? 'bg-accent/12 text-accent border-accent/30' : 'bg-elevated text-muted border-line'
             }`}
           >
@@ -517,7 +517,7 @@ export function AlertsView({ manager }: AlertsViewProps) {
             type="button"
             onClick={manager.markAllRead}
             disabled={manager.unreadCount === 0}
-            className="inline-flex items-center gap-1.5 h-8 px-3 text-[11px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-accent/50 disabled:opacity-50 transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-accent/50 disabled:opacity-50 transition-colors cursor-pointer"
           >
             <CheckCheck className="w-3.5 h-3.5" aria-hidden="true" />
             Mark all read
@@ -526,7 +526,7 @@ export function AlertsView({ manager }: AlertsViewProps) {
             type="button"
             onClick={manager.clear}
             disabled={manager.alerts.length === 0}
-            className="inline-flex items-center gap-1.5 h-8 px-3 text-[11px] font-semibold text-muted bg-panel border border-line rounded-md hover:text-ink disabled:opacity-50 transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-semibold text-muted bg-panel border border-line rounded-md hover:text-ink disabled:opacity-50 transition-colors cursor-pointer"
           >
             <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
             Clear
@@ -558,7 +558,7 @@ export function AlertsView({ manager }: AlertsViewProps) {
           <select
             value={manager.filters.symbol}
             onChange={(e) => manager.setFilters({ symbol: e.target.value })}
-            className="bg-elevated border border-line rounded-md px-2 py-1.5 text-[11px] text-ink"
+            className="bg-elevated border border-line rounded-md px-2 py-1.5 text-[12px] text-ink"
             aria-label="Filter by index"
           >
             <option value="ALL">All indices</option>
@@ -571,7 +571,7 @@ export function AlertsView({ manager }: AlertsViewProps) {
           <select
             value={manager.filters.direction}
             onChange={(e) => manager.setFilters({ direction: e.target.value as never })}
-            className="bg-elevated border border-line rounded-md px-2 py-1.5 text-[11px] text-ink"
+            className="bg-elevated border border-line rounded-md px-2 py-1.5 text-[12px] text-ink"
             aria-label="Filter by direction"
           >
             <option value="ALL">Both directions</option>
@@ -581,7 +581,7 @@ export function AlertsView({ manager }: AlertsViewProps) {
           <select
             value={manager.filters.module}
             onChange={(e) => manager.setFilters({ module: e.target.value })}
-            className="bg-elevated border border-line rounded-md px-2 py-1.5 text-[11px] text-ink"
+            className="bg-elevated border border-line rounded-md px-2 py-1.5 text-[12px] text-ink"
             aria-label="Filter by module"
           >
             <option value="ALL">All modules</option>
@@ -594,7 +594,7 @@ export function AlertsView({ manager }: AlertsViewProps) {
           <select
             value={manager.filters.priority}
             onChange={(e) => manager.setFilters({ priority: e.target.value as never })}
-            className="bg-elevated border border-line rounded-md px-2 py-1.5 text-[11px] text-ink"
+            className="bg-elevated border border-line rounded-md px-2 py-1.5 text-[12px] text-ink"
             aria-label="Filter by priority"
           >
             <option value="ALL">All priorities</option>
@@ -607,7 +607,7 @@ export function AlertsView({ manager }: AlertsViewProps) {
           <select
             value={manager.filters.timeframe}
             onChange={(e) => manager.setFilters({ timeframe: e.target.value as never })}
-            className="bg-elevated border border-line rounded-md px-2 py-1.5 text-[11px] text-ink"
+            className="bg-elevated border border-line rounded-md px-2 py-1.5 text-[12px] text-ink"
             aria-label="Filter by timeframe"
           >
             <option value="ALL">All timeframes</option>
@@ -620,7 +620,7 @@ export function AlertsView({ manager }: AlertsViewProps) {
           <select
             value={manager.filters.status}
             onChange={(e) => manager.setFilters({ status: e.target.value as never })}
-            className="bg-elevated border border-line rounded-md px-2 py-1.5 text-[11px] text-ink"
+            className="bg-elevated border border-line rounded-md px-2 py-1.5 text-[12px] text-ink"
             aria-label="Filter by status"
           >
             <option value="ALL">All statuses</option>
@@ -635,7 +635,7 @@ export function AlertsView({ manager }: AlertsViewProps) {
             onChange={(e) =>
               manager.setFilters({ since: e.target.value === 'ALL' ? null : Number(e.target.value) })
             }
-            className="bg-elevated border border-line rounded-md px-2 py-1.5 text-[11px] text-ink"
+            className="bg-elevated border border-line rounded-md px-2 py-1.5 text-[12px] text-ink"
             aria-label="Filter by date"
           >
             <option value="ALL">Any time</option>
@@ -643,7 +643,7 @@ export function AlertsView({ manager }: AlertsViewProps) {
             <option value={String(Date.now() - 24 * 3_600_000)}>Last 24h</option>
             <option value={String(Date.now() - 7 * 24 * 3_600_000)}>Last 7 days</option>
           </select>
-          <label className="inline-flex items-center gap-1.5 text-[11px] text-muted cursor-pointer">
+          <label className="inline-flex items-center gap-1.5 text-[12px] text-muted cursor-pointer">
             <input
               type="checkbox"
               checked={manager.filters.unreadOnly}
@@ -652,7 +652,7 @@ export function AlertsView({ manager }: AlertsViewProps) {
             />
             Unread only
           </label>
-          <label className="inline-flex items-center gap-1.5 text-[11px] text-muted cursor-pointer">
+          <label className="inline-flex items-center gap-1.5 text-[12px] text-muted cursor-pointer">
             <input
               type="checkbox"
               checked={manager.filters.includeDismissed}
@@ -664,11 +664,11 @@ export function AlertsView({ manager }: AlertsViewProps) {
           <button
             type="button"
             onClick={manager.resetFilters}
-            className="h-8 px-3 text-[11px] font-semibold text-muted bg-panel border border-line rounded-md hover:text-ink transition-colors cursor-pointer"
+            className="h-8 px-3 text-[12px] font-semibold text-muted bg-panel border border-line rounded-md hover:text-ink transition-colors cursor-pointer"
           >
             Reset
           </button>
-          <span className="text-[11px] text-faint ml-auto">
+          <span className="text-[12px] text-faint ml-auto">
             {manager.filtered.length} of {manager.alerts.length}
           </span>
         </div>
@@ -682,10 +682,10 @@ export function AlertsView({ manager }: AlertsViewProps) {
           className="min-w-0"
         >
           {manager.byModule.length === 0 ? (
-            <div className="text-[11px] text-faint py-3 text-center">No alerts yet.</div>
+            <div className="text-[12px] text-faint py-3 text-center">No alerts yet.</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-[11px]">
+              <table className="w-full text-[12px]">
                 <thead>
                   <tr className="text-faint text-left">
                     <th className="py-1.5 pr-2 font-semibold">Module</th>
@@ -717,7 +717,7 @@ export function AlertsView({ manager }: AlertsViewProps) {
           icon={<AlertTriangle className="w-4 h-4" aria-hidden="true" />}
         >
           {manager.bySymbol.length === 0 ? (
-            <div className="text-[11px] text-faint py-3 text-center">No alerts yet.</div>
+            <div className="text-[12px] text-faint py-3 text-center">No alerts yet.</div>
           ) : (
             <div className="flex flex-wrap gap-2">
               {manager.bySymbol.map((r) => (

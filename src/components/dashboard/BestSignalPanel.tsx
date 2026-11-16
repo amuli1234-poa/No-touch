@@ -69,18 +69,18 @@ export function BestSignalPanel() {
         </span>
         <div className="min-w-0">
           <h3 className="text-[13px] font-extrabold tracking-tight text-ink">Best signal</h3>
-          <p className="text-[10px] text-muted">Highest-ranked confirmed setup right now</p>
+          <p className="text-[11px] text-muted">Highest-ranked confirmed setup right now</p>
         </div>
 
         <div className="ml-auto flex items-center gap-2">
           {markets.length > 0 && (
-            <label className="inline-flex items-center gap-1 text-[10px] text-muted">
+            <label className="inline-flex items-center gap-1 text-[11px] text-muted">
               <Filter className="w-3 h-3" aria-hidden="true" />
               <select
                 value={marketFilter}
                 onChange={(e) => setMarketFilter(e.target.value)}
                 aria-label="Filter signals by market"
-                className="bg-panel border border-line rounded-md px-1.5 py-1 text-[10px] font-semibold text-ink cursor-pointer"
+                className="bg-panel border border-line rounded-md px-1.5 py-1 text-[11px] font-semibold text-ink cursor-pointer"
               >
                 <option value="ALL">All markets</option>
                 {markets.map((m) => (
@@ -95,7 +95,7 @@ export function BestSignalPanel() {
             type="button"
             onClick={() => setShowHistory((v) => !v)}
             aria-pressed={showHistory}
-            className={`inline-flex items-center gap-1 h-7 px-2 rounded-md border text-[10px] font-bold transition-colors cursor-pointer ${
+            className={`inline-flex items-center gap-1 h-7 px-2 rounded-md border text-[11px] font-bold transition-colors cursor-pointer ${
               showHistory
                 ? 'bg-accent/12 text-accent border-accent/30'
                 : 'bg-panel text-muted border-line hover:text-ink'
@@ -134,13 +134,13 @@ export function BestSignalPanel() {
                     {best.direction}
                   </span>
                   {best.validated && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-emerald-500/30 bg-emerald-500/12 text-emerald-400 text-[10px] font-bold uppercase tracking-wide">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-emerald-500/30 bg-emerald-500/12 text-emerald-400 text-[11px] font-bold uppercase tracking-wide">
                       <ShieldCheck className="w-3 h-3" aria-hidden="true" />
                       Validated
                     </span>
                   )}
                   {managed && (
-                    <span className="px-2 py-0.5 rounded-md border border-accent/30 bg-accent/12 text-accent text-[10px] font-bold uppercase tracking-wide">
+                    <span className="px-2 py-0.5 rounded-md border border-accent/30 bg-accent/12 text-accent text-[11px] font-bold uppercase tracking-wide">
                       {managed.status.replace('_', ' ')}
                     </span>
                   )}
@@ -148,19 +148,19 @@ export function BestSignalPanel() {
                 <h4 className="text-lg font-extrabold tracking-tight text-ink mt-1.5 truncate">
                   {best.displayName}
                 </h4>
-                <div className="text-[11px] text-muted font-mono mt-0.5">
+                <div className="text-[12px] text-muted font-mono mt-0.5">
                   {best.symbol} · {best.timeframe} · {SOURCE_LABEL[best.source]}
                 </div>
               </div>
 
               <div className="text-right shrink-0">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">
                   Quality
                 </div>
                 <div className="font-mono text-2xl font-extrabold text-accent tabular-nums">
                   {best.confidence}
                 </div>
-                <div className="text-[9px] text-faint">/ 100</div>
+                <div className="text-[10px] text-faint">/ 100</div>
               </div>
             </div>
 
@@ -189,19 +189,19 @@ export function BestSignalPanel() {
 
             <div className="mt-3 space-y-1.5">
               {best.modelLabel && (
-                <p className="text-[11px] text-ink">
+                <p className="text-[12px] text-ink">
                   <span className="text-faint">Entry model · </span>
                   {best.modelLabel}
                 </p>
               )}
-              <p className="text-[11px] text-muted leading-relaxed">
+              <p className="text-[12px] text-muted leading-relaxed">
                 <span className="text-faint">Confirmation · </span>
                 {best.snapshot?.confirmationExplanation ??
                   best.coAnalysis?.notes.join(' ') ??
                   'Confirmed by the analysis engine.'}
               </p>
               {best.createdAt && (
-                <p className="text-[10px] text-faint font-mono">
+                <p className="text-[11px] text-faint font-mono">
                   Confirmed {formatCandleTime(best.createdAt / 1000)}
                 </p>
               )}
@@ -220,11 +220,11 @@ export function BestSignalPanel() {
 
         {showHistory && (
           <div className="mt-4 pt-3 border-t border-line-soft animate-slide-up">
-            <div className="text-[10px] font-bold uppercase tracking-widest text-faint mb-2">
+            <div className="text-[11px] font-bold uppercase tracking-widest text-faint mb-2">
               Signal history · {filtered.length}
             </div>
             {filtered.length === 0 ? (
-              <p className="text-[11px] text-faint">No signals for this market yet.</p>
+              <p className="text-[12px] text-faint">No signals for this market yet.</p>
             ) : (
               <ul className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
                 {filtered.map((item) => {
@@ -242,15 +242,15 @@ export function BestSignalPanel() {
                           <ArrowDownRight className="w-3.5 h-3.5 text-bear shrink-0" aria-hidden="true" />
                         )}
                         <span className="min-w-0 flex-1">
-                          <span className="block text-[11px] font-semibold text-ink truncate">
+                          <span className="block text-[12px] font-semibold text-ink truncate">
                             {item.displayName}
                           </span>
-                          <span className="block text-[10px] text-faint font-mono truncate">
+                          <span className="block text-[11px] text-faint font-mono truncate">
                             {item.direction} · {item.timeframe} · {item.confidence}/100
                             {m ? ` · ${m.status.replace('_', ' ')}` : ''}
                           </span>
                         </span>
-                        <span className="text-[10px] font-mono text-muted shrink-0">
+                        <span className="text-[11px] font-mono text-muted shrink-0">
                           {item.entryPrice !== null ? formatPrice(item.entryPrice, 5) : '—'}
                         </span>
                       </button>
@@ -281,12 +281,12 @@ function LevelBox({
 }) {
   return (
     <div className="bg-panel border border-line-soft rounded-lg px-2 py-1.5">
-      <div className="flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wide text-faint">
+      <div className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-faint">
         {icon}
         <span className="truncate">{label}</span>
         {locked && <Lock className="w-2.5 h-2.5 ml-auto text-faint" aria-hidden="true" />}
       </div>
-      <div className={`text-[12px] font-mono font-bold tabular-nums mt-0.5 ${tone}`}>
+      <div className={`text-[13px] font-mono font-bold tabular-nums mt-0.5 ${tone}`}>
         {value === null || value === undefined ? '—' : formatPrice(value, 5)}
       </div>
     </div>

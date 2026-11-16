@@ -88,10 +88,10 @@ function ToastItem({
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" aria-hidden="true" />
             )}
           </div>
-          <div className="text-[10px] font-mono text-faint mt-0.5">
+          <div className="text-[11px] font-mono text-faint mt-0.5">
             {toast.direction} · {toast.timeframe} · {toast.confidence}/100
           </div>
-          <div className="text-[10px] text-muted truncate mt-0.5">
+          <div className="text-[11px] text-muted truncate mt-0.5">
             {toast.modelLabel ?? 'Confirmed setup'}
           </div>
         </div>
@@ -112,7 +112,7 @@ function ToastItem({
           onOpen(toast.symbol, toast.timeframe);
           onDismiss(toast.toastId);
         }}
-        className="mt-2.5 w-full inline-flex items-center justify-center gap-1.5 h-8 text-[11px] font-bold text-accent bg-accent/12 border border-accent/30 rounded-md hover:bg-accent/20 transition-colors cursor-pointer"
+        className="mt-2.5 w-full inline-flex items-center justify-center gap-1.5 h-8 text-[12px] font-bold text-accent bg-accent/12 border border-accent/30 rounded-md hover:bg-accent/20 transition-colors cursor-pointer"
       >
         OPEN CHART
         <ArrowUpRight className="w-3.5 h-3.5" aria-hidden="true" />

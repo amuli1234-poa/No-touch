@@ -288,7 +288,7 @@ export function SingleChartCanvas({
       </div>
 
       {/* Readout strip */}
-      <div className="shrink-0 flex flex-wrap items-center gap-x-3 gap-y-1 px-2 sm:px-3 py-1.5 bg-surface border-b border-line text-[12px] tabular-nums">
+      <div className="shrink-0 flex flex-wrap items-center gap-x-3 gap-y-1 px-2 sm:px-3 py-1.5 bg-surface border-b border-line text-[13px] tabular-nums">
         <span className="font-semibold text-ink">{ws.marketName}</span>
         <span className="text-faint">{ws.timeframe}</span>
         {ws.livePrice !== null && (

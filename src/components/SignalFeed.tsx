@@ -65,7 +65,7 @@ export function SignalFeedCard({
               <span className="text-sm font-bold text-ink truncate">{item.displayName}</span>
               {item.validated && (
                 <span
-                  className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/12 text-emerald-400"
+                  className="inline-flex items-center gap-0.5 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/12 text-emerald-400"
                   title="Validated by both engines"
                 >
                   <ShieldCheck className="w-2.5 h-2.5" aria-hidden="true" />
@@ -74,23 +74,23 @@ export function SignalFeedCard({
               )}
               {managed && statusStyle && (
                 <span
-                  className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${statusStyle}`}
+                  className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${statusStyle}`}
                   title="Live trade management status"
                 >
                   {managed.status.replace('_', ' ')}
                 </span>
               )}
             </div>
-            <div className="text-[10px] font-mono text-faint">
+            <div className="text-[11px] font-mono text-faint">
               {item.symbol} · {item.timeframe} · {item.modelLabel ?? 'Setup'} · {SOURCE_LABEL[item.source]}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${dirStyle}`}>
+          <span className={`text-[11px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${dirStyle}`}>
             {item.direction}
           </span>
-          <span className="text-[11px] font-mono text-muted">{item.confidence}/100</span>
+          <span className="text-[12px] font-mono text-muted">{item.confidence}/100</span>
           <ArrowUpRight className="w-3.5 h-3.5 text-faint" aria-hidden="true" />
         </div>
       </div>
@@ -102,11 +102,11 @@ export function SignalFeedCard({
           { label: managed ? `Take-profit (${managed.tpHistory.length - 1} adj)` : 'Take-profit', value: takeProfit, locked: false },
         ].map((cell) => (
           <div key={cell.label} className="bg-panel border border-line-soft rounded-md px-2 py-1">
-            <div className="text-[9px] font-semibold uppercase tracking-wide text-faint flex items-center gap-1">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-faint flex items-center gap-1">
               {cell.locked && <Lock className="w-2.5 h-2.5" aria-hidden="true" />}
               {cell.label}
             </div>
-            <div className="text-[11px] font-mono text-ink tabular-nums">
+            <div className="text-[12px] font-mono text-ink tabular-nums">
               {cell.value === null || cell.value === undefined ? '—' : formatPrice(cell.value, 5)}
             </div>
           </div>
@@ -114,7 +114,7 @@ export function SignalFeedCard({
       </div>
 
       {managed && (
-        <div className="text-[10px] text-faint mt-1.5">
+        <div className="text-[11px] text-faint mt-1.5">
           {managed.status === 'PENDING' && 'Waiting for the entry zone to be filled — never chased.'}
           {managed.status === 'ACTIVE' && `In play · MFE ${managed.maxFavourableExcursionPct.toFixed(2)}% / MAE ${managed.maxAdverseExcursionPct.toFixed(2)}%`}
           {managed.status === 'MISSED' && 'Entry never filled; the move ran away without us.'}
@@ -125,7 +125,7 @@ export function SignalFeedCard({
       )}
 
       {item.modelLabel && (
-        <div className="text-[10px] text-muted mt-1 truncate">{item.modelLabel}</div>
+        <div className="text-[11px] text-muted mt-1 truncate">{item.modelLabel}</div>
       )}
     </button>
   );

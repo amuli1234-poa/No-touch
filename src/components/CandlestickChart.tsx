@@ -238,7 +238,7 @@ function LiveCandleCountdown({
       style={{ top: `${top}px`, right: `${right}px` }}
     >
       <span
-        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[11px] font-bold tabular-nums shadow-sm border ${
+        className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[12px] font-bold tabular-nums shadow-sm border ${
           closing
             ? 'bg-rose-500/95 border-rose-400 text-white'
             : 'bg-elevated/95 border-line text-ink'
@@ -262,7 +262,7 @@ function ChartLegendOverlay({
   if (activeLevels.length === 0) return null;
 
   return (
-    <div className="absolute top-2 left-2 sm:top-3 sm:left-3 z-25 pointer-events-none bg-elevated/92 backdrop-blur-sm border border-line shadow-sm rounded-lg px-2 py-1 flex flex-col gap-0.5 max-w-[150px] text-[9px] font-mono">
+    <div className="absolute top-2 left-2 sm:top-3 sm:left-3 z-25 pointer-events-none bg-elevated/92 backdrop-blur-sm border border-line shadow-sm rounded-lg px-2 py-1 flex flex-col gap-0.5 max-w-[150px] text-[10px] font-mono">
       <span className="font-bold text-muted uppercase tracking-wider">S / R</span>
       <div className="flex flex-col gap-0.5">
         {activeLevels.map((lvl) => (

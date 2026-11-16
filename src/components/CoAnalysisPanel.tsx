@@ -57,7 +57,7 @@ function EngineColumn({
         highlight ? 'border-accent/40 bg-accent/8' : 'border-line-soft bg-panel'
       }`}
     >
-      <div className="text-[10px] font-bold uppercase tracking-wide text-faint">{name}</div>
+      <div className="text-[11px] font-bold uppercase tracking-wide text-faint">{name}</div>
       <div className="flex items-center gap-1.5 mt-0.5">
         <span
           className={`text-sm font-bold ${
@@ -71,10 +71,10 @@ function EngineColumn({
           {direction ?? 'WAIT'}
         </span>
         {confidence !== null && (
-          <span className="text-[10px] font-mono text-faint">{Math.round(confidence)}/100</span>
+          <span className="text-[11px] font-mono text-faint">{Math.round(confidence)}/100</span>
         )}
       </div>
-      <div className="text-[10px] text-muted truncate" title={modelLabel ?? ''}>
+      <div className="text-[11px] text-muted truncate" title={modelLabel ?? ''}>
         {modelLabel ?? 'No model selected'}
       </div>
     </div>
@@ -111,7 +111,7 @@ export function CoAnalysisPanel() {
           <h3 className="text-[13px] font-bold text-ink">Dual-engine co-analysis</h3>
         </div>
         <span
-          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] font-bold uppercase tracking-wide ${style.cls}`}
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[12px] font-bold uppercase tracking-wide ${style.cls}`}
         >
           <Icon className="w-3 h-3" aria-hidden="true" />
           {style.label}
@@ -151,7 +151,7 @@ export function CoAnalysisPanel() {
                 <button
                   type="button"
                   onClick={() => ws.playSignalSound('validated')}
-                  className="ml-auto text-[11px] font-semibold text-emerald-400 hover:underline cursor-pointer"
+                  className="ml-auto text-[12px] font-semibold text-emerald-400 hover:underline cursor-pointer"
                 >
                   Test chime
                 </button>
@@ -162,7 +162,7 @@ export function CoAnalysisPanel() {
                 type="button"
                 data-testid="record-validated-signal-btn"
                 onClick={() => ws.recordValidatedSignal(validatedItem)}
-                className="inline-flex items-center gap-1.5 h-8 px-3 text-[11px] font-bold text-app bg-emerald-500 rounded-md hover:bg-emerald-400 transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-bold text-app bg-emerald-500 rounded-md hover:bg-emerald-400 transition-colors cursor-pointer"
               >
                 <Save className="w-3.5 h-3.5" aria-hidden="true" />
                 RECORD VALIDATED SIGNAL
@@ -174,7 +174,7 @@ export function CoAnalysisPanel() {
         {co.notes.length > 0 && (
           <ul className="space-y-1">
             {co.notes.map((n, i) => (
-              <li key={i} className="text-[11px] text-muted leading-relaxed flex gap-1.5">
+              <li key={i} className="text-[12px] text-muted leading-relaxed flex gap-1.5">
                 <span className="text-faint">•</span>
                 <span>{n}</span>
               </li>

@@ -45,8 +45,8 @@ function Bar({ label, value, tone }: { label: string; value: number; tone: strin
   return (
     <div>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] text-muted">{label}</span>
-        <span className="text-[11px] font-mono font-semibold text-ink">{Math.round(value)}/100</span>
+        <span className="text-[12px] text-muted">{label}</span>
+        <span className="text-[12px] font-mono font-semibold text-ink">{Math.round(value)}/100</span>
       </div>
       <div className="h-1.5 rounded-full bg-elevated mt-1 overflow-hidden">
         <div className={`h-full rounded-full ${tone}`} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
@@ -68,7 +68,7 @@ export function ConsolidationPanel({ analysis }: { analysis: AiInstrumentAnalysi
         subtitle="Compression detection and breakout / momentum read"
         icon={<Gauge className="w-3.5 h-3.5" aria-hidden="true" />}
       >
-        <p className="text-[11px] text-faint py-2">
+        <p className="text-[12px] text-faint py-2">
           {analysis.rejectionReason ?? 'No consolidation / momentum read for this instrument yet.'}
         </p>
       </SectionCard>
@@ -113,11 +113,11 @@ export function ConsolidationPanel({ analysis }: { analysis: AiInstrumentAnalysi
         <CheckRow label="Breakout approved" ok={read.breakoutApproved} />
       </div>
 
-      <p className="text-[11px] text-muted leading-snug mt-3">
+      <p className="text-[12px] text-muted leading-snug mt-3">
         <span className="text-faint">Confirmation: </span>
         {read.confirmationCondition}
       </p>
-      <p className="text-[11px] text-muted leading-snug mt-1">
+      <p className="text-[12px] text-muted leading-snug mt-1">
         <span className="text-faint">Invalidation: </span>
         {read.invalidationCondition}
         {read.invalidationLevel != null && (
@@ -133,7 +133,7 @@ export function ConsolidationPanel({ analysis }: { analysis: AiInstrumentAnalysi
           <StatTile label="R:R" value={read.trade.riskRewardRatio.toFixed(2)} />
         </div>
       ) : (
-        <div className="flex items-center gap-2 mt-3 text-[11px] text-faint">
+        <div className="flex items-center gap-2 mt-3 text-[12px] text-faint">
           {read.genuineConsolidation ? (
             <>
               <Minimize2 className="w-3.5 h-3.5" aria-hidden="true" />

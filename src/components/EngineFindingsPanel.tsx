@@ -28,7 +28,7 @@ function FindingRow({ finding }: { finding: EngineFinding }) {
         : 'text-muted';
   const mark = finding.supports === true ? '✓' : finding.supports === false ? '✕' : '·';
   return (
-    <div className="flex items-start gap-1.5 text-[10px] leading-snug">
+    <div className="flex items-start gap-1.5 text-[11px] leading-snug">
       <span className={`mt-[1px] font-bold ${tone}`} aria-hidden="true">
         {mark}
       </span>
@@ -55,10 +55,10 @@ export function EngineFindingsPanel({
     <div className="rounded-xl border border-line bg-panel overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-line bg-surface">
         <Brain className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
-        <span className="text-[11px] font-bold uppercase tracking-wide text-ink">
+        <span className="text-[12px] font-bold uppercase tracking-wide text-ink">
           Multi-Engine Analysis
         </span>
-        <span className="ml-auto text-[10px] font-mono text-faint uppercase">SMC · ICT · PA · TA</span>
+        <span className="ml-auto text-[11px] font-mono text-faint uppercase">SMC · ICT · PA · TA</span>
       </div>
 
       <div className="p-3 space-y-3">
@@ -69,7 +69,7 @@ export function EngineFindingsPanel({
               if (!rows || rows.length === 0) return null;
               return (
                 <div key={key}>
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-faint">
+                  <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-faint">
                     <Icon className="w-3 h-3" aria-hidden="true" />
                     {label}
                   </div>
@@ -93,11 +93,11 @@ export function EngineFindingsPanel({
                 : 'border-amber-500/30 bg-amber-500/8'
             }`}
           >
-            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-faint">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-faint">
               <Target className="w-3 h-3" aria-hidden="true" />
               Target reachability
             </div>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] font-bold uppercase">
+            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] font-bold uppercase">
               <span className={reachability.tp1Reachable ? 'text-emerald-400' : 'text-warn'}>
                 TP1 {reachability.tp1Reachable ? 'reachable' : 'not reachable'}
               </span>
@@ -112,8 +112,8 @@ export function EngineFindingsPanel({
                 </>
               )}
             </div>
-            <p className="mt-1 text-[11px] text-muted leading-snug">{reachability.reason}</p>
-            <div className="mt-1 text-[10px] font-mono text-faint">
+            <p className="mt-1 text-[12px] text-muted leading-snug">{reachability.reason}</p>
+            <div className="mt-1 text-[11px] font-mono text-faint">
               Room {reachability.roomToTp1Atr.toFixed(1)}× / {reachability.roomToTp2Atr.toFixed(1)}× ATR ·
               requires {reachability.requiredRoomAtr.toFixed(1)}×
             </div>
@@ -129,7 +129,7 @@ export function EngineFindingsPanel({
                 : 'border-emerald-500/25 bg-emerald-500/6'
             }`}
           >
-            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-faint">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-faint">
               <ShieldAlert
                 className={`w-3 h-3 ${falseSignal.flagged ? 'text-bear' : 'text-emerald-400'}`}
                 aria-hidden="true"
@@ -137,13 +137,13 @@ export function EngineFindingsPanel({
               False-signal guard
             </div>
             <div
-              className={`mt-1 text-[10px] font-bold uppercase tracking-wide ${
+              className={`mt-1 text-[11px] font-bold uppercase tracking-wide ${
                 falseSignal.flagged ? 'text-bear' : 'text-emerald-400'
               }`}
             >
               {falseSignal.flagged ? `${falseSignal.traps.length} trap pattern(s) flagged` : 'Clean'}
             </div>
-            <p className="mt-1 text-[11px] text-muted leading-snug">{falseSignal.reason}</p>
+            <p className="mt-1 text-[12px] text-muted leading-snug">{falseSignal.reason}</p>
           </div>
         )}
       </div>

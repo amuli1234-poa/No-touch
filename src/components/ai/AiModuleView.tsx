@@ -57,7 +57,7 @@ function SignalCard({ signal }: { signal: AiSignal }) {
           <span className={`text-sm font-extrabold tracking-tight ${isRise ? 'text-emerald-400' : 'text-bear'}`}>
             {signal.direction}
           </span>
-          <span className="text-[11px] text-muted truncate">{signal.displayName}</span>
+          <span className="text-[12px] text-muted truncate">{signal.displayName}</span>
         </div>
         <span className={`text-sm font-bold font-mono ${scoreColor(signal.score)}`}>{signal.score}/100</span>
       </div>
@@ -70,7 +70,7 @@ function SignalCard({ signal }: { signal: AiSignal }) {
         />
         <StatusPill label={AI_CONDITION_LABELS[signal.condition]} className="bg-elevated text-muted border-line" />
         <StatusPill label={`R:R ${signal.riskRewardRatio.toFixed(2)}`} className="bg-elevated text-muted border-line" />
-        <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${statusStyle(signal.status)}`}>
+        <span className={`text-[11px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${statusStyle(signal.status)}`}>
           {AI_STATUS_LABELS[signal.status]}
         </span>
       </div>
@@ -93,7 +93,7 @@ function SignalCard({ signal }: { signal: AiSignal }) {
 
       <div className="mt-3 space-y-1">
         {signal.reasons.slice(0, 4).map((r, i) => (
-          <div key={i} className="text-[11px] text-muted leading-snug flex gap-1.5">
+          <div key={i} className="text-[12px] text-muted leading-snug flex gap-1.5">
             <span className="text-accent shrink-0">•</span>
             <span>{r}</span>
           </div>
@@ -127,18 +127,18 @@ function ZoneRow({
         <span className={`text-xs font-bold ${isBull ? 'text-blue-400' : 'text-bear'}`}>
           {zone.label} · {isBull ? 'RISE' : 'FALL'}
         </span>
-        <span className={`text-[11px] font-bold font-mono ${scoreColor(zone.quality)}`}>
+        <span className={`text-[12px] font-bold font-mono ${scoreColor(zone.quality)}`}>
           {Math.round(zone.quality)}/100
         </span>
       </div>
-      <div className="mt-1 flex items-center gap-2 flex-wrap text-[10px] text-faint">
+      <div className="mt-1 flex items-center gap-2 flex-wrap text-[11px] text-faint">
         <span className="font-mono">
           {formatPrice(zone.lowerPrice, precision)} – {formatPrice(zone.upperPrice, precision)}
         </span>
         {zone.watch && <StatusPill label="FUTURE" className="bg-elevated text-muted border-line" />}
         {zone.fresh && <StatusPill label="FRESH" className="bg-elevated text-muted border-line" />}
       </div>
-      <p className="mt-1 text-[10px] text-faint leading-snug">{zone.reason}</p>
+      <p className="mt-1 text-[11px] text-faint leading-snug">{zone.reason}</p>
     </button>
   );
 }
@@ -166,21 +166,21 @@ function AnalysisRow({
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-bold text-ink truncate">{analysis.displayName}</span>
         {signal ? (
-          <span className={`text-[11px] font-bold font-mono ${signal.direction === 'RISE' ? 'text-emerald-400' : 'text-bear'}`}>
+          <span className={`text-[12px] font-bold font-mono ${signal.direction === 'RISE' ? 'text-emerald-400' : 'text-bear'}`}>
             {signal.direction} · {signal.score}
           </span>
         ) : (
-          <span className="text-[11px] text-faint font-mono">
+          <span className="text-[12px] text-faint font-mono">
             {analysis.bestScore > 0 ? `${analysis.bestScore}/100` : '—'}
           </span>
         )}
       </div>
       <div className="mt-1 flex items-center gap-2 flex-wrap">
-        <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${statusStyle(analysis.status)}`}>
+        <span className={`text-[11px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${statusStyle(analysis.status)}`}>
           {AI_STATUS_LABELS[analysis.status]}
         </span>
-        <span className="text-[10px] text-faint font-mono">{formatPrice(analysis.price, precision)}</span>
-        <span className="text-[10px] text-faint">
+        <span className="text-[11px] text-faint font-mono">{formatPrice(analysis.price, precision)}</span>
+        <span className="text-[11px] text-faint">
           {analysis.activeZones.length + analysis.watchZones.length} zone
           {analysis.activeZones.length + analysis.watchZones.length === 1 ? '' : 's'}
         </span>
@@ -234,14 +234,14 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
           </span>
           <div>
             <h1 className="text-base font-extrabold tracking-tight text-ink leading-none">{meta.title}</h1>
-            <p className="text-[11px] text-muted leading-none mt-0.5">{meta.subtitle}</p>
+            <p className="text-[12px] text-muted leading-none mt-0.5">{meta.subtitle}</p>
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2">
           <button
             type="button"
             onClick={() => setShowSettings((v) => !v)}
-            className="h-8 px-3 text-[11px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-accent/50 cursor-pointer"
+            className="h-8 px-3 text-[12px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-accent/50 cursor-pointer"
           >
             Settings
           </button>
@@ -249,7 +249,7 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
             <button
               type="button"
               onClick={scanner.cancelScan}
-              className="h-8 px-3 text-[11px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-bear/50 cursor-pointer inline-flex items-center gap-1.5"
+              className="h-8 px-3 text-[12px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-bear/50 cursor-pointer inline-flex items-center gap-1.5"
             >
               <Square className="w-3 h-3" aria-hidden="true" />
               Cancel
@@ -258,7 +258,7 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
             <button
               type="button"
               onClick={() => void scanner.scanMarkets()}
-              className="h-8 px-3 text-[11px] font-semibold text-app bg-accent rounded-md hover:bg-accent-soft cursor-pointer inline-flex items-center gap-1.5"
+              className="h-8 px-3 text-[12px] font-semibold text-app bg-accent rounded-md hover:bg-accent-soft cursor-pointer inline-flex items-center gap-1.5"
             >
               <ScanSearch className="w-3.5 h-3.5" aria-hidden="true" />
               Scan markets
@@ -274,8 +274,8 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
         ) : (
           <Gauge className="w-3.5 h-3.5 text-faint shrink-0" aria-hidden="true" />
         )}
-        <span className="text-[11px] text-muted truncate flex-1">{scanner.progressMessage}</span>
-        <span className="text-[10px] font-mono text-faint shrink-0">
+        <span className="text-[12px] text-muted truncate flex-1">{scanner.progressMessage}</span>
+        <span className="text-[11px] font-mono text-faint shrink-0">
           {scanner.targetMarketCount} markets · M30 → M15 → M10 → M7 → M6 → M5 → M4 → M3 → M2 → M1
           {scanner.lastScannedAt ? ` · last scan ${new Date(scanner.lastScannedAt).toLocaleTimeString()}` : ''}
         </span>
@@ -290,7 +290,7 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
         >
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <div className="text-[11px] font-semibold text-muted mb-1">
+              <div className="text-[12px] font-semibold text-muted mb-1">
                 Minimum score gate: <span className="font-mono text-ink">{scanner.settings.minScore}</span>
               </div>
               <input
@@ -303,14 +303,14 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
               />
             </div>
             <div className="flex flex-col gap-2">
-              <div className="text-[11px] font-semibold text-muted">Direction preference</div>
+              <div className="text-[12px] font-semibold text-muted">Direction preference</div>
               <div className="flex items-center gap-1.5">
                 {(['BOTH', 'RISE', 'FALL'] as const).map((d) => (
                   <button
                     key={d}
                     type="button"
                     onClick={() => scanner.setDirectionPreference(d)}
-                    className={`h-7 px-2.5 text-[11px] font-semibold rounded-md border cursor-pointer ${
+                    className={`h-7 px-2.5 text-[12px] font-semibold rounded-md border cursor-pointer ${
                       scanner.settings.directionPreference === d
                         ? 'border-accent/60 bg-accent/12 text-ink'
                         : 'border-line bg-elevated text-muted hover:text-ink'
@@ -325,7 +325,7 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
               <button
                 type="button"
                 onClick={() => scanner.setInclude1Sec(!scanner.settings.include1Sec)}
-                className={`h-8 px-3 text-[11px] font-semibold rounded-md border cursor-pointer ${
+                className={`h-8 px-3 text-[12px] font-semibold rounded-md border cursor-pointer ${
                   scanner.settings.include1Sec
                     ? 'border-accent/60 bg-accent/12 text-ink'
                     : 'border-line bg-elevated text-muted hover:text-ink'
@@ -336,7 +336,7 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
               <button
                 type="button"
                 onClick={() => scanner.setAutoRefresh(!scanner.autoRefresh)}
-                className={`h-8 px-3 text-[11px] font-semibold rounded-md border cursor-pointer ${
+                className={`h-8 px-3 text-[12px] font-semibold rounded-md border cursor-pointer ${
                   scanner.autoRefresh
                     ? 'border-accent/60 bg-accent/12 text-ink'
                     : 'border-line bg-elevated text-muted hover:text-ink'
@@ -346,14 +346,14 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
               </button>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold text-muted">Chart timeframe</span>
+              <span className="text-[12px] font-semibold text-muted">Chart timeframe</span>
               <div className="flex items-center gap-1.5">
                 {TIMEFRAMES.map((tf) => (
                   <button
                     key={tf.key}
                     type="button"
                     onClick={() => scanner.setChartTimeframe(tf.key)}
-                    className={`h-7 px-2 text-[11px] font-semibold rounded-md border cursor-pointer ${
+                    className={`h-7 px-2 text-[12px] font-semibold rounded-md border cursor-pointer ${
                       scanner.settings.chartTimeframe === tf.key
                         ? 'border-accent/60 bg-accent/12 text-ink'
                         : 'border-line bg-elevated text-muted hover:text-ink'
@@ -394,7 +394,7 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
                 <StatTile label="Lower" value={formatPrice(selectedZone.lowerPrice, precision)} />
                 <StatTile label="Quality" value={`${Math.round(selectedZone.quality)}/100`} />
               </div>
-              <p className="text-[11px] text-muted leading-snug mt-3">{selectedZone.reason}</p>
+              <p className="text-[12px] text-muted leading-snug mt-3">{selectedZone.reason}</p>
             </SectionCard>
           )}
 
@@ -410,7 +410,7 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
                       </span>
                       <StatusPill label={AI_CONDITION_LABELS[chartAnalysis.condition]} className="bg-elevated text-muted border-line" />
                     </div>
-                    <p className="text-[11px] text-muted leading-snug mt-1.5">{chartAnalysis.statusExplanation}</p>
+                    <p className="text-[12px] text-muted leading-snug mt-1.5">{chartAnalysis.statusExplanation}</p>
                   </div>
                 </div>
               </Card>
@@ -419,10 +419,10 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
                 {chartAnalysis.timeframes.map((tf) => (
                   <div key={tf.timeframe} className="rounded-lg border border-line bg-panel px-3 py-2">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-bold text-ink">{tf.label}</span>
-                      <span className="text-[10px] font-mono text-faint">{tf.timeframe}</span>
+                      <span className="text-[12px] font-bold text-ink">{tf.label}</span>
+                      <span className="text-[11px] font-mono text-faint">{tf.timeframe}</span>
                     </div>
-                    <p className={`text-[11px] leading-snug mt-1 ${toneClass(tf.tone)}`}>{tf.detail}</p>
+                    <p className={`text-[12px] leading-snug mt-1 ${toneClass(tf.tone)}`}>{tf.detail}</p>
                   </div>
                 ))}
               </div>
@@ -444,7 +444,7 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
             {scanner.summary?.winner ? (
               <SignalCard signal={scanner.summary.winner} />
             ) : (
-              <div className="text-[11px] text-faint py-4 text-center">
+              <div className="text-[12px] text-faint py-4 text-center">
                 {scanner.summary ? scanner.summary.statusBanner : 'Run a scan to search for setups.'}
               </div>
             )}
@@ -456,9 +456,9 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
             icon={<Layers className="w-3.5 h-3.5" aria-hidden="true" />}
           >
             {!chartAnalysis ? (
-              <div className="text-[11px] text-faint py-4 text-center">Awaiting analysis for this instrument…</div>
+              <div className="text-[12px] text-faint py-4 text-center">Awaiting analysis for this instrument…</div>
             ) : chartAnalysis.activeZones.length === 0 && chartAnalysis.watchZones.length === 0 ? (
-              <div className="text-[11px] text-faint py-4 text-center">
+              <div className="text-[12px] text-faint py-4 text-center">
                 {chartAnalysis.rejectionReason ?? 'No current zones detected.'}
               </div>
             ) : (
@@ -473,7 +473,7 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
                   />
                 ))}
                 {chartAnalysis.watchZones.length > 0 && (
-                  <div className="text-[10px] font-bold uppercase tracking-wide text-faint mt-1">Future watch zones</div>
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-faint mt-1">Future watch zones</div>
                 )}
                 {chartAnalysis.watchZones.map((z) => (
                   <ZoneRow
@@ -494,7 +494,7 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
             icon={<ScanSearch className="w-3.5 h-3.5" aria-hidden="true" />}
           >
             {scanner.analyses.length === 0 ? (
-              <div className="text-[11px] text-faint py-4 text-center">No scan results yet.</div>
+              <div className="text-[12px] text-faint py-4 text-center">No scan results yet.</div>
             ) : (
               <div className="flex flex-col gap-2 max-h-[420px] overflow-y-auto">
                 {scanner.analyses.map((a) => (
@@ -523,7 +523,7 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
                 <button
                   type="button"
                   onClick={scanner.clearHistory}
-                  className="text-[11px] font-semibold text-muted hover:text-ink cursor-pointer"
+                  className="text-[12px] font-semibold text-muted hover:text-ink cursor-pointer"
                 >
                   Clear
                 </button>
@@ -531,18 +531,18 @@ export function AiModuleView({ scanner, meta }: AiModuleViewProps) {
             }
           >
             {scanner.history.length === 0 ? (
-              <div className="text-[11px] text-faint py-4 text-center">No confirmed signals yet.</div>
+              <div className="text-[12px] text-faint py-4 text-center">No confirmed signals yet.</div>
             ) : (
               <div className="flex flex-col gap-2 max-h-[320px] overflow-y-auto">
                 {scanner.history.slice(0, 20).map((sig) => (
                   <div key={sig.id} className="rounded-lg border border-line bg-panel px-3 py-2">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-bold text-ink truncate">{sig.displayName}</span>
-                      <span className={`text-[11px] font-bold font-mono ${sig.direction === 'RISE' ? 'text-emerald-400' : 'text-bear'}`}>
+                      <span className={`text-[12px] font-bold font-mono ${sig.direction === 'RISE' ? 'text-emerald-400' : 'text-bear'}`}>
                         {sig.direction} · {sig.score}
                       </span>
                     </div>
-                    <div className="mt-1 flex items-center gap-2 flex-wrap text-[10px] text-faint">
+                    <div className="mt-1 flex items-center gap-2 flex-wrap text-[11px] text-faint">
                       <span>{sig.modelLabel}</span>
                       <span>·</span>
                       <span>{new Date(sig.createdAt).toLocaleTimeString()}</span>

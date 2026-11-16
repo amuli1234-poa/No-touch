@@ -206,7 +206,7 @@ export function VolatilityScannerView({
             />
           </div>
 
-          <span className="text-[11px] text-faint ml-auto">
+          <span className="text-[12px] text-faint ml-auto">
             Structure-validated analysis
             {lastScannedAt ? ` · updated ${formatCandleTime(lastScannedAt / 1000)}` : ''}
           </span>
@@ -220,21 +220,21 @@ export function VolatilityScannerView({
                 style={{ width: `${scanProgress}%` }}
               />
             </div>
-            <div className="flex items-center gap-2 text-[11px] text-muted">
+            <div className="flex items-center gap-2 text-[12px] text-muted">
               <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" />
               {progressMessage}
             </div>
           </div>
         )}
         {!isScanning && (
-          <p className="text-[11px] text-muted">{progressMessage}</p>
+          <p className="text-[12px] text-muted">{progressMessage}</p>
         )}
       </div>
 
       {/* Summary tiles */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-surface border border-line rounded-xl px-3 py-2.5">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">
             Monitored
           </div>
           <div className="text-lg font-bold font-mono text-ink">
@@ -242,7 +242,7 @@ export function VolatilityScannerView({
           </div>
         </div>
         <div className="bg-surface border border-line rounded-xl px-3 py-2.5">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">
             Active movement
           </div>
           <div className="text-lg font-bold font-mono text-emerald-400">
@@ -250,7 +250,7 @@ export function VolatilityScannerView({
           </div>
         </div>
         <div className="bg-surface border border-line rounded-xl px-3 py-2.5">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">
             Stale / unavailable
           </div>
           <div className="text-lg font-bold font-mono text-warn">
@@ -258,7 +258,7 @@ export function VolatilityScannerView({
           </div>
         </div>
         <div className="bg-surface border border-line rounded-xl px-3 py-2.5">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">
             Timeframe
           </div>
           <div className="text-lg font-bold font-mono text-ink">{timeframe}</div>
@@ -266,8 +266,8 @@ export function VolatilityScannerView({
       </div>
 
       {/* Market coverage — the mandatory families must all be present. */}
-      <div className="flex flex-wrap items-center gap-2 text-[11px]">
-        <span className="font-semibold text-faint uppercase tracking-wide text-[10px]">
+      <div className="flex flex-wrap items-center gap-2 text-[12px]">
+        <span className="font-semibold text-faint uppercase tracking-wide text-[11px]">
           Coverage
         </span>
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-elevated border border-line text-muted">
@@ -291,11 +291,11 @@ export function VolatilityScannerView({
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-accent" aria-hidden="true" />
               <h3 className="text-[13px] font-bold text-ink">Scanner best setup</h3>
-              <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded border border-line bg-panel text-faint">
+              <span className="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded border border-line bg-panel text-faint">
                 Breadth engine
               </span>
             </div>
-            <span className="text-[11px] text-faint">
+            <span className="text-[12px] text-faint">
               {scannerSummary.scannedCount} analysed · {scannerSummary.confirmedCount} confirmed ·{' '}
               {scannerSummary.developingCount} developing
             </span>
@@ -322,14 +322,14 @@ export function VolatilityScannerView({
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-ink truncate">{w.displayName}</span>
-                          <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${dirStyle}`}>
+                          <span className={`text-[11px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${dirStyle}`}>
                             {w.direction}
                           </span>
-                          <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border border-line bg-panel text-faint">
+                          <span className="text-[11px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border border-line bg-panel text-faint">
                             {w.state.replace(/_/g, ' ')}
                           </span>
                         </div>
-                        <div className="text-[11px] text-muted font-mono">
+                        <div className="text-[12px] text-muted font-mono">
                           {w.symbol} · {w.modelLabel} · {w.condition.replace(/_/g, ' ')}
                         </div>
                       </div>
@@ -359,7 +359,7 @@ export function VolatilityScannerView({
                       { label: 'Quality', value: null as number | null },
                     ].map((cell) => (
                       <div key={cell.label} className="bg-panel border border-line-soft rounded-lg px-3 py-2">
-                        <div className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+                        <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">
                           {cell.label}
                         </div>
                         <div className="text-sm font-bold font-mono text-ink tabular-nums">
@@ -373,7 +373,7 @@ export function VolatilityScannerView({
                     ))}
                   </div>
 
-                  <p className="text-[11px] text-muted leading-relaxed">
+                  <p className="text-[12px] text-muted leading-relaxed">
                     {w.reasons[0] ?? w.confirmationExplanation}
                   </p>
 
@@ -386,11 +386,11 @@ export function VolatilityScannerView({
                         data-testid="scanner-intelligence"
                         className="rounded-lg border border-line-soft bg-panel px-3 py-2.5 space-y-1"
                       >
-                        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-faint">
+                        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-faint">
                           <Brain className="w-3 h-3 text-accent" aria-hidden="true" />
                           Market intelligence · {intel.timeframe}
                         </div>
-                        <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide">
+                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide">
                           <span
                             className={
                               intel.bias === 'bullish'
@@ -405,11 +405,11 @@ export function VolatilityScannerView({
                           <span className="text-faint">·</span>
                           <span className="text-muted">{intel.condition}</span>
                         </div>
-                        <p className="text-[11px] text-muted leading-snug">
+                        <p className="text-[12px] text-muted leading-snug">
                           {intel.conditionExplanation}
                         </p>
                         {topObjective && (
-                          <div className="text-[10px] font-mono text-faint">
+                          <div className="text-[11px] font-mono text-faint">
                             Next liquidity objective:{' '}
                             <span className="text-ink">
                               {formatPrice(topObjective.price, w.precision)}
@@ -438,17 +438,17 @@ export function VolatilityScannerView({
                                 : 'border-amber-500/30 bg-amber-500/8'
                             }`}
                           >
-                            <div className="text-[10px] font-bold uppercase tracking-wide text-faint">
+                            <div className="text-[11px] font-bold uppercase tracking-wide text-faint">
                               Target reachability
                             </div>
                             <div
-                              className={`text-[11px] font-bold uppercase ${
+                              className={`text-[12px] font-bold uppercase ${
                                 reach.tp1Reachable ? 'text-emerald-400' : 'text-warn'
                               }`}
                             >
                               TP1 {reach.tp1Reachable ? 'reachable' : 'not reachable'}
                             </div>
-                            <div className="text-[10px] font-mono text-faint">
+                            <div className="text-[11px] font-mono text-faint">
                               {reach.roomToTp1Atr.toFixed(1)}× ATR room · needs{' '}
                               {reach.requiredRoomAtr.toFixed(1)}×
                             </div>
@@ -463,11 +463,11 @@ export function VolatilityScannerView({
                                 : 'border-emerald-500/25 bg-emerald-500/6'
                             }`}
                           >
-                            <div className="text-[10px] font-bold uppercase tracking-wide text-faint">
+                            <div className="text-[11px] font-bold uppercase tracking-wide text-faint">
                               False-signal guard
                             </div>
                             <div
-                              className={`text-[11px] font-bold uppercase ${
+                              className={`text-[12px] font-bold uppercase ${
                                 falseSignal.flagged ? 'text-bear' : 'text-emerald-400'
                               }`}
                             >
@@ -475,7 +475,7 @@ export function VolatilityScannerView({
                                 ? `${falseSignal.traps.length} trap(s) flagged`
                                 : 'Clean'}
                             </div>
-                            <div className="text-[10px] text-muted leading-snug line-clamp-2">
+                            <div className="text-[11px] text-muted leading-snug line-clamp-2">
                               {falseSignal.traps[0] ?? 'No trap patterns detected.'}
                             </div>
                           </div>
@@ -493,14 +493,14 @@ export function VolatilityScannerView({
                     if (zones.length === 0) return null;
                     return (
                       <div className="rounded-lg border border-line-soft bg-panel px-3 py-2.5 space-y-1.5">
-                        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-faint">
+                        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-faint">
                           <Sparkles className="w-3 h-3 text-accent" aria-hidden="true" />
                           Future reaction zones
                         </div>
                         {zones.map((zone) => (
                           <div
                             key={zone.id}
-                            className="flex items-center gap-2 text-[11px]"
+                            className="flex items-center gap-2 text-[12px]"
                             data-testid="scanner-structure-zone"
                           >
                             <span
@@ -514,7 +514,7 @@ export function VolatilityScannerView({
                               {formatPrice(zone.lowerPrice, w.precision)}–
                               {formatPrice(zone.upperPrice, w.precision)}
                             </span>
-                            <span className="ml-auto text-faint uppercase tracking-wide text-[10px]">
+                            <span className="ml-auto text-faint uppercase tracking-wide text-[11px]">
                               {zone.stage.replace(/_/g, ' ')}
                             </span>
                           </div>
@@ -589,7 +589,7 @@ export function VolatilityScannerView({
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs min-w-[760px]">
-              <thead className="bg-panel text-faint font-semibold text-[10px] uppercase tracking-wide">
+              <thead className="bg-panel text-faint font-semibold text-[11px] uppercase tracking-wide">
                 <tr>
                   <th className="px-3 py-2.5">Instrument</th>
                   <th className="px-3 py-2.5 text-right">Price</th>
@@ -607,7 +607,7 @@ export function VolatilityScannerView({
                       <div className="font-semibold text-ink truncate max-w-[200px]">
                         {r.displayName}
                       </div>
-                      <div className="text-[10px] font-mono text-faint">{r.symbol}</div>
+                      <div className="text-[11px] font-mono text-faint">{r.symbol}</div>
                     </td>
                     <td className="px-3 py-2.5 text-right font-mono tabular-nums text-ink">
                       {r.price > 0 ? formatPrice(r.price, r.precision) : '—'}
@@ -630,13 +630,13 @@ export function VolatilityScannerView({
                     </td>
                     <td className="px-3 py-2.5">
                       <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded border text-[10px] font-bold uppercase tracking-wide ${ACTIVITY_STYLE[r.activityLabel]}`}
+                        className={`inline-flex items-center px-2 py-0.5 rounded border text-[11px] font-bold uppercase tracking-wide ${ACTIVITY_STYLE[r.activityLabel]}`}
                       >
                         {r.activityLabel}
                       </span>
                     </td>
                     <td className="px-3 py-2.5">
-                      <span className="inline-flex items-center gap-1 text-[10px] text-muted">
+                      <span className="inline-flex items-center gap-1 text-[11px] text-muted">
                         <Clock className="w-3 h-3" aria-hidden="true" />
                         {r.candlesCount} bars
                       </span>
@@ -647,7 +647,7 @@ export function VolatilityScannerView({
                           type="button"
                           onClick={() => onOpenAnalyser(r.symbol, timeframe)}
                           data-testid={`scanner-open-analyser-${r.symbol}`}
-                          className="inline-flex items-center gap-1 h-7 px-2 text-[11px] font-bold text-accent bg-accent/12 border border-accent/30 rounded-md hover:bg-accent/20 transition-colors cursor-pointer"
+                          className="inline-flex items-center gap-1 h-7 px-2 text-[12px] font-bold text-accent bg-accent/12 border border-accent/30 rounded-md hover:bg-accent/20 transition-colors cursor-pointer"
                         >
                           <ScanSearch className="w-3 h-3" aria-hidden="true" />
                           Analyse
@@ -655,7 +655,7 @@ export function VolatilityScannerView({
                         <button
                           type="button"
                           onClick={() => onOpenChartOnly(r.symbol, timeframe)}
-                          className="inline-flex items-center gap-1 h-7 px-2 text-[11px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-accent/50 transition-colors cursor-pointer"
+                          className="inline-flex items-center gap-1 h-7 px-2 text-[12px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-accent/50 transition-colors cursor-pointer"
                         >
                           Chart
                           <ArrowRight className="w-3 h-3" aria-hidden="true" />

@@ -128,12 +128,12 @@ function ZoneCard({
               WATCH {isRise ? 'RISE' : 'FALL'}
             </span>
             <span
-              className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide border ${stage.cls}`}
+              className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border ${stage.cls}`}
             >
               {stage.label}
             </span>
           </div>
-          <div className="text-[10px] text-faint font-mono tabular-nums mt-0.5">
+          <div className="text-[11px] text-faint font-mono tabular-nums mt-0.5">
             {formatPrice(zone.lowerPrice, precision)} – {formatPrice(zone.upperPrice, precision)} ·{' '}
             {zone.originTimeframe}
           </div>
@@ -141,7 +141,7 @@ function ZoneCard({
         <StageTrack stage={zone.stage} />
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
         <span className="inline-flex items-center gap-1">
           <Layers className="w-3 h-3" aria-hidden="true" />
           {FRESHNESS_LABEL[zone.freshness]}
@@ -156,9 +156,9 @@ function ZoneCard({
         </span>
       </div>
 
-      <p className="text-[11px] leading-snug text-muted">{zone.reason}</p>
+      <p className="text-[12px] leading-snug text-muted">{zone.reason}</p>
 
-      <div className="text-[10px] text-faint">
+      <div className="text-[11px] text-faint">
         <span className="font-semibold text-muted">Invalidation: </span>
         {zone.invalidationCondition}{' '}
         <span className="font-mono tabular-nums">
@@ -168,16 +168,16 @@ function ZoneCard({
 
       {active && (
         <div className="pt-1.5 border-t border-line-soft space-y-1">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">
             Structure evidence
           </div>
-          <p className="text-[10px] text-muted">{zone.sourceStructure}</p>
+          <p className="text-[11px] text-muted">{zone.sourceStructure}</p>
           {zone.evidence.map((e, i) => (
-            <p key={i} className="text-[10px] text-muted">
+            <p key={i} className="text-[11px] text-muted">
               • {e}
             </p>
           ))}
-          <p className="text-[10px] text-faint">
+          <p className="text-[11px] text-faint">
             Watching mid-level {formatPrice(mid, precision)} · approach{' '}
             {Math.round(zone.approachProgress * 100)}%
           </p>
@@ -237,7 +237,7 @@ export function StructureOpportunitiesPanel({
           Structure &amp; Future Opportunities
         </span>
         <span className="ml-auto flex items-center gap-2">
-          <span className={`text-[10px] font-bold uppercase tracking-wide ${biasCls}`}>
+          <span className={`text-[11px] font-bold uppercase tracking-wide ${biasCls}`}>
             {bias}
           </span>
           <ChevronDown
@@ -249,7 +249,7 @@ export function StructureOpportunitiesPanel({
 
       {open && (
         <div className="px-3 pb-3 space-y-2.5">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
             <span className="inline-flex items-center gap-1">
               <Sparkles className="w-3 h-3 text-accent" aria-hidden="true" />
               {structure?.htfTimeframe ? `${structure.htfTimeframe} bias: ` : 'Bias: '}
@@ -264,12 +264,12 @@ export function StructureOpportunitiesPanel({
           </div>
 
           {structure?.summary && (
-            <p className="text-[11px] leading-snug text-muted">{structure.summary}</p>
+            <p className="text-[12px] leading-snug text-muted">{structure.summary}</p>
           )}
 
           {zones.length === 0 ? (
             <div className="rounded-lg border border-line-soft bg-panel px-3 py-3 text-center">
-              <p className="text-[11px] text-muted">
+              <p className="text-[12px] text-muted">
                 No fresh future reaction zones right now. The engine only surfaces zones with
                 genuine, repeated structure — it will not invent levels.
               </p>
@@ -288,7 +288,7 @@ export function StructureOpportunitiesPanel({
             </div>
           )}
 
-          <p className="text-[10px] text-faint leading-snug">
+          <p className="text-[11px] text-faint leading-snug">
             These are potential reaction zones, not entries. An entry is published only after the
             signal engine confirms the reaction with a quality-gated setup.
           </p>

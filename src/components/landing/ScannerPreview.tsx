@@ -34,7 +34,7 @@ const PreviewChart: React.FC = () => {
         className="absolute inset-x-0 border-t border-dashed border-accent-cyan/50"
         style={{ top: `${BARRIER_Y}%` }}
       />
-      <span className="absolute right-2.5 -translate-y-1/2 rounded border border-accent-cyan/30 bg-accent-cyan/10 px-1.5 py-0.5 text-[8.5px] font-bold tracking-wide text-tint-sky" style={{ top: `${BARRIER_Y}%` }}>
+      <span className="absolute right-2.5 -translate-y-1/2 rounded border border-accent-cyan/30 bg-accent-cyan/10 px-1.5 py-0.5 text-[9.5px] font-bold tracking-wide text-tint-sky" style={{ top: `${BARRIER_Y}%` }}>
         BARRIER
       </span>
 
@@ -71,7 +71,7 @@ const PreviewKpi: React.FC<{ label: string; value: string; tone: string }> = ({
   tone
 }) => (
   <div className="rounded-[10px] border border-[var(--ws-hairline)] bg-surface-deepest p-2.5 sm:p-3">
-    <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-fg-5">{label}</div>
+    <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-fg-5">{label}</div>
     <div className="tabular mt-1 text-[16px] font-bold sm:text-[19px]" style={{ color: tone }}>
       {value}
     </div>
@@ -93,9 +93,9 @@ export const ScannerPreview: React.FC = () => (
           <span className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-gradient-to-br from-accent to-accent-cyan">
             <Activity className="h-4 w-4 text-on-accent" />
           </span>
-          <span className="text-[11.5px] font-bold tracking-tight text-fg-1">Live Scanner</span>
+          <span className="text-[12.5px] font-bold tracking-tight text-fg-1">Live Scanner</span>
         </div>
-        <span className="inline-flex items-center gap-1.5 rounded-md border border-accent/30 bg-accent/10 px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-[0.12em] text-accent-soft">
+        <span className="inline-flex items-center gap-1.5 rounded-md border border-accent/30 bg-accent/10 px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-[0.12em] text-accent-soft">
           Illustrative preview
         </span>
       </div>
@@ -108,10 +108,10 @@ export const ScannerPreview: React.FC = () => (
 
       <div className="mt-2.5">
         <div className="mb-2 flex items-center justify-between">
-          <div className="text-[11px] font-bold text-fg-2">
+          <div className="text-[12px] font-bold text-fg-2">
             Synthetic Index <span className="font-normal text-fg-5">· 2m primary / 5m confirmation</span>
           </div>
-          <div className="hidden text-[10px] text-fg-5 sm:block">No Touch barrier · wick analysis</div>
+          <div className="hidden text-[11px] text-fg-5 sm:block">No Touch barrier · wick analysis</div>
         </div>
         <PreviewChart />
       </div>
@@ -119,18 +119,18 @@ export const ScannerPreview: React.FC = () => (
       <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
         <div className="flex items-center justify-between rounded-[10px] border border-success/25 bg-success/[0.07] px-3 py-2">
           <div>
-            <div className="text-[9px] font-semibold uppercase tracking-[0.12em] text-fg-5">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-fg-5">
               Signal evaluation
             </div>
-            <div className="mt-0.5 text-[11.5px] font-bold text-tint-teal">Gates passed</div>
+            <div className="mt-0.5 text-[12.5px] font-bold text-tint-teal">Gates passed</div>
           </div>
-          <div className="tabular rounded-md border border-success/30 bg-success/10 px-2 py-1 text-[12px] font-bold text-tint-teal">
+          <div className="tabular rounded-md border border-success/30 bg-success/10 px-2 py-1 text-[13px] font-bold text-tint-teal">
             92
           </div>
         </div>
         <div className="flex items-center gap-2 rounded-[10px] border border-[var(--ws-hairline)] bg-surface-deepest px-3 py-2">
           <ShieldCheck className="h-4 w-4 shrink-0 text-tint-sky" />
-          <div className="text-[10.5px] leading-tight text-fg-4">
+          <div className="text-[11.5px] leading-tight text-fg-4">
             Risk filters and structural gates evaluated before a setup is surfaced.
           </div>
         </div>
@@ -138,7 +138,7 @@ export const ScannerPreview: React.FC = () => (
 
       <div className="mt-2.5 flex items-center gap-2 rounded-[10px] border border-[var(--ws-hairline)] bg-surface-deepest px-3 py-2">
         <Crosshair className="h-3.5 w-3.5 shrink-0 text-accent-soft" />
-        <div className="text-[10.5px] leading-tight text-fg-4">
+        <div className="text-[11.5px] leading-tight text-fg-4">
           Sample interface for illustration only — figures are not live market data.
         </div>
       </div>

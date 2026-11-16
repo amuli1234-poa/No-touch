@@ -7,7 +7,7 @@ function TpTimeline({ signal }: { signal: ManagedSignal }) {
   const adjustments = signal.tpHistory.filter((t) => t.kind !== 'INITIAL');
   if (adjustments.length === 0) {
     return (
-      <p className="text-[10px] text-faint">
+      <p className="text-[11px] text-faint">
         Take-profit unchanged since publication — no structural or momentum trigger yet.
       </p>
     );
@@ -23,7 +23,7 @@ function TpTimeline({ signal }: { signal: ManagedSignal }) {
             aria-hidden="true"
           />
           <div className="min-w-0">
-            <div className="text-[10px] font-mono text-ink">
+            <div className="text-[11px] font-mono text-ink">
               {formatPrice(adj.previous, 5)} → {formatPrice(adj.next, 5)}{' '}
               <span
                 className={`font-bold ${
@@ -33,7 +33,7 @@ function TpTimeline({ signal }: { signal: ManagedSignal }) {
                 {adj.kind}
               </span>
             </div>
-            <div className="text-[10px] text-muted leading-relaxed">{adj.reason}</div>
+            <div className="text-[11px] text-muted leading-relaxed">{adj.reason}</div>
           </div>
         </li>
       ))}
@@ -60,12 +60,12 @@ function ManagedSignalRow({ signal, onOpen }: { signal: ManagedSignal; onOpen: (
                 {signal.symbol} · {signal.timeframe}
               </span>
             </div>
-            <div className="text-[10px] text-muted truncate">{signal.modelLabel}</div>
+            <div className="text-[11px] text-muted truncate">{signal.modelLabel}</div>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <span
-            className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${
+            className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${
               signal.status === 'ACTIVE'
                 ? 'bg-accent/12 text-accent border-accent/30'
                 : signal.status === 'TARGET_HIT'
@@ -80,7 +80,7 @@ function ManagedSignalRow({ signal, onOpen }: { signal: ManagedSignal; onOpen: (
           <button
             type="button"
             onClick={onOpen}
-            className="text-[10px] font-bold text-accent hover:text-accent-soft cursor-pointer"
+            className="text-[11px] font-bold text-accent hover:text-accent-soft cursor-pointer"
           >
             OPEN CHART
           </button>
@@ -89,22 +89,22 @@ function ManagedSignalRow({ signal, onOpen }: { signal: ManagedSignal; onOpen: (
 
       <div className="grid grid-cols-3 gap-2 mt-2">
         <div className="bg-panel border border-line-soft rounded-md px-2 py-1">
-          <div className="text-[9px] font-semibold uppercase tracking-wide text-faint flex items-center gap-1">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-faint flex items-center gap-1">
             <Lock className="w-2.5 h-2.5" aria-hidden="true" /> Entry (locked)
           </div>
-          <div className="text-[11px] font-mono text-ink">{formatPrice(signal.entry, 5)}</div>
+          <div className="text-[12px] font-mono text-ink">{formatPrice(signal.entry, 5)}</div>
         </div>
         <div className="bg-panel border border-line-soft rounded-md px-2 py-1">
-          <div className="text-[9px] font-semibold uppercase tracking-wide text-faint flex items-center gap-1">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-faint flex items-center gap-1">
             <Lock className="w-2.5 h-2.5" aria-hidden="true" /> Stop (locked)
           </div>
-          <div className="text-[11px] font-mono text-bear">{formatPrice(signal.stopLoss, 5)}</div>
+          <div className="text-[12px] font-mono text-bear">{formatPrice(signal.stopLoss, 5)}</div>
         </div>
         <div className="bg-panel border border-line-soft rounded-md px-2 py-1">
-          <div className="text-[9px] font-semibold uppercase tracking-wide text-faint">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-faint">
             Take-profit (dynamic)
           </div>
-          <div className="text-[11px] font-mono text-accent">
+          <div className="text-[12px] font-mono text-accent">
             {formatPrice(signal.takeProfit, 5)}
             {adjustments > 0 && (
               <span className="text-faint font-normal"> · {adjustments} adj</span>
@@ -148,7 +148,7 @@ export function ManagedSignalsPanel({ limit = 6 }: { limit?: number }) {
           onOpen={() => ws.openChart(signal.symbol, signal.timeframe)}
         />
       ))}
-      <div className="flex items-center gap-1.5 mt-2 text-[10px] text-faint">
+      <div className="flex items-center gap-1.5 mt-2 text-[11px] text-faint">
         <Sparkles className="w-3 h-3" aria-hidden="true" />
         Entry and stop-loss are immutable once published. Only the take-profit adapts.
       </div>

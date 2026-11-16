@@ -60,7 +60,7 @@ function ToggleRow({
       <span className="min-w-0">
         <span className="block text-xs font-semibold text-ink">{label}</span>
         {description && (
-          <span className="block text-[11px] text-faint leading-snug">{description}</span>
+          <span className="block text-[12px] text-faint leading-snug">{description}</span>
         )}
       </span>
       <button
@@ -157,7 +157,7 @@ export function SettingsView() {
             );
           })}
         </div>
-        <p className="text-[11px] text-faint mt-2">
+        <p className="text-[12px] text-faint mt-2">
           The engine still computes every setup; this filter only affects which confirmed setups
           are surfaced as actionable. It never fabricates or downgrades a signal.
         </p>
@@ -182,7 +182,7 @@ export function SettingsView() {
         <div className="flex items-center justify-between gap-3 py-2.5 border-b border-line-soft">
           <span className="min-w-0">
             <span className="block text-xs font-semibold text-ink">Theme</span>
-            <span className="block text-[11px] text-faint leading-snug">
+            <span className="block text-[12px] text-faint leading-snug">
               Switch between the dark trading terminal and a light workspace.
             </span>
           </span>
@@ -195,7 +195,7 @@ export function SettingsView() {
                   type="button"
                   onClick={() => ws.setTheme(mode)}
                   aria-pressed={active}
-                  className={`h-7 px-3 text-[11px] font-bold rounded-md capitalize transition-colors cursor-pointer ${
+                  className={`h-7 px-3 text-[12px] font-bold rounded-md capitalize transition-colors cursor-pointer ${
                     active ? 'bg-accent text-app' : 'text-muted hover:text-ink hover:bg-surface'
                   }`}
                 >
@@ -222,7 +222,7 @@ export function SettingsView() {
                   type="button"
                   onClick={() => ws.setAccentMode(opt.key)}
                   aria-pressed={active}
-                  className={`flex items-center gap-2 h-9 px-2.5 rounded-lg border text-[11px] font-semibold transition-colors cursor-pointer ${
+                  className={`flex items-center gap-2 h-9 px-2.5 rounded-lg border text-[12px] font-semibold transition-colors cursor-pointer ${
                     active
                       ? 'border-accent/60 bg-accent/12 text-ink glow-accent'
                       : 'border-line bg-panel text-muted hover:text-ink hover:border-accent/40'
@@ -243,7 +243,7 @@ export function SettingsView() {
               );
             })}
           </div>
-          <p className="text-[10px] text-faint mt-2 leading-snug">
+          <p className="text-[11px] text-faint mt-2 leading-snug">
             In Auto mode the whole interface shifts hue with the live state: green for a
             confirmed bullish setup, red for bearish, blue while analysing, purple while
             training and amber for a developing setup.
@@ -286,7 +286,7 @@ export function SettingsView() {
         <div className="flex items-center justify-between gap-3 py-2.5 border-b border-line-soft">
           <span className="min-w-0">
             <span className="block text-xs font-semibold text-ink">Chime volume</span>
-            <span className="block text-[11px] text-faint leading-snug">
+            <span className="block text-[12px] text-faint leading-snug">
               {ws.settings.soundVolume}% · scales every signal alert.
             </span>
           </span>
@@ -305,7 +305,7 @@ export function SettingsView() {
           <button
             type="button"
             onClick={() => ws.playSignalSound('validated')}
-            className="inline-flex items-center gap-1.5 h-8 px-3 text-[11px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-accent/50 cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-accent/50 cursor-pointer"
           >
             <BellRing className="w-3.5 h-3.5" aria-hidden="true" />
             Test validated chime
@@ -313,11 +313,11 @@ export function SettingsView() {
           <button
             type="button"
             onClick={() => ws.playSignalSound('scanner')}
-            className="inline-flex items-center gap-1.5 h-8 px-3 text-[11px] font-semibold text-muted bg-elevated border border-line rounded-md hover:text-ink cursor-pointer"
+            className="inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-semibold text-muted bg-elevated border border-line rounded-md hover:text-ink cursor-pointer"
           >
             Test scanner chime
           </button>
-          <span className="text-[10px] text-faint">
+          <span className="text-[11px] text-faint">
             Desktop permission:{' '}
             <span className="font-mono">{notificationPermission()}</span>
           </span>
@@ -341,7 +341,7 @@ export function SettingsView() {
                 {ws.connectionStatus.toUpperCase()}
               </span>
             </div>
-            <div className="text-[11px] text-faint">
+            <div className="text-[12px] text-faint">
               {ws.connectionError?.message ?? 'Live WebSocket feed to Deriv synthetic indices.'}
             </div>
           </div>

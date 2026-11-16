@@ -41,10 +41,10 @@ function marketTone(dir: WatchZoneExpectation['marketDirection']): string {
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start gap-2 py-1.5">
-      <span className="w-28 shrink-0 text-[11px] font-semibold text-faint uppercase tracking-wide">
+      <span className="w-28 shrink-0 text-[12px] font-semibold text-faint uppercase tracking-wide">
         {label}
       </span>
-      <span className="min-w-0 flex-1 text-[12px] text-ink leading-snug">{children}</span>
+      <span className="min-w-0 flex-1 text-[13px] text-ink leading-snug">{children}</span>
     </div>
   );
 }
@@ -66,11 +66,11 @@ export function WatchZoneExpectationPanel({
         data-testid="watch-zone-panel"
         className="rounded-xl border border-line bg-panel p-4"
       >
-        <div className="flex items-center gap-2 text-[12px] font-semibold text-ink">
+        <div className="flex items-center gap-2 text-[13px] font-semibold text-ink">
           <Crosshair className="w-4 h-4 text-accent" aria-hidden="true" />
           Watching zone expectation
         </div>
-        <p className="mt-2 text-[12px] text-muted leading-snug">
+        <p className="mt-2 text-[13px] text-muted leading-snug">
           {hasRun
             ? 'No fresh, untested watching zone right now. Tested and already-mitigated zones are never shown as fresh opportunities.'
             : 'Run the analysis to identify the next potential watching zone and the expected reaction when price reaches it.'}
@@ -92,9 +92,9 @@ export function WatchZoneExpectationPanel({
     >
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-line-soft">
         <Crosshair className="w-4 h-4 text-accent" aria-hidden="true" />
-        <span className="text-[12px] font-bold text-ink">Watching zone expectation</span>
+        <span className="text-[13px] font-bold text-ink">Watching zone expectation</span>
         <span
-          className={`ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-bold ${directionTone(
+          className={`ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[12px] font-bold ${directionTone(
             e.expectedReaction
           )}`}
         >
@@ -115,12 +115,12 @@ export function WatchZoneExpectationPanel({
           <span className="font-mono tabular-nums text-ink">
             {formatPrice(e.zone.low, precision)} – {formatPrice(e.zone.high, precision)}
           </span>
-          <span className="ml-2 text-[11px] text-faint">
+          <span className="ml-2 text-[12px] text-faint">
             {FRESHNESS_LABEL[e.zone.freshness]} · {e.zone.stage.replace(/_/g, ' ').toLowerCase()}
           </span>
         </Row>
         <Row label="Zone type">
-          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-elevated border border-line text-[11px] font-semibold text-muted">
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-elevated border border-line text-[12px] font-semibold text-muted">
             {e.zone.type}
           </span>
         </Row>
@@ -164,7 +164,7 @@ export function WatchZoneExpectationPanel({
                 </span>
               )}
               {!e.targets.justified && (
-                <span className="text-[10px] text-faint">(projected — no structural level ahead)</span>
+                <span className="text-[11px] text-faint">(projected — no structural level ahead)</span>
               )}
             </span>
           )}
@@ -175,8 +175,8 @@ export function WatchZoneExpectationPanel({
               <Gauge className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
               <span className="font-bold tabular-nums">{e.quality.score}/100</span>
             </span>
-            <span className="text-[11px] text-muted">{e.quality.tier}</span>
-            <span className="text-[11px] text-faint">· {e.quality.confidence} confidence</span>
+            <span className="text-[12px] text-muted">{e.quality.tier}</span>
+            <span className="text-[12px] text-faint">· {e.quality.confidence} confidence</span>
           </span>
         </Row>
       </div>

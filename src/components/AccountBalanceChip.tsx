@@ -35,7 +35,7 @@ function ModePill({ mode }: { mode: 'demo' | 'real' }) {
   const real = mode === 'real';
   return (
     <span
-      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide border ${
+      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide border ${
         real
           ? 'text-warn bg-warn/10 border-warn/25'
           : 'text-accent bg-accent/10 border-accent/25'
@@ -70,9 +70,9 @@ function AccountRow({
       <span className="min-w-0">
         <span className="flex items-center gap-1.5">
           <ModePill mode={account.mode} />
-          <span className="truncate text-[11.5px] font-semibold text-ink">{account.accountId}</span>
+          <span className="truncate text-[12.5px] font-semibold text-ink">{account.accountId}</span>
         </span>
-        <span className="mt-1 flex items-center gap-1.5 text-[10px] text-faint">
+        <span className="mt-1 flex items-center gap-1.5 text-[11px] text-faint">
           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATE_DOT[account.state]}`} />
           {account.state === 'ok'
             ? lastUpdatedLabel(account.lastUpdated, now)
@@ -80,10 +80,10 @@ function AccountRow({
         </span>
       </span>
       <span className="shrink-0 text-right">
-        <span className="block font-mono text-[12.5px] font-bold tabular-nums text-ink">
+        <span className="block font-mono text-[13.5px] font-bold tabular-nums text-ink">
           {formatMoney(account.balance, account.currency)}
         </span>
-        <span className="mt-0.5 block text-[10px] text-faint">{account.currency ?? '—'}</span>
+        <span className="mt-0.5 block text-[11px] text-faint">{account.currency ?? '—'}</span>
       </span>
     </button>
   );
@@ -134,7 +134,7 @@ export function AccountBalanceChip() {
     return (
       <div className="hidden sm:flex items-center gap-1.5 h-9 px-2.5 rounded-lg bg-elevated border border-line">
         <Loader2 className="w-3.5 h-3.5 animate-spin text-faint" aria-hidden="true" />
-        <span className="text-[11px] text-faint">Loading…</span>
+        <span className="text-[12px] text-faint">Loading…</span>
       </div>
     );
   }
@@ -149,7 +149,7 @@ export function AccountBalanceChip() {
         aria-label="Balance unavailable — retry"
       >
         <AlertTriangle className="w-3.5 h-3.5 text-danger" aria-hidden="true" />
-        <span className="hidden md:inline text-[11px] text-faint">Unavailable</span>
+        <span className="hidden md:inline text-[12px] text-faint">Unavailable</span>
       </button>
     );
   }
@@ -158,7 +158,7 @@ export function AccountBalanceChip() {
     return (
       <div className="hidden sm:flex items-center gap-1.5 h-9 px-2.5 rounded-lg bg-elevated border border-line">
         <Wallet className="w-3.5 h-3.5 text-faint" aria-hidden="true" />
-        <span className="text-[11px] text-faint">No accounts</span>
+        <span className="text-[12px] text-faint">No accounts</span>
       </div>
     );
   }
@@ -174,7 +174,7 @@ export function AccountBalanceChip() {
         title={`${selected.mode.toUpperCase()} account ${selected.accountId}`}
       >
         <ModePill mode={selected.mode} />
-        <span className="font-mono text-[11.5px] font-bold tabular-nums text-ink">
+        <span className="font-mono text-[12.5px] font-bold tabular-nums text-ink">
           {formatMoney(selected.balance, null)}
           {selected.currency && (
             <span className="hidden md:inline text-faint"> {selected.currency}</span>
@@ -202,13 +202,13 @@ export function AccountBalanceChip() {
         >
           <div className="flex items-start justify-between gap-2 px-3.5 py-3 border-b border-line-soft">
             <div className="min-w-0">
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-faint">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-faint">
                 Deriv accounts
               </div>
-              <div className="mt-0.5 truncate text-[12px] font-semibold text-ink">
+              <div className="mt-0.5 truncate text-[13px] font-semibold text-ink">
                 {loginId ?? 'Signed in'}
               </div>
-              <div className="mt-0.5 text-[10px] text-faint">
+              <div className="mt-0.5 text-[11px] text-faint">
                 {selected ? lastUpdatedLabel(selected.lastUpdated, now) : '—'}
               </div>
             </div>
@@ -216,7 +216,7 @@ export function AccountBalanceChip() {
               type="button"
               onClick={() => void handleRefresh()}
               disabled={busy}
-              className="flex items-center gap-1 text-[10.5px] font-medium text-muted hover:text-ink transition-colors disabled:opacity-60 cursor-pointer"
+              className="flex items-center gap-1 text-[11.5px] font-medium text-muted hover:text-ink transition-colors disabled:opacity-60 cursor-pointer"
             >
               <RefreshCw className={`w-3 h-3 ${busy ? 'animate-spin' : ''}`} aria-hidden="true" />
               Refresh
@@ -239,7 +239,7 @@ export function AccountBalanceChip() {
           </div>
 
           <div className="border-t border-line-soft px-3.5 py-2">
-            <p className="text-[10px] leading-relaxed text-faint">
+            <p className="text-[11px] leading-relaxed text-faint">
               Informational only. Balances never authorise a trade — every order is validated
               server-side.
             </p>
@@ -248,7 +248,7 @@ export function AccountBalanceChip() {
           <button
             type="button"
             onClick={() => void handleSignOut()}
-            className="w-full flex items-center gap-2 px-3.5 py-2.5 border-t border-line-soft text-[12px] font-medium text-muted hover:text-danger hover:bg-elevated transition-colors cursor-pointer"
+            className="w-full flex items-center gap-2 px-3.5 py-2.5 border-t border-line-soft text-[13px] font-medium text-muted hover:text-danger hover:bg-elevated transition-colors cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
             Sign out

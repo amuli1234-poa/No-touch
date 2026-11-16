@@ -39,7 +39,7 @@ function AnalysisStatusPipeline() {
   return (
     <div data-testid="analysis-pipeline" data-stage={info.stage} className="flex flex-wrap items-center gap-2">
       <span
-        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] font-semibold ${tone.bg} ${tone.border} ${tone.text}`}
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[12px] font-semibold ${tone.bg} ${tone.border} ${tone.text}`}
       >
         {ws.isAnalyzing && <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" />}
         <span className={`w-1.5 h-1.5 rounded-full ${tone.dot}`} aria-hidden="true" />
@@ -97,7 +97,7 @@ export function ChartAnalyserView() {
       <ModuleChartSlot structureOverlay={structureOverlay} onStructureZoneSelect={setSelectedZone} />
       <div className="flex flex-col h-full min-h-0">
         <div className="shrink-0 px-3 py-2 border-b border-line space-y-2">
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-accent">
+          <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-accent">
             <Activity className="w-3.5 h-3.5" aria-hidden="true" />
             Chart Analyser
           </span>

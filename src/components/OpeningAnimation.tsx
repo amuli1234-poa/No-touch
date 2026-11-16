@@ -64,7 +64,7 @@ export function OpeningAnimation({ onComplete }: OpeningAnimationProps) {
           <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-ink">
             DERIV AI SCANNER
           </h1>
-          <p className="text-[11px] sm:text-xs font-semibold uppercase tracking-[0.3em] text-accent">
+          <p className="text-[12px] sm:text-xs font-semibold uppercase tracking-[0.3em] text-accent">
             {current.label}
           </p>
         </div>
@@ -74,7 +74,7 @@ export function OpeningAnimation({ onComplete }: OpeningAnimationProps) {
         </div>
       </div>
 
-      <p className="absolute bottom-8 text-[10px] text-faint">
+      <p className="absolute bottom-8 text-[11px] text-faint">
         Live Deriv market data · Not financial advice
       </p>
     </div>

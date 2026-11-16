@@ -49,8 +49,8 @@ function LadderRow({ read }: { read: AlignmentTimeframeRead }) {
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
           <Icon className={`w-3.5 h-3.5 shrink-0 ${biasClass(read.bias)}`} aria-hidden="true" />
-          <span className="text-[11px] font-bold text-ink">{read.timeframe}</span>
-          <span className="text-[10px] uppercase tracking-wide text-faint">{ROLE_LABELS[read.role] ?? read.role}</span>
+          <span className="text-[12px] font-bold text-ink">{read.timeframe}</span>
+          <span className="text-[11px] uppercase tracking-wide text-faint">{ROLE_LABELS[read.role] ?? read.role}</span>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           {read.pullback && (
@@ -59,10 +59,10 @@ function LadderRow({ read }: { read: AlignmentTimeframeRead }) {
           {!read.agrees && !read.pullback && (
             <StatusPill label="Opposes" className="bg-panel text-faint border-line" />
           )}
-          <span className="text-[10px] font-mono text-faint">{Math.round(read.strength * 100)}%</span>
+          <span className="text-[11px] font-mono text-faint">{Math.round(read.strength * 100)}%</span>
         </div>
       </div>
-      <p className="text-[11px] text-muted leading-snug mt-1">{read.detail}</p>
+      <p className="text-[12px] text-muted leading-snug mt-1">{read.detail}</p>
     </div>
   );
 }
@@ -80,7 +80,7 @@ export function TimeframeAlignmentPanel({ analysis }: { analysis: AiInstrumentAn
         subtitle="Top-down multi-timeframe alignment read"
         icon={<Layers className="w-3.5 h-3.5" aria-hidden="true" />}
       >
-        <p className="text-[11px] text-faint py-2">
+        <p className="text-[12px] text-faint py-2">
           {analysis.rejectionReason ?? 'No timeframe alignment read for this instrument yet.'}
         </p>
       </SectionCard>
@@ -117,10 +117,10 @@ export function TimeframeAlignmentPanel({ analysis }: { analysis: AiInstrumentAn
 
       {read.contradictions.length > 0 && (
         <div className="mt-3 rounded-lg border border-line bg-panel px-3 py-2">
-          <p className="text-[10px] uppercase tracking-wide text-faint mb-1">Contradictions</p>
+          <p className="text-[11px] uppercase tracking-wide text-faint mb-1">Contradictions</p>
           <ul className="flex flex-col gap-1">
             {read.contradictions.map((c, i) => (
-              <li key={i} className="text-[11px] text-muted leading-snug">
+              <li key={i} className="text-[12px] text-muted leading-snug">
                 • {c}
               </li>
             ))}
@@ -128,26 +128,26 @@ export function TimeframeAlignmentPanel({ analysis }: { analysis: AiInstrumentAn
         </div>
       )}
 
-      <p className="text-[11px] text-muted leading-snug mt-3">
+      <p className="text-[12px] text-muted leading-snug mt-3">
         <span className="text-faint">Confirmation: </span>
         {read.requiredEntryConfirmation}
       </p>
-      <p className="text-[11px] text-muted leading-snug mt-1">
+      <p className="text-[12px] text-muted leading-snug mt-1">
         <span className="text-faint">Invalidation: </span>
         {read.invalidationCondition}
       </p>
 
       <div className="mt-3 rounded-lg border border-line bg-panel px-3 py-2">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[10px] uppercase tracking-wide text-faint">Learner hint</span>
+          <span className="text-[11px] uppercase tracking-wide text-faint">Learner hint</span>
           <StatusPill
             label={read.learner.reliable ? 'Reliable' : 'Unlearned'}
             className={read.learner.reliable ? 'bg-emerald-500/12 text-emerald-400 border-emerald-500/30' : 'bg-elevated text-muted border-line'}
           />
         </div>
-        <p className="text-[11px] text-muted leading-snug mt-1">{read.learner.note}</p>
+        <p className="text-[12px] text-muted leading-snug mt-1">{read.learner.note}</p>
         {read.falseSignalTimeframes.length > 0 && (
-          <p className="text-[11px] text-faint leading-snug mt-1">
+          <p className="text-[12px] text-faint leading-snug mt-1">
             False-signal timeframes: {read.falseSignalTimeframes.join(', ')}
           </p>
         )}
@@ -161,7 +161,7 @@ export function TimeframeAlignmentPanel({ analysis }: { analysis: AiInstrumentAn
           <StatTile label="R:R" value={read.trade.riskRewardRatio.toFixed(2)} />
         </div>
       ) : (
-        <p className="text-[11px] text-faint leading-snug mt-3">
+        <p className="text-[12px] text-faint leading-snug mt-3">
           No trade authorised — the ladder is not aligned enough to publish an entry.
         </p>
       )}

@@ -60,11 +60,11 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
           Wick<span className="text-accent-strong">Sentinel</span>
         </span>
         {showTagline ? (
-          <span className="block text-[10px] font-medium tracking-[0.02em] text-fg-5">
+          <span className="block text-[11px] font-medium tracking-[0.02em] text-fg-5">
             {BRAND.category}
           </span>
         ) : (
-          <span className="block text-[9.5px] font-semibold uppercase tracking-[0.18em] text-fg-5">
+          <span className="block text-[10.5px] font-semibold uppercase tracking-[0.18em] text-fg-5">
             Market Intelligence
           </span>
         )}

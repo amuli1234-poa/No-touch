@@ -37,18 +37,18 @@ export function ConfluenceView({ scanner }: ConfluenceViewProps) {
         </div>
         <div className="space-y-1">
           {verifiedEvidence.length === 0 && conflicts.length === 0 && (
-            <div className="text-[11px] text-faint py-2">
+            <div className="text-[12px] text-faint py-2">
               No validated trade — {analysis.rejectionReason ?? analysis.statusExplanation}
             </div>
           )}
           {verifiedEvidence.slice(0, 6).map((r, i) => (
-            <div key={i} className="text-[11px] text-muted leading-snug flex gap-1.5">
+            <div key={i} className="text-[12px] text-muted leading-snug flex gap-1.5">
               <span className="text-emerald-400 shrink-0">✓</span>
               <span>{r}</span>
             </div>
           ))}
           {conflicts.map((r, i) => (
-            <div key={`c${i}`} className="text-[11px] text-warn leading-snug flex gap-1.5">
+            <div key={`c${i}`} className="text-[12px] text-warn leading-snug flex gap-1.5">
               <span className="shrink-0">⚠</span>
               <span>{r}</span>
             </div>

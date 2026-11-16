@@ -56,10 +56,10 @@ function AccountLine({
       <span className="flex items-center gap-2 min-w-0">
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATE_DOT[account.state]}`} />
         <span className="min-w-0">
-          <span className="block truncate font-mono text-[12px] font-semibold text-ink">
+          <span className="block truncate font-mono text-[13px] font-semibold text-ink">
             {account.accountId}
           </span>
-          <span className="block text-[10px] text-faint">
+          <span className="block text-[11px] text-faint">
             {account.state === 'ok'
               ? lastUpdatedLabel(account.lastUpdated, now)
               : BALANCE_STATE_LABEL[account.state]}
@@ -67,7 +67,7 @@ function AccountLine({
         </span>
       </span>
       <span className="shrink-0 text-right">
-        <span className="block font-mono text-[12.5px] font-bold tabular-nums text-ink">
+        <span className="block font-mono text-[13.5px] font-bold tabular-nums text-ink">
           {formatMoney(account.balance, account.currency)}
         </span>
       </span>
@@ -96,14 +96,14 @@ function ModeGroup({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-2">
-        <span className={`text-[10px] font-bold uppercase tracking-wider ${accent}`}>{title}</span>
-        <span className="text-[11px] text-faint">
+        <span className={`text-[11px] font-bold uppercase tracking-wider ${accent}`}>{title}</span>
+        <span className="text-[12px] text-faint">
           {accounts.length} account{accounts.length === 1 ? '' : 's'}
         </span>
       </div>
 
       {accounts.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-line px-3 py-4 text-center text-[11px] text-faint">
+        <div className="rounded-lg border border-dashed border-line px-3 py-4 text-center text-[12px] text-faint">
           No {title.toLowerCase()} accounts
         </div>
       ) : (
@@ -122,8 +122,8 @@ function ModeGroup({
 
       {total && (
         <div className="flex items-baseline justify-between border-t border-line-soft pt-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-faint">Total</span>
-          <span className="font-mono text-[12px] font-bold tabular-nums text-ink">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-faint">Total</span>
+          <span className="font-mono text-[13px] font-bold tabular-nums text-ink">
             {formatMoney(total.total, total.currency)}
           </span>
         </div>
@@ -150,7 +150,7 @@ export function AccountsOverview() {
       type="button"
       onClick={() => void handleRefresh()}
       disabled={busy}
-      className="inline-flex items-center gap-1.5 h-8 px-2.5 text-[11px] font-medium text-muted bg-elevated border border-line rounded-lg hover:text-ink hover:border-accent/50 transition-colors disabled:opacity-60 cursor-pointer"
+      className="inline-flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium text-muted bg-elevated border border-line rounded-lg hover:text-ink hover:border-accent/50 transition-colors disabled:opacity-60 cursor-pointer"
     >
       <RefreshCw className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} aria-hidden="true" />
       Refresh
@@ -165,13 +165,13 @@ export function AccountsOverview() {
       right={refreshButton}
     >
       {status === 'loading' && accounts.length === 0 ? (
-        <div className="flex items-center justify-center gap-2 py-10 text-[12px] text-faint">
+        <div className="flex items-center justify-center gap-2 py-10 text-[13px] text-faint">
           <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
           Loading accounts…
         </div>
       ) : status === 'error' && accounts.length === 0 ? (
         <div className="flex flex-col items-center gap-2 py-8 text-center">
-          <p className="text-[12px] text-muted">
+          <p className="text-[13px] text-muted">
             {error === 'network' ? 'Network error' : 'Balance request failed'} — the figures are
             unavailable right now.
           </p>
@@ -179,7 +179,7 @@ export function AccountsOverview() {
         </div>
       ) : accounts.length === 0 ? (
         <div className="flex flex-col items-center gap-2 py-8 text-center">
-          <p className="text-[12px] text-muted">
+          <p className="text-[13px] text-muted">
             No accounts are authorized for this session. Re-authorize with Deriv to read balances.
           </p>
         </div>

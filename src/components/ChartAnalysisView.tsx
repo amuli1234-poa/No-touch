@@ -69,13 +69,13 @@ export function ChartAnalysisView() {
       <div className="flex flex-col h-full min-h-0">
         <div className="shrink-0 px-3 py-2 border-b border-line space-y-2">
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 text-[12px] font-bold text-ink">
+            <span className="inline-flex items-center gap-1.5 text-[13px] font-bold text-ink">
               <Crosshair className="w-4 h-4 text-accent" aria-hidden="true" />
               Chart Analysis
             </span>
             <span
               data-testid="chart-analysis-status"
-              className={`ml-auto inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[11px] font-semibold ${
+              className={`ml-auto inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[12px] font-semibold ${
                 isRunning
                   ? 'bg-accent/10 text-accent border-accent/30'
                   : hasRun
@@ -103,7 +103,7 @@ export function ChartAnalysisView() {
               onClick={ws.startAnalysis}
               disabled={!ws.canRunAnalysis || isRunning}
               data-testid="chart-analysis-run"
-              className="shrink-0 inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-accent text-white text-[12px] font-bold hover:bg-accent-soft active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
+              className="shrink-0 inline-flex items-center gap-1.5 h-9 px-3 rounded-lg bg-accent text-white text-[13px] font-bold hover:bg-accent-soft active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
             >
               {isRunning ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
@@ -122,7 +122,7 @@ export function ChartAnalysisView() {
                 onClick={() => ws.selectTimeframe(tf)}
                 aria-pressed={ws.timeframe === tf}
                 title={TIMEFRAME_ROLES[tf]}
-                className={`h-7 px-2.5 rounded-md text-[11px] font-semibold border cursor-pointer ${
+                className={`h-7 px-2.5 rounded-md text-[12px] font-semibold border cursor-pointer ${
                   ws.timeframe === tf
                     ? 'bg-accent text-white border-accent'
                     : 'bg-elevated text-muted border-line hover:text-ink'
@@ -131,7 +131,7 @@ export function ChartAnalysisView() {
                 {tf}
               </button>
             ))}
-            <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-faint">
+            <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-faint">
               <Activity className="w-3 h-3" aria-hidden="true" />
               {ws.selectedMarket ? ws.marketName : ws.selectedSymbol}
             </span>
@@ -145,24 +145,24 @@ export function ChartAnalysisView() {
               className="rounded-xl border border-accent/30 bg-accent/8 p-3"
             >
               <div className="flex items-center gap-2">
-                <span className="text-[11px] font-bold uppercase tracking-wide text-accent">
+                <span className="text-[12px] font-bold uppercase tracking-wide text-accent">
                   Opened from scanner
                 </span>
                 <button
                   type="button"
                   onClick={ws.clearChartAnalysisSetup}
-                  className="ml-auto text-[10px] font-semibold text-faint hover:text-ink cursor-pointer"
+                  className="ml-auto text-[11px] font-semibold text-faint hover:text-ink cursor-pointer"
                 >
                   Clear
                 </button>
               </div>
-              <p className="mt-1 text-[12px] text-ink leading-snug">
+              <p className="mt-1 text-[13px] text-ink leading-snug">
                 <span className="font-semibold">{origin.sourceLabel}</span> ·{' '}
                 {origin.displayName} {origin.direction} · {origin.modelLabel} ·{' '}
                 <span className="tabular-nums">{origin.score}/100</span>
               </p>
               {origin.entryModelLabel && (
-                <p className="mt-1 text-[11px] text-muted leading-snug">
+                <p className="mt-1 text-[12px] text-muted leading-snug">
                   Entry model selected: <span className="font-semibold text-ink">{origin.entryModelLabel}</span>
                 </p>
               )}
@@ -181,15 +181,15 @@ export function ChartAnalysisView() {
 
           {ws.report?.currentStructureSummary && (
             <div className="rounded-xl border border-line bg-panel p-3">
-              <div className="flex items-center gap-2 text-[12px] font-semibold text-ink">
+              <div className="flex items-center gap-2 text-[13px] font-semibold text-ink">
                 <RefreshCw className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
                 Current market read
               </div>
-              <p className="mt-1.5 text-[12px] text-muted leading-snug">
+              <p className="mt-1.5 text-[13px] text-muted leading-snug">
                 {ws.report.currentStructureSummary}
               </p>
               {ws.report.conditionExplanation && (
-                <p className="mt-1.5 text-[11px] text-faint leading-snug">
+                <p className="mt-1.5 text-[12px] text-faint leading-snug">
                   {ws.report.conditionExplanation}
                 </p>
               )}
@@ -198,10 +198,10 @@ export function ChartAnalysisView() {
 
           {selectedZone && (
             <div className="rounded-xl border border-accent/30 bg-accent/8 p-3">
-              <div className="text-[11px] font-bold uppercase tracking-wide text-accent">
+              <div className="text-[12px] font-bold uppercase tracking-wide text-accent">
                 Selected zone
               </div>
-              <p className="mt-1 text-[12px] text-muted leading-snug">
+              <p className="mt-1 text-[13px] text-muted leading-snug">
                 {selectedZone.sourceStructure} · {selectedZone.direction} ·{' '}
                 {formatRange(selectedZone.lowerPrice, selectedZone.upperPrice, ws.precision)}
               </p>

@@ -41,7 +41,7 @@ export function SectionCard({
               {title}
             </h3>
             {subtitle && (
-              <p className="text-[11px] text-muted leading-snug">{subtitle}</p>
+              <p className="text-[12px] text-muted leading-snug">{subtitle}</p>
             )}
           </div>
         </div>
@@ -65,13 +65,13 @@ export function StatTile({
 }) {
   return (
     <div className="bg-panel border border-line rounded-lg px-3 py-2.5">
-      <div className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">
         {label}
       </div>
       <div className={`text-sm font-bold font-mono tabular-nums mt-0.5 ${valueClass}`}>
         {value}
       </div>
-      {hint && <div className="text-[10px] text-faint mt-0.5">{hint}</div>}
+      {hint && <div className="text-[11px] text-faint mt-0.5">{hint}</div>}
     </div>
   );
 }
@@ -87,7 +87,7 @@ export function StatusPill({
 }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${className}`}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide border ${className}`}
     >
       {dotClass && <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />}
       {label}
@@ -134,7 +134,7 @@ export function EquitySparkline({
 }) {
   if (points.length < 2) {
     return (
-      <div className="text-[11px] text-faint py-6 text-center">
+      <div className="text-[12px] text-faint py-6 text-center">
         Not enough settled trades to plot an equity curve yet.
       </div>
     );
@@ -217,7 +217,7 @@ export function CheckRow({
   return (
     <div className="flex items-start gap-2 py-1.5 border-b border-line-soft last:border-0">
       <span
-        className={`mt-0.5 w-4 h-4 rounded-full shrink-0 inline-flex items-center justify-center text-[10px] font-bold ${
+        className={`mt-0.5 w-4 h-4 rounded-full shrink-0 inline-flex items-center justify-center text-[11px] font-bold ${
           ok
             ? 'bg-emerald-500/15 text-emerald-400'
             : 'bg-panel text-faint'
@@ -228,7 +228,7 @@ export function CheckRow({
       </span>
       <div className="min-w-0">
         <div className="text-xs font-semibold text-ink">{label}</div>
-        {detail && <div className="text-[11px] text-muted leading-snug">{detail}</div>}
+        {detail && <div className="text-[12px] text-muted leading-snug">{detail}</div>}
       </div>
     </div>
   );

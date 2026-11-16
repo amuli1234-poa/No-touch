@@ -29,8 +29,8 @@ const STATE_STYLE: Record<string, string> = {
 function PriceRow({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
   return (
     <div className="flex items-center justify-between gap-2 py-1">
-      <span className="text-[11px] text-muted">{label}</span>
-      <span className={`text-[11px] font-mono font-semibold ${valueClass ?? 'text-ink'}`}>{value}</span>
+      <span className="text-[12px] text-muted">{label}</span>
+      <span className={`text-[12px] font-mono font-semibold ${valueClass ?? 'text-ink'}`}>{value}</span>
     </div>
   );
 }
@@ -44,7 +44,7 @@ export function BosRetracementPanel({ analysis }: { analysis: AiInstrumentAnalys
         subtitle="Break of structure is a setup — not an entry trigger"
         icon={<Crosshair className="w-3.5 h-3.5" aria-hidden="true" />}
       >
-        <p className="text-[11px] text-faint py-2">{analysis.rejectionReason ?? 'No validated BOS setup for this instrument.'}</p>
+        <p className="text-[12px] text-faint py-2">{analysis.rejectionReason ?? 'No validated BOS setup for this instrument.'}</p>
       </SectionCard>
     );
   }
@@ -60,7 +60,7 @@ export function BosRetracementPanel({ analysis }: { analysis: AiInstrumentAnalys
       subtitle={`${readout.kind === 'REVERSAL' ? 'Reversal CHoCH / MSS' : 'Continuation BOS'} · dealing range locked to the protected swing`}
       icon={<Crosshair className="w-3.5 h-3.5" aria-hidden="true" />}
       right={
-        <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded border ${STATE_STYLE[state] ?? STATE_STYLE.WAITING_FOR_PULLBACK}`}>
+        <span className={`text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded border ${STATE_STYLE[state] ?? STATE_STYLE.WAITING_FOR_PULLBACK}`}>
           {BOS_SETUP_STATE_LABELS[state]}
         </span>
       }
@@ -70,7 +70,7 @@ export function BosRetracementPanel({ analysis }: { analysis: AiInstrumentAnalys
         <div className="rounded-lg border border-line bg-panel px-3 py-2.5">
           <div className="flex items-center gap-2 mb-1.5">
             <Layers className="w-3.5 h-3.5 text-faint" aria-hidden="true" />
-            <span className="text-[11px] font-bold text-ink">Dealing Range</span>
+            <span className="text-[12px] font-bold text-ink">Dealing Range</span>
             <StatusPill
               label={readout.position}
               className="ml-auto bg-elevated text-muted border-line"
@@ -89,7 +89,7 @@ export function BosRetracementPanel({ analysis }: { analysis: AiInstrumentAnalys
         <div className="rounded-lg border border-line bg-panel px-3 py-2.5">
           <div className="flex items-center gap-2 mb-1.5">
             <Crosshair className="w-3.5 h-3.5 text-faint" aria-hidden="true" />
-            <span className="text-[11px] font-bold text-ink">
+            <span className="text-[12px] font-bold text-ink">
               {isRise ? 'Discount' : 'Premium'} Entry Zone
             </span>
           </div>
@@ -104,7 +104,7 @@ export function BosRetracementPanel({ analysis }: { analysis: AiInstrumentAnalys
               <PriceRow label="FVG overlap" value={entryZone.fvgOverlap ? 'Yes' : 'No'} />
             </>
           ) : (
-            <p className="text-[11px] text-faint">No retracement zone in play.</p>
+            <p className="text-[12px] text-faint">No retracement zone in play.</p>
           )}
         </div>
       </div>
@@ -112,7 +112,7 @@ export function BosRetracementPanel({ analysis }: { analysis: AiInstrumentAnalys
       {/* Confirmation sequence */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
         <div className="rounded-lg border border-line bg-panel px-3 py-2">
-          <div className="text-[11px] font-bold text-ink mb-1">Confirmation sequence</div>
+          <div className="text-[12px] font-bold text-ink mb-1">Confirmation sequence</div>
           {sweep && <PriceRow label="Sweep extreme" value={formatPrice(sweep.extremePrice, p)} />}
           {rejection && (
             <PriceRow
@@ -127,13 +127,13 @@ export function BosRetracementPanel({ analysis }: { analysis: AiInstrumentAnalys
             />
           )}
           {!sweep && !rejection && !ltf && (
-            <p className="text-[11px] text-faint">Awaiting the sweep, rejection and lower-timeframe shift.</p>
+            <p className="text-[12px] text-faint">Awaiting the sweep, rejection and lower-timeframe shift.</p>
           )}
         </div>
 
         {/* Published trade geometry */}
         <div className="rounded-lg border border-line bg-panel px-3 py-2">
-          <div className="text-[11px] font-bold text-ink mb-1">
+          <div className="text-[12px] font-bold text-ink mb-1">
             {analysis.signal ? 'Published trade' : 'Trade locked until confirmed'}
           </div>
           {analysis.signal ? (
@@ -150,7 +150,7 @@ export function BosRetracementPanel({ analysis }: { analysis: AiInstrumentAnalys
               <StatTile label="R:R" value={analysis.signal.riskRewardRatio.toFixed(2)} />
             </div>
           ) : (
-            <p className="text-[11px] text-faint">
+            <p className="text-[12px] text-faint">
               {readout.rr !== null
                 ? `Estimated R:R ${readout.rr.toFixed(2)} — awaiting the final confirmation step.`
                 : 'No entry is manufactured before the full sequence confirms.'}
@@ -163,8 +163,8 @@ export function BosRetracementPanel({ analysis }: { analysis: AiInstrumentAnalys
       <div className="mt-3 rounded-lg border border-line bg-panel px-3 py-2">
         <div className="flex items-center gap-2 mb-1">
           <ListChecks className="w-3.5 h-3.5 text-faint" aria-hidden="true" />
-          <span className="text-[11px] font-bold text-ink">Evidence</span>
-          <span className="ml-auto text-[10px] text-faint font-mono">
+          <span className="text-[12px] font-bold text-ink">Evidence</span>
+          <span className="ml-auto text-[11px] text-faint font-mono">
             {readout.barsSinceBos} bar{readout.barsSinceBos === 1 ? '' : 's'} since BOS
           </span>
         </div>
@@ -173,7 +173,7 @@ export function BosRetracementPanel({ analysis }: { analysis: AiInstrumentAnalys
         ))}
       </div>
 
-      <div className="mt-3 flex items-start gap-2 text-[11px] text-muted">
+      <div className="mt-3 flex items-start gap-2 text-[12px] text-muted">
         <ShieldCheck className="w-3.5 h-3.5 mt-0.5 shrink-0 text-faint" aria-hidden="true" />
         <p className="leading-snug">
           {AI_STATUS_LABELS[analysis.status]} — {analysis.statusExplanation}

@@ -53,10 +53,10 @@ export function EntryModelPanel() {
   if (!decision) {
     return (
       <div className="rounded-xl border border-line bg-panel p-3">
-        <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-faint">
+        <div className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-wide text-faint">
           <Crosshair className="w-3.5 h-3.5" /> Entry Model AI
         </div>
-        <p className="mt-1 text-[11px] text-muted leading-snug">
+        <p className="mt-1 text-[12px] text-muted leading-snug">
           No qualified setup is available yet. The Entry Model AI only reports an entry when a
           strategy produces a valid opportunity — it never manufactures one.
         </p>
@@ -74,18 +74,18 @@ export function EntryModelPanel() {
   return (
     <div className="rounded-xl border border-line bg-panel p-3 space-y-2" data-testid="entry-model-panel">
       <div className="flex items-center gap-2">
-        <span className="text-[11px] font-bold uppercase tracking-wide text-accent flex items-center gap-1.5">
+        <span className="text-[12px] font-bold uppercase tracking-wide text-accent flex items-center gap-1.5">
           <Crosshair className="w-3.5 h-3.5" /> Entry Model AI
         </span>
         <span
-          className={`ml-auto rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${STATE_STYLE[decision.state]}`}
+          className={`ml-auto rounded-full border px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${STATE_STYLE[decision.state]}`}
         >
           {decision.state}
         </span>
       </div>
 
-      <p className="text-[12px] text-ink font-semibold leading-snug">{decision.modelLabel}</p>
-      <p className="text-[11px] text-muted leading-snug">
+      <p className="text-[13px] text-ink font-semibold leading-snug">{decision.modelLabel}</p>
+      <p className="text-[12px] text-muted leading-snug">
         {decision.marketName} · {decision.originatingStrategy} ·{' '}
         <span className="inline-flex items-center gap-1 text-ink">
           {dirIcon}
@@ -94,7 +94,7 @@ export function EntryModelPanel() {
       </p>
 
       {decision.combinedWith.length > 0 && (
-        <p className="text-[10px] text-faint leading-snug">
+        <p className="text-[11px] text-faint leading-snug">
           Reinforced by:{' '}
           {decision.combinedWith
             .map((k) => k.replace(/_/g, ' ').toLowerCase())
@@ -102,7 +102,7 @@ export function EntryModelPanel() {
         </p>
       )}
 
-      <div className="grid grid-cols-2 gap-2 text-[11px]">
+      <div className="grid grid-cols-2 gap-2 text-[12px]">
         <Row label="Watching zone" value={range(decision.watchingZone?.low ?? null, decision.watchingZone?.high ?? null, precision)} />
         <Row label="Entry area" value={range(decision.entryRange?.low ?? null, decision.entryRange?.high ?? null, precision)} />
         <Row label="Stop-loss" value={price(decision.stopLoss, precision)} />
@@ -114,15 +114,15 @@ export function EntryModelPanel() {
       </div>
 
       <div className="rounded-lg border border-line bg-app p-2">
-        <p className="text-[10px] font-bold uppercase tracking-wide text-faint flex items-center gap-1">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-faint flex items-center gap-1">
           <Target className="w-3 h-3" /> Required confirmation
         </p>
-        <p className="mt-0.5 text-[11px] text-muted leading-snug">{decision.requiredConfirmation}</p>
+        <p className="mt-0.5 text-[12px] text-muted leading-snug">{decision.requiredConfirmation}</p>
       </div>
 
       <div className="rounded-lg border border-line bg-app p-2">
-        <p className="text-[10px] font-bold uppercase tracking-wide text-faint">Why this model</p>
-        <p className="mt-0.5 text-[11px] text-muted leading-snug">{decision.explanation}</p>
+        <p className="text-[11px] font-bold uppercase tracking-wide text-faint">Why this model</p>
+        <p className="mt-0.5 text-[12px] text-muted leading-snug">{decision.explanation}</p>
       </div>
 
       {decision.model && <ModelPerformanceNote model={decision.model} />}
@@ -139,15 +139,15 @@ function ModelPerformanceNote({ model }: { model: EntryModelDecision['model'] })
   const perf = ws.entryModelAI.performance.find((p) => p.model === model);
   if (!perf || perf.sampleSize === 0) {
     return (
-      <p className="text-[10px] text-faint leading-snug">
+      <p className="text-[11px] text-faint leading-snug">
         No recorded outcomes for this model yet — performance updates as setups settle.
       </p>
     );
   }
   return (
     <div className="rounded-lg border border-line bg-app p-2">
-      <p className="text-[10px] font-bold uppercase tracking-wide text-faint">Recorded performance</p>
-      <p className="mt-0.5 text-[11px] text-muted leading-snug tabular-nums">
+      <p className="text-[11px] font-bold uppercase tracking-wide text-faint">Recorded performance</p>
+      <p className="mt-0.5 text-[12px] text-muted leading-snug tabular-nums">
         {perf.sampleSize} settled · {perf.wins}W/{perf.losses}L
         {perf.winRatePercent === null
           ? ' · win rate pending a larger sample'
@@ -161,8 +161,8 @@ function ModelPerformanceNote({ model }: { model: EntryModelDecision['model'] })
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col">
-      <span className="text-[9px] font-bold uppercase tracking-wide text-faint">{label}</span>
-      <span className="text-[11px] text-ink tabular-nums">{value}</span>
+      <span className="text-[10px] font-bold uppercase tracking-wide text-faint">{label}</span>
+      <span className="text-[12px] text-ink tabular-nums">{value}</span>
     </div>
   );
 }

@@ -54,7 +54,7 @@ function ScenarioCard({
   const accent = isBull ? 'text-emerald-400' : 'text-bear';
   return (
     <div className={`rounded-lg border px-2.5 py-2 ${cls}`}>
-      <div className={`flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide ${accent}`}>
+      <div className={`flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide ${accent}`}>
         {isBull ? (
           <ArrowUpRight className="w-3 h-3" aria-hidden="true" />
         ) : (
@@ -62,8 +62,8 @@ function ScenarioCard({
         )}
         {isBull ? 'Bullish scenario' : 'Bearish scenario'}
       </div>
-      <p className="mt-1 text-[11px] text-ink leading-snug">{scenario.summary}</p>
-      <div className="mt-1.5 space-y-0.5 text-[10px] font-mono text-faint">
+      <p className="mt-1 text-[12px] text-ink leading-snug">{scenario.summary}</p>
+      <div className="mt-1.5 space-y-0.5 text-[11px] font-mono text-faint">
         <div>
           <span className="text-muted">Trigger:</span> {scenario.trigger}
         </div>
@@ -94,11 +94,11 @@ export function MarketIntelligencePanel({ intelligence, precision }: MarketIntel
   if (!intelligence) {
     return (
       <div className="rounded-xl border border-line bg-panel px-3 py-3">
-        <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-muted">
+        <div className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-wide text-muted">
           <Brain className="w-3.5 h-3.5" aria-hidden="true" />
           Market Intelligence
         </div>
-        <p className="mt-1.5 text-[11px] text-faint">
+        <p className="mt-1.5 text-[12px] text-faint">
           Run the analysis to read the market before any setup is searched for.
         </p>
       </div>
@@ -111,10 +111,10 @@ export function MarketIntelligencePanel({ intelligence, precision }: MarketIntel
     <div className="rounded-xl border border-line bg-panel overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-line bg-surface">
         <Brain className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
-        <span className="text-[11px] font-bold uppercase tracking-wide text-ink">
+        <span className="text-[12px] font-bold uppercase tracking-wide text-ink">
           Market Intelligence
         </span>
-        <span className="ml-auto text-[10px] font-mono text-faint uppercase">
+        <span className="ml-auto text-[11px] font-mono text-faint uppercase">
           {intelligence.timeframe} · Phase 1
         </span>
       </div>
@@ -125,23 +125,23 @@ export function MarketIntelligencePanel({ intelligence, precision }: MarketIntel
           <span
             data-testid="intel-bias"
             data-bias={intelligence.bias}
-            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${bias!.cls}`}
+            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-bold uppercase tracking-wide ${bias!.cls}`}
           >
             <BiasIcon className="w-3 h-3" aria-hidden="true" />
             {bias!.label}
           </span>
           <span
-            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${CONDITION_STYLE[intelligence.condition]}`}
+            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-bold uppercase tracking-wide ${CONDITION_STYLE[intelligence.condition]}`}
           >
             <Activity className="w-3 h-3" aria-hidden="true" />
             {intelligence.condition}
           </span>
         </div>
-        <p className="text-[11px] text-muted leading-snug">{intelligence.conditionExplanation}</p>
+        <p className="text-[12px] text-muted leading-snug">{intelligence.conditionExplanation}</p>
 
         {/* Tradeability verdict */}
         {!intelligence.tradeable && (
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/8 px-2.5 py-2 text-[11px] text-warn">
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/8 px-2.5 py-2 text-[12px] text-warn">
             <span className="font-bold uppercase tracking-wide">No trade — </span>
             {intelligence.noTradeReason ?? 'No clean structural edge right now.'}
           </div>
@@ -150,13 +150,13 @@ export function MarketIntelligencePanel({ intelligence, precision }: MarketIntel
         {/* Key structural levels */}
         {intelligence.report.structuralLevels.length > 0 && (
           <div>
-            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-faint">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-faint">
               <Crosshair className="w-3 h-3" aria-hidden="true" />
               Key levels
             </div>
             <div className="mt-1 space-y-0.5">
               {intelligence.report.structuralLevels.slice(0, 5).map((lvl, i) => (
-                <div key={i} className="flex items-center justify-between text-[10px] font-mono">
+                <div key={i} className="flex items-center justify-between text-[11px] font-mono">
                   <span className={lvl.kind === 'support' ? 'text-emerald-400' : 'text-bear'}>
                     {lvl.label}
                   </span>
@@ -170,7 +170,7 @@ export function MarketIntelligencePanel({ intelligence, precision }: MarketIntel
         {/* Strongest zones */}
         {topZones.length > 0 && (
           <div>
-            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-faint">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-faint">
               <Radar className="w-3 h-3" aria-hidden="true" />
               Strongest zones
             </div>
@@ -178,7 +178,7 @@ export function MarketIntelligencePanel({ intelligence, precision }: MarketIntel
               {topZones.map((zone) => (
                 <div
                   key={zone.id}
-                  className={`rounded-md border px-2 py-1 text-[10px] font-mono ${zoneTone(zone)}`}
+                  className={`rounded-md border px-2 py-1 text-[11px] font-mono ${zoneTone(zone)}`}
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-bold uppercase">
@@ -200,12 +200,12 @@ export function MarketIntelligencePanel({ intelligence, precision }: MarketIntel
         {/* Liquidity objectives */}
         {intelligence.report.liquidityObjectives.length > 0 && (
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-wide text-faint">
+            <div className="text-[11px] font-bold uppercase tracking-wide text-faint">
               Liquidity objectives
             </div>
             <div className="mt-1 space-y-0.5">
               {intelligence.report.liquidityObjectives.slice(0, 4).map((pool) => (
-                <div key={pool.id} className="flex items-center justify-between text-[10px] font-mono">
+                <div key={pool.id} className="flex items-center justify-between text-[11px] font-mono">
                   <span className={pool.swept ? 'text-faint line-through' : 'text-muted'}>
                     {pool.side === 'above' ? 'Buy-side' : 'Sell-side'} ({pool.distanceAtr.toFixed(1)}× ATR)
                   </span>

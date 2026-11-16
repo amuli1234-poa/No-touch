@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -9,18 +9,19 @@
     <meta property="og:description" content="See Beyond the Candles. Understand the Market. Structured market scanning and analytical intelligence for synthetic indices." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="theme-color" content="#060b16" />
+    <meta name="theme-color" content="#0068b5" />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script>
       /* Resolve the theme before first paint so there is no flash of the wrong
-         palette. Dark is the default; a stored choice overrides it. */
+         palette. Light is the default (matches the reatech360.com design);
+         a stored choice overrides it. */
       (function () {
         try {
           var stored = localStorage.getItem('ws-theme');
-          var theme = stored === 'light' || stored === 'dark' ? stored : 'dark';
+          var theme = stored === 'light' || stored === 'dark' ? stored : 'light';
           var root = document.documentElement;
           root.dataset.theme = theme;
           root.style.colorScheme = theme;

@@ -44,7 +44,7 @@ function PlatformStatusStrip() {
       className="grid grid-cols-2 lg:grid-cols-4 gap-3"
     >
       <div className="bg-surface border border-line rounded-xl px-3 py-2.5">
-        <div className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">
           Deriv connection
         </div>
         <div
@@ -56,18 +56,18 @@ function PlatformStatusStrip() {
         </div>
       </div>
       <div className="bg-surface border border-line rounded-xl px-3 py-2.5">
-        <div className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">
           Eligible markets
         </div>
         <div className="text-sm font-bold font-mono text-ink mt-0.5">
           {eligible.length}
-          <span className="text-[10px] font-normal text-faint ml-1">
+          <span className="text-[11px] font-normal text-faint ml-1">
             ({jump} Jump · {step} Step)
           </span>
         </div>
       </div>
       <div className="bg-surface border border-line rounded-xl px-3 py-2.5">
-        <div className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">
           Automatic scanning
         </div>
         <div
@@ -77,7 +77,7 @@ function PlatformStatusStrip() {
         </div>
       </div>
       <div className="bg-surface border border-line rounded-xl px-3 py-2.5">
-        <div className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">
           Active setups
         </div>
         <div className="text-sm font-bold font-mono text-ink mt-0.5">
@@ -117,10 +117,10 @@ export function DashboardView() {
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-faint">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-faint">
                 {ws.marketFamily} · {ws.selectedSymbol}
               </span>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-panel border border-line text-muted font-bold">
+              <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-panel border border-line text-muted font-bold">
                 {ws.timeframe}
               </span>
             </div>
@@ -147,7 +147,7 @@ export function DashboardView() {
 
           <div className="flex flex-wrap items-end gap-4 sm:gap-6 shrink-0">
             <div className="text-right">
-              <div className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">
                 Current Price
               </div>
               <div className="font-mono text-2xl sm:text-3xl font-extrabold tabular-nums text-ink">
@@ -200,7 +200,7 @@ export function DashboardView() {
             <button
               type="button"
               onClick={() => ws.navigate('scanner')}
-              className="text-[11px] font-semibold text-accent hover:text-accent-soft cursor-pointer"
+              className="text-[12px] font-semibold text-accent hover:text-accent-soft cursor-pointer"
             >
               Full scanner
             </button>
@@ -237,7 +237,7 @@ export function DashboardView() {
           <button
             type="button"
             onClick={() => ws.navigate('trendlines')}
-            className="text-[11px] font-semibold text-accent hover:text-accent-soft cursor-pointer"
+            className="text-[12px] font-semibold text-accent hover:text-accent-soft cursor-pointer"
           >
             Open module
           </button>
@@ -371,7 +371,7 @@ export function DashboardView() {
                 </span>
               </div>
             )}
-            <p className="text-[11px] text-muted leading-relaxed">{ws.progressMessage}</p>
+            <p className="text-[12px] text-muted leading-relaxed">{ws.progressMessage}</p>
             <button
               type="button"
               onClick={() => ws.navigate('scanner')}
@@ -393,7 +393,7 @@ export function DashboardView() {
             <button
               type="button"
               onClick={() => ws.navigate('training')}
-              className="text-[11px] font-semibold text-accent hover:text-accent-soft cursor-pointer"
+              className="text-[12px] font-semibold text-accent hover:text-accent-soft cursor-pointer"
             >
               Open
             </button>
@@ -413,7 +413,7 @@ export function DashboardView() {
                   hint="Replayed chronologically"
                 />
               </div>
-              <p className="text-[11px] text-muted leading-relaxed">
+              <p className="text-[12px] text-muted leading-relaxed">
                 Out-of-sample results and per-model rankings are in the training dashboard. Entry
                 and stop-loss are locked; the take-profit adapts.
               </p>
@@ -451,7 +451,7 @@ export function DashboardView() {
           <button
             type="button"
             onClick={() => ws.navigate('history')}
-            className="text-[11px] font-semibold text-accent hover:text-accent-soft cursor-pointer"
+            className="text-[12px] font-semibold text-accent hover:text-accent-soft cursor-pointer"
           >
             View all
           </button>
@@ -476,14 +476,14 @@ export function DashboardView() {
                       {rec.displayName}
                     </span>
                   </div>
-                  <div className="text-[11px] text-muted font-mono">
+                  <div className="text-[12px] text-muted font-mono">
                     {rec.modelLabel} · {rec.timeframe} ·{' '}
                     <Clock className="inline w-3 h-3 -mt-0.5" />{' '}
                     {formatCandleTime(rec.createdAt / 1000)}
                   </div>
                 </div>
                 <span
-                  className={`text-[10px] font-bold px-2 py-0.5 rounded shrink-0 border ${
+                  className={`text-[11px] font-bold px-2 py-0.5 rounded shrink-0 border ${
                     rec.outcome === 'WIN'
                       ? 'bg-emerald-500/12 text-emerald-400 border-emerald-500/30'
                       : rec.outcome === 'LOSS'

@@ -120,7 +120,7 @@ export function VolatilitySelector({
             ) : (
               filteredGroups.map((group) => (
                 <div key={group.id} className="py-1">
-                  <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-faint">
+                  <div className="px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-faint">
                     {group.label}
                   </div>
                   <ul role="listbox" aria-label={group.label}>
@@ -149,7 +149,7 @@ export function VolatilitySelector({
                                 {market.displayName}
                               </span>
                               {isOneSecondVolatility(market) && (
-                                <span className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-bold bg-teal/15 text-teal border border-teal/25">
+                                <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal/15 text-teal border border-teal/25">
                                   1s
                                 </span>
                               )}
@@ -157,7 +157,7 @@ export function VolatilitySelector({
                             {active ? (
                               <Check className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                             ) : (
-                              <span className="text-[10px] font-mono text-faint shrink-0">
+                              <span className="text-[11px] font-mono text-faint shrink-0">
                                 {market.symbol}
                               </span>
                             )}

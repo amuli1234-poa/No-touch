@@ -21,13 +21,13 @@ export function TopBar() {
             Wick<span className="text-accent">Sentinel</span>
           </h1>
           <div className="flex items-center gap-2 mt-0.5 min-w-0">
-            <span className="text-[11px] font-medium text-muted truncate">
+            <span className="text-[12px] font-medium text-muted truncate">
               {ws.marketName}
             </span>
             <span className="hidden sm:inline text-line" aria-hidden="true">
               ·
             </span>
-            <span className="hidden sm:inline text-[11px] font-mono text-muted">
+            <span className="hidden sm:inline text-[12px] font-mono text-muted">
               {ws.timeframe}
             </span>
           </div>
@@ -37,7 +37,7 @@ export function TopBar() {
       <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
         {lifecycle && style && (
           <span
-            className={`hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${style.bg} ${style.text} ${style.border}`}
+            className={`hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide border ${style.bg} ${style.text} ${style.border}`}
           >
             <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
             {lifecycle.label}

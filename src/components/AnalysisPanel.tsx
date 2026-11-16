@@ -75,7 +75,7 @@ function ScoreBar({ label, value, max }: { label: string; value: number; max: nu
   const pct = Math.max(0, Math.min(100, (value / max) * 100));
   return (
     <div className="space-y-0.5">
-      <div className="flex justify-between text-[10px]">
+      <div className="flex justify-between text-[11px]">
         <span className="text-muted">{label}</span>
         <span className="font-mono text-ink">
           {value}/{max}
@@ -118,13 +118,13 @@ export function AnalysisPanel({
           <h2 className="text-xs font-bold uppercase tracking-wider text-ink">
             Price-Action Setup Analyser
           </h2>
-          <p className="text-[11px] text-faint truncate">
+          <p className="text-[12px] text-faint truncate">
             {marketName} ({symbol}) · {marketFamily} · {timeframe}
           </p>
         </div>
         <span
           data-testid="analysis-state-badge"
-          className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wide rounded border whitespace-nowrap shrink-0 ${runStateAccent(
+          className={`px-2 py-1 text-[11px] font-bold uppercase tracking-wide rounded border whitespace-nowrap shrink-0 ${runStateAccent(
             runState
           )}`}
         >
@@ -139,9 +139,9 @@ export function AnalysisPanel({
 
         {/* Analysis scope strip — describes the chart hierarchy, not a contract horizon */}
         {report && (
-          <div className="bg-panel border border-line rounded-lg px-3 py-2 flex flex-col gap-0.5 text-[11px]">
+          <div className="bg-panel border border-line rounded-lg px-3 py-2 flex flex-col gap-0.5 text-[12px]">
             <div className="flex items-center justify-between">
-              <span className="font-bold text-ink uppercase tracking-wide text-[10px]">
+              <span className="font-bold text-ink uppercase tracking-wide text-[11px]">
                 Chart Hierarchy
               </span>
               <span className="font-mono font-bold text-ink">
@@ -149,7 +149,7 @@ export function AnalysisPanel({
                 {report.multiTimeframe.setupTf} → {report.multiTimeframe.entryTf}
               </span>
             </div>
-            <span className="text-faint text-[10px]">{report.multiTimeframe.rationale}</span>
+            <span className="text-faint text-[11px]">{report.multiTimeframe.rationale}</span>
           </div>
         )}
 
@@ -226,12 +226,12 @@ export function AnalysisPanel({
                     >
                       {signal.direction === 'RISE' ? 'BUY RISE' : 'BUY FALL'}
                     </span>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold">
+                    <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold">
                       {signal.state.replace(/_/g, ' ')}
                     </span>
                   </div>
                   <span
-                    className={`font-mono tabular-nums text-[11px] font-bold px-2 py-0.5 rounded border ${qualityTierStyle(
+                    className={`font-mono tabular-nums text-[12px] font-bold px-2 py-0.5 rounded border ${qualityTierStyle(
                       signal.quality.tier
                     )}`}
                   >
@@ -241,7 +241,7 @@ export function AnalysisPanel({
 
                 <div className="grid grid-cols-2 gap-2 bg-surface/95 rounded-lg p-2.5 border border-line/90 font-mono tabular-nums">
                   <div>
-                    <div className="text-[10px] uppercase text-faint font-sans font-medium">
+                    <div className="text-[11px] uppercase text-faint font-sans font-medium">
                       Entry Reference
                     </div>
                     <div className="text-xs font-bold text-accent">
@@ -249,7 +249,7 @@ export function AnalysisPanel({
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px] uppercase text-faint font-sans font-medium">
+                    <div className="text-[11px] uppercase text-faint font-sans font-medium">
                       Structural Level
                     </div>
                     <div className="text-xs font-bold text-ink">
@@ -257,7 +257,7 @@ export function AnalysisPanel({
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px] uppercase text-faint font-sans font-medium">
+                    <div className="text-[11px] uppercase text-faint font-sans font-medium">
                       Target Reference (TP1 / TP2)
                     </div>
                     <div className="text-xs font-bold text-emerald-400">
@@ -266,7 +266,7 @@ export function AnalysisPanel({
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px] uppercase text-faint font-sans font-medium">
+                    <div className="text-[11px] uppercase text-faint font-sans font-medium">
                       Technical Invalidation
                     </div>
                     <div className="text-xs font-bold text-bear">
@@ -315,7 +315,7 @@ export function AnalysisPanel({
                 </div>
 
                 <div className="space-y-1.5 pt-0.5">
-                  <div className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-muted">
                     Technical Quality Breakdown
                   </div>
                   <ScoreBar label="Structure" value={signal.quality.structure} max={20} />
@@ -338,7 +338,7 @@ export function AnalysisPanel({
                   />
                 </div>
 
-                <p className="text-[11px] text-ink/90 leading-relaxed">
+                <p className="text-[12px] text-ink/90 leading-relaxed">
                   {signal.confirmationExplanation}
                 </p>
 
@@ -357,7 +357,7 @@ export function AnalysisPanel({
                   </button>
                 </div>
 
-                <div className="bg-surface/85 p-2 rounded border border-line text-[10px] text-muted leading-relaxed">
+                <div className="bg-surface/85 p-2 rounded border border-line text-[11px] text-muted leading-relaxed">
                   <strong>Execution Disclaimer:</strong> Targets and invalidation are technical
                   price-action references. This scanner identifies where and when price offers a
                   high-quality Rise or Fall entry — it does not prescribe a holding period.
@@ -375,31 +375,31 @@ export function AnalysisPanel({
                       ? 'SETUP INVALIDATED — WAIT'
                       : 'NO HIGH-QUALITY SETUP — WAITING FOR CONFIRMATION'}
                   </span>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-accent text-app font-bold shrink-0">
+                  <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-accent text-app font-bold shrink-0">
                     {report.signalStatus}
                   </span>
                 </div>
                 <p className="text-muted leading-relaxed">{report.entryTriggerText}</p>
-                <p className="text-[11px] text-faint">{report.invalidationText}</p>
+                <p className="text-[12px] text-faint">{report.invalidationText}</p>
                 {report.developingCandidate && (
                   <div className="mt-1 pt-2 border-t border-line-soft space-y-1">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-semibold text-ink">
+                      <span className="text-[12px] font-semibold text-ink">
                         Best developing candidate
                       </span>
-                      <span className="font-mono text-[11px] font-bold text-warn">
+                      <span className="font-mono text-[12px] font-bold text-warn">
                         {report.developingCandidate.score}/100
                       </span>
                     </div>
-                    <div className="text-[11px] text-muted">
+                    <div className="text-[12px] text-muted">
                       {report.developingCandidate.modelLabel} ·{' '}
                       {report.developingCandidate.direction} ·{' '}
                       {report.developingCandidate.condition.replace(/_/g, ' ')}
                     </div>
-                    <p className="text-[11px] text-faint">
+                    <p className="text-[12px] text-faint">
                       {report.developingCandidate.confirmationExplanation}
                     </p>
-                    <p className="text-[10px] text-faint">
+                    <p className="text-[11px] text-faint">
                       Below the 85-point publication gate — shown for transparency, not tradeable.
                     </p>
                   </div>
@@ -410,22 +410,22 @@ export function AnalysisPanel({
             {/* Market condition classification */}
             <section className="space-y-1.5 border border-line rounded-lg p-3">
               <div className="flex items-center justify-between gap-2">
-                <h3 className="text-[11px] font-bold uppercase tracking-wider text-ink">
+                <h3 className="text-[12px] font-bold uppercase tracking-wider text-ink">
                   Market Condition
                 </h3>
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-elevated text-ink">
+                <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-elevated text-ink">
                   {report.marketCondition.replace(/_/g, ' ')}
                 </span>
               </div>
-              <p className="text-[11px] text-muted">{report.conditionExplanation}</p>
+              <p className="text-[12px] text-muted">{report.conditionExplanation}</p>
               {report.overlays.range && (
                 <div className="mt-1.5 rounded-md border border-line-soft bg-elevated/60 p-2 space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-faint">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-faint">
                       M15 Sideways Range
                     </span>
                     <span
-                      className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                      className={`text-[11px] font-mono font-bold px-1.5 py-0.5 rounded ${
                         report.overlays.range.valid ? 'text-bull' : 'text-faint'
                       }`}
                     >
@@ -434,7 +434,7 @@ export function AnalysisPanel({
                         : 'INVALID'}
                     </span>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 text-[10px] font-mono">
+                  <div className="grid grid-cols-3 gap-2 text-[11px] font-mono">
                     <div>
                       <div className="text-bear">RESISTANCE</div>
                       <div className="text-ink">
@@ -454,12 +454,12 @@ export function AnalysisPanel({
                       </div>
                     </div>
                   </div>
-                  <p className="text-[10px] text-muted">
+                  <p className="text-[11px] text-muted">
                     Upper 25% = resistance area (FALL only) · middle 50% = no trade · lower 25%
                     = support area (RISE only).
                   </p>
                   {!report.overlays.range.valid && report.overlays.range.reason && (
-                    <p className="text-[10px] text-faint">{report.overlays.range.reason}</p>
+                    <p className="text-[11px] text-faint">{report.overlays.range.reason}</p>
                   )}
                 </div>
               )}
@@ -467,12 +467,12 @@ export function AnalysisPanel({
 
             {/* Model evaluation table — every model assessed for the current condition */}
             <section className="space-y-1.5 border border-line rounded-lg p-3">
-              <h3 className="text-[11px] font-bold uppercase tracking-wider text-ink">
+              <h3 className="text-[12px] font-bold uppercase tracking-wider text-ink">
                 Entry-Model Evaluation
               </h3>
               <div className="divide-y divide-line-soft">
                 {report.evaluatedModels.map((m) => (
-                  <div key={m.model} className="py-1.5 flex items-center gap-2 text-[11px]">
+                  <div key={m.model} className="py-1.5 flex items-center gap-2 text-[12px]">
                     <span className="w-7 shrink-0 font-mono font-bold text-ink text-center">
                       #{m.model.match(/MODEL_(\d+)/)?.[1] ?? '?'}
                     </span>
@@ -487,7 +487,7 @@ export function AnalysisPanel({
                       {m.score}/100
                     </span>
                     <span
-                      className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0 ${
+                      className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0 ${
                         m.qualified
                           ? 'bg-emerald-500/15 text-emerald-400'
                           : 'bg-elevated text-muted'
@@ -502,12 +502,12 @@ export function AnalysisPanel({
 
             {report.liquiditySweeps.length > 0 && (
               <section className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 space-y-1">
-                <div className="flex items-center gap-1.5 text-warn font-bold text-[11px]">
+                <div className="flex items-center gap-1.5 text-warn font-bold text-[12px]">
                   <Sparkles className="w-3.5 h-3.5 text-warn" />
                   <span>Liquidity Sweep Detected</span>
                 </div>
                 {report.liquiditySweeps.map((sw) => (
-                  <p key={sw.id} className="text-[11px] text-warn">
+                  <p key={sw.id} className="text-[12px] text-warn">
                     {sw.reason}
                   </p>
                 ))}
@@ -515,7 +515,7 @@ export function AnalysisPanel({
             )}
 
             <section className="space-y-1.5 border border-line rounded-lg p-3">
-              <h3 className="text-[11px] font-bold uppercase tracking-wider text-ink">
+              <h3 className="text-[12px] font-bold uppercase tracking-wider text-ink">
                 {signal ? 'Qualification Evidence' : 'Why Waiting'}
               </h3>
               <ul className="space-y-1 text-muted list-disc pl-4">
@@ -524,7 +524,7 @@ export function AnalysisPanel({
                 ))}
               </ul>
               {report.htfConflictNote && (
-                <div className="mt-2 flex items-start gap-1.5 p-2 rounded bg-amber-500/10 border border-amber-500/30 text-warn text-[11px]">
+                <div className="mt-2 flex items-start gap-1.5 p-2 rounded bg-amber-500/10 border border-amber-500/30 text-warn text-[12px]">
                   <ShieldAlert className="w-3.5 h-3.5 shrink-0 mt-0.5" aria-hidden="true" />
                   <span>{report.htfConflictNote}</span>
                 </div>
@@ -534,17 +534,17 @@ export function AnalysisPanel({
             {/* Structure, momentum and optional indicators */}
             <section className="space-y-2 border border-line rounded-lg p-3">
               <div className="flex flex-wrap items-center justify-between gap-1.5">
-                <h3 className="text-[11px] font-bold uppercase tracking-wider text-ink">
+                <h3 className="text-[12px] font-bold uppercase tracking-wider text-ink">
                   Structure &amp; Momentum
                 </h3>
-                <span className="font-mono text-[10px] text-faint whitespace-nowrap">
+                <span className="font-mono text-[11px] text-faint whitespace-nowrap">
                   {formatCandleTime(report.confirmedBarTime)}
                 </span>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div className="p-2 rounded bg-panel border border-line-soft">
-                  <div className="text-[10px] text-faint uppercase">Directional Bias</div>
+                  <div className="text-[11px] text-faint uppercase">Directional Bias</div>
                   <div
                     className={`font-bold flex items-center gap-1 mt-0.5 ${directionColorClass(
                       report.overallDirection
@@ -560,7 +560,7 @@ export function AnalysisPanel({
                   </div>
                 </div>
                 <div className="p-2 rounded bg-panel border border-line-soft">
-                  <div className="text-[10px] text-faint uppercase">Setup Quality</div>
+                  <div className="text-[11px] text-faint uppercase">Setup Quality</div>
                   <div className="font-bold text-ink mt-0.5">{report.setupQuality}</div>
                 </div>
               </div>
@@ -578,16 +578,16 @@ export function AnalysisPanel({
                     {report.momentum.directionalEfficiency}
                   </span>
                 </div>
-                <p className="text-[11px] text-muted pt-0.5">{report.momentum.summary}</p>
+                <p className="text-[12px] text-muted pt-0.5">{report.momentum.summary}</p>
               </div>
 
               {report.indicators.notes.length > 0 && (
                 <div className="pt-1 space-y-1">
-                  <div className="text-[10px] font-bold uppercase tracking-wide text-muted">
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-muted">
                     Optional Indicator Confirmation
                   </div>
                   {report.indicators.notes.map((n, i) => (
-                    <p key={i} className="text-[11px] text-faint">
+                    <p key={i} className="text-[12px] text-faint">
                       {n}
                     </p>
                   ))}
@@ -597,7 +597,7 @@ export function AnalysisPanel({
 
             {/* Top-down hierarchy */}
             <section className="space-y-2 border border-line rounded-lg p-3">
-              <h3 className="text-[11px] font-bold uppercase tracking-wider text-ink">
+              <h3 className="text-[12px] font-bold uppercase tracking-wider text-ink">
                 Top-Down Hierarchy ({report.multiTimeframe.macroTf} →{' '}
                 {report.multiTimeframe.structuralTf} → {report.multiTimeframe.setupTf})
               </h3>
@@ -607,7 +607,7 @@ export function AnalysisPanel({
                   return (
                     <div
                       key={tf}
-                      className="py-1.5 flex items-center justify-between gap-2 text-[11px]"
+                      className="py-1.5 flex items-center justify-between gap-2 text-[12px]"
                     >
                       <span className="font-mono font-bold text-ink w-9 shrink-0">{tf}</span>
                       <span className="text-muted truncate flex-1">
@@ -628,14 +628,14 @@ export function AnalysisPanel({
 
             {/* Structural + multi-timeframe agreement summary */}
             <section className="space-y-2 border border-line rounded-lg p-3">
-              <h3 className="text-[11px] font-bold uppercase tracking-wider text-ink flex items-center gap-1.5">
+              <h3 className="text-[12px] font-bold uppercase tracking-wider text-ink flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-muted" aria-hidden="true" />
                 <span>Structural Evidence Summary</span>
               </h3>
-              <p className="text-[11px] text-muted leading-snug">
+              <p className="text-[12px] text-muted leading-snug">
                 {report.htfAlignmentSummary}
               </p>
-              <p className="text-[11px] text-faint leading-snug">
+              <p className="text-[12px] text-faint leading-snug">
                 Confluence factors describe structural and momentum agreement only. A setup stays
                 valid while its structure holds and is invalidated when its level breaks.
               </p>

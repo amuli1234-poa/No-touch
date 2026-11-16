@@ -80,7 +80,7 @@ export function RiskView() {
           <h1 className="text-[17px] font-bold tracking-tight text-ink leading-none">
             Risk Management &amp; Trade Execution AI
           </h1>
-          <p className="text-[11px] text-muted leading-none mt-1">
+          <p className="text-[12px] text-muted leading-none mt-1">
             Position sizing, stop validity and reward-to-risk gates for the current setup.
           </p>
         </div>
@@ -90,7 +90,7 @@ export function RiskView() {
         <h2 className="text-[13px] font-semibold text-ink">Account profile</h2>
         <div className="grid grid-cols-2 gap-3 mt-2 max-w-md">
           <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-muted">Account size</span>
+            <span className="text-[12px] text-muted">Account size</span>
             <input
               type="number"
               min={100}
@@ -103,7 +103,7 @@ export function RiskView() {
             />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-[11px] text-muted">Risk per trade (%)</span>
+            <span className="text-[12px] text-muted">Risk per trade (%)</span>
             <input
               type="number"
               min={0.1}
@@ -155,21 +155,21 @@ export function RiskView() {
           {plan.warnings.length > 0 ? (
             <ul className="mt-3 space-y-1">
               {plan.warnings.map((w) => (
-                <li key={w} className="flex items-start gap-1.5 text-[11px] text-[#d97706]">
+                <li key={w} className="flex items-start gap-1.5 text-[12px] text-[#d97706]">
                   <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" aria-hidden="true" />
                   {w}
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="mt-3 text-[11px] text-[#089981]">
+            <p className="mt-3 text-[12px] text-[#089981]">
               All execution guardrails satisfied for this setup.
             </p>
           )}
         </SectionCard>
       ) : (
         <Card className="p-4">
-          <p className="text-[12px] text-muted leading-snug">
+          <p className="text-[13px] text-muted leading-snug">
             No validated setup is published for {ws.marketName} on {ws.timeframe}. Run the Chart
             Analyser, or open a managed position, to produce a live risk plan. Position sizing and
             guardrails below remain active.
@@ -186,12 +186,12 @@ export function RiskView() {
           {RISK_RULES.map((r) => (
             <li key={r.id} className="rounded-lg border border-line bg-panel px-3 py-2">
               <div className="flex items-center gap-2">
-                <span className="text-[12px] font-semibold text-ink">{r.label}</span>
-                <span className={`ml-auto text-[10px] font-semibold ${TIER_CLASS[setup?.tier ?? 'DEVELOPING']}`}>
+                <span className="text-[13px] font-semibold text-ink">{r.label}</span>
+                <span className={`ml-auto text-[11px] font-semibold ${TIER_CLASS[setup?.tier ?? 'DEVELOPING']}`}>
                   active
                 </span>
               </div>
-              <p className="text-[11px] text-muted leading-snug mt-0.5">{r.detail}</p>
+              <p className="text-[12px] text-muted leading-snug mt-0.5">{r.detail}</p>
             </li>
           ))}
         </ul>

@@ -45,10 +45,10 @@ export function TopDownPanel({ analysis }: { analysis: TopDownAnalysis }) {
     >
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
-          <span className="text-[10px] uppercase tracking-wide text-faint">Alignment</span>
+          <span className="text-[11px] uppercase tracking-wide text-faint">Alignment</span>
           <span className="text-sm font-extrabold text-ink">{analysis.alignmentScore}/100</span>
           <span
-            className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+            className={`text-[11px] font-bold px-1.5 py-0.5 rounded border ${
               analysis.aligned
                 ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/12'
                 : 'text-warn border-amber-500/30 bg-amber-500/12'
@@ -57,7 +57,7 @@ export function TopDownPanel({ analysis }: { analysis: TopDownAnalysis }) {
             {analysis.aligned ? 'ALIGNED' : analysis.executionConfirmed ? 'PARTIAL' : 'NO M5 CONFIRMATION'}
           </span>
         </div>
-        <span className={`text-[11px] font-bold ${direction === 'RISE' ? 'text-emerald-400' : direction === 'FALL' ? 'text-rose-400' : 'text-muted'}`}>
+        <span className={`text-[12px] font-bold ${direction === 'RISE' ? 'text-emerald-400' : direction === 'FALL' ? 'text-rose-400' : 'text-muted'}`}>
           {direction === 'RISE' ? 'Entry direction: RISE' : direction === 'FALL' ? 'Entry direction: FALL' : 'No entry authorised'}
         </span>
       </div>
@@ -67,19 +67,19 @@ export function TopDownPanel({ analysis }: { analysis: TopDownAnalysis }) {
           const reads = analysis.reads.filter((r) => r.role === role);
           return (
             <div key={role} className="rounded-lg border border-line bg-panel px-3 py-2">
-              <div className="text-[10px] uppercase tracking-wide text-faint mb-1.5">{ROLE_LABEL[role]}</div>
+              <div className="text-[11px] uppercase tracking-wide text-faint mb-1.5">{ROLE_LABEL[role]}</div>
               {reads.length === 0 ? (
-                <p className="text-[11px] text-faint">No timeframe with enough confirmed data.</p>
+                <p className="text-[12px] text-faint">No timeframe with enough confirmed data.</p>
               ) : (
                 <div className="flex flex-col gap-1.5">
                   {reads.map((r) => (
                     <div key={r.timeframe} className="flex items-start gap-2">
-                      <span className="text-[10px] font-mono text-faint w-8 shrink-0 pt-0.5">{r.timeframe}</span>
-                      <span className={`flex items-center gap-1 text-[11px] font-bold shrink-0 pt-0.5 ${BIAS_CLASS[r.bias]}`}>
+                      <span className="text-[11px] font-mono text-faint w-8 shrink-0 pt-0.5">{r.timeframe}</span>
+                      <span className={`flex items-center gap-1 text-[12px] font-bold shrink-0 pt-0.5 ${BIAS_CLASS[r.bias]}`}>
                         <BiasIcon bias={r.bias} />
                         {BIAS_LABEL[r.bias]}
                       </span>
-                      <span className="text-[11px] text-muted leading-snug min-w-0">{r.detail}</span>
+                      <span className="text-[12px] text-muted leading-snug min-w-0">{r.detail}</span>
                     </div>
                   ))}
                 </div>
@@ -91,8 +91,8 @@ export function TopDownPanel({ analysis }: { analysis: TopDownAnalysis }) {
 
       {analysis.contradictions.length > 0 && (
         <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
-          <div className="text-[10px] uppercase tracking-wide text-warn mb-1">Timeframe contradictions (surfaced, never hidden)</div>
-          <ul className="text-[11px] text-muted leading-snug list-disc pl-4 space-y-0.5">
+          <div className="text-[11px] uppercase tracking-wide text-warn mb-1">Timeframe contradictions (surfaced, never hidden)</div>
+          <ul className="text-[12px] text-muted leading-snug list-disc pl-4 space-y-0.5">
             {analysis.contradictions.map((c) => (
               <li key={c}>{c}</li>
             ))}
@@ -101,7 +101,7 @@ export function TopDownPanel({ analysis }: { analysis: TopDownAnalysis }) {
       )}
 
       {analysis.insufficient && (
-        <p className="text-[11px] text-faint mt-3">
+        <p className="text-[12px] text-faint mt-3">
           {analysis.reads.length < 5
             ? 'Not enough confirmed timeframes for a trustworthy top-down read yet — no entry is fabricated from partial data.'
             : 'M5 has not committed to a direction yet — no entry is authorised until the execution timeframe does.'}

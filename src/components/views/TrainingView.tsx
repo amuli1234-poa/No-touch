@@ -86,7 +86,7 @@ function SegmentTable({ segments, title }: { segments: TrainingSegment[]; title:
     <div className="overflow-x-auto -mx-1">
       <table className="w-full text-left border-collapse min-w-[560px]">
         <thead>
-          <tr className="text-[10px] uppercase tracking-wide text-faint border-b border-line">
+          <tr className="text-[11px] uppercase tracking-wide text-faint border-b border-line">
             <th className="py-2 px-2 font-bold">{title}</th>
             <th className="py-2 px-2 font-bold text-right">Sample</th>
             <th className="py-2 px-2 font-bold text-right">Win Rate</th>
@@ -299,14 +299,14 @@ export function TrainingView() {
         {(progress.status !== 'IDLE' || progress.total > 0) && (
           <div className="mt-4">
             <div className="flex items-center justify-between gap-3 mb-1.5">
-              <span className={`text-[11px] font-bold uppercase tracking-wide ${statusTone}`}>
+              <span className={`text-[12px] font-bold uppercase tracking-wide ${statusTone}`}>
                 {progress.status}
                 {progress.total > 0 ? ` · ${progress.completed}/${progress.total}` : ''}
               </span>
-              <span className="text-[11px] font-mono text-faint">{progressPercent}%</span>
+              <span className="text-[12px] font-mono text-faint">{progressPercent}%</span>
             </div>
             <MeterBar value={progressPercent} className="bg-accent" height="h-1.5" />
-            <p className="text-[11px] text-muted leading-relaxed mt-2">{progress.message}</p>
+            <p className="text-[12px] text-muted leading-relaxed mt-2">{progress.message}</p>
           </div>
         )}
       </Card>
@@ -319,7 +319,7 @@ export function TrainingView() {
         >
           <div className="space-y-3">
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-wide text-faint mb-1.5">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-faint mb-1.5">
                 Markets (auto-selects every eligible Volatility Index when none chosen)
               </div>
               <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
@@ -331,7 +331,7 @@ export function TrainingView() {
                         key={m.symbol}
                         type="button"
                         onClick={() => ws.training.toggleSymbol(m.symbol)}
-                        className={`text-[10px] font-mono font-bold px-2 py-1 rounded border transition-colors cursor-pointer ${
+                        className={`text-[11px] font-mono font-bold px-2 py-1 rounded border transition-colors cursor-pointer ${
                           active
                             ? 'bg-accent/15 text-accent border-accent/40'
                             : 'bg-panel text-muted border-line hover:border-accent/30'
@@ -344,7 +344,7 @@ export function TrainingView() {
               </div>
             </div>
             <div>
-              <div className="text-[10px] font-bold uppercase tracking-wide text-faint mb-1.5">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-faint mb-1.5">
                 Timeframes
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -361,7 +361,7 @@ export function TrainingView() {
                             : [...selection.timeframes, tf.key]
                         )
                       }
-                      className={`text-[11px] font-bold px-2.5 py-1 rounded border transition-colors cursor-pointer ${
+                      className={`text-[12px] font-bold px-2.5 py-1 rounded border transition-colors cursor-pointer ${
                         active
                           ? 'bg-accent/15 text-accent border-accent/40'
                           : 'bg-panel text-muted border-line hover:border-accent/30'
@@ -373,7 +373,7 @@ export function TrainingView() {
                 })}
               </div>
             </div>
-            <p className="text-[10px] text-faint leading-relaxed">
+            <p className="text-[11px] text-faint leading-relaxed">
               {ws.training.eligibleMarkets().length} market(s) × {selection.timeframes.length}{' '}
               timeframe(s) will be replayed. Large runs pause between instruments so the UI stays
               responsive.
@@ -394,7 +394,7 @@ export function TrainingView() {
                   key={m.id}
                   type="button"
                   onClick={() => ws.training.toggleModel(m.id)}
-                  className={`w-full flex items-center gap-2 text-left text-[11px] font-semibold px-2.5 py-2 rounded border transition-colors cursor-pointer ${
+                  className={`w-full flex items-center gap-2 text-left text-[12px] font-semibold px-2.5 py-2 rounded border transition-colors cursor-pointer ${
                     active
                       ? 'bg-accent/10 text-ink border-accent/30'
                       : 'bg-panel text-muted border-line hover:border-accent/30'
@@ -463,7 +463,7 @@ export function TrainingView() {
                     key={tab}
                     type="button"
                     onClick={() => setSampleTab(tab)}
-                    className={`text-[10px] font-bold px-2.5 py-1 rounded border transition-colors cursor-pointer ${
+                    className={`text-[11px] font-bold px-2.5 py-1 rounded border transition-colors cursor-pointer ${
                       sampleTab === tab
                         ? 'bg-accent/15 text-accent border-accent/40'
                         : 'bg-panel text-muted border-line hover:border-accent/30'
@@ -477,14 +477,14 @@ export function TrainingView() {
           >
             <StatsGrid stats={aggregate.stats} />
             <div className="mt-4">
-              <div className="text-[10px] font-bold uppercase tracking-wide text-faint mb-1">
+              <div className="text-[11px] font-bold uppercase tracking-wide text-faint mb-1">
                 Equity Curve (cumulative R)
               </div>
               <EquitySparkline points={equityPoints} />
             </div>
             <ul className="mt-3 space-y-1">
               {aggregate.notes.map((note, i) => (
-                <li key={i} className="text-[11px] text-faint leading-relaxed flex gap-1.5">
+                <li key={i} className="text-[12px] text-faint leading-relaxed flex gap-1.5">
                   <span className="text-accent mt-0.5">•</span>
                   {note}
                 </li>
@@ -503,7 +503,7 @@ export function TrainingView() {
               <ul className="divide-y divide-line-soft">
                 {rankings.map((rank, idx) => (
                   <li key={rank.model} className="py-2.5 flex items-center gap-3">
-                    <span className="text-[11px] font-mono font-bold text-faint w-5 shrink-0">
+                    <span className="text-[12px] font-mono font-bold text-faint w-5 shrink-0">
                       {idx + 1}
                     </span>
                     <div className="min-w-0 flex-1">
@@ -513,7 +513,7 @@ export function TrainingView() {
                         </span>
                         {!rank.reportable && (
                           <span
-                            className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide text-warn"
+                            className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-warn"
                             title="Out-of-sample sample too small to trust"
                           >
                             <ShieldAlert className="w-3 h-3" aria-hidden="true" />
@@ -521,7 +521,7 @@ export function TrainingView() {
                           </span>
                         )}
                       </div>
-                      <div className="text-[10px] text-faint font-mono mt-0.5">
+                      <div className="text-[11px] text-faint font-mono mt-0.5">
                         {rank.stats.wins}W / {rank.stats.losses}L · avg {r(rank.stats.averageRr)} · DD{' '}
                         {rank.stats.maxDrawdownR.toFixed(2)}R
                       </div>
@@ -538,7 +538,7 @@ export function TrainingView() {
                       >
                         {rank.reportable ? pct(rank.stats.winRatePercent) : 'n/a'}
                       </div>
-                      <div className="text-[9px] text-faint uppercase tracking-wide">win rate</div>
+                      <div className="text-[10px] text-faint uppercase tracking-wide">win rate</div>
                     </div>
                   </li>
                 ))}
@@ -557,7 +557,7 @@ export function TrainingView() {
                     key={tab}
                     type="button"
                     onClick={() => setSegmentTab(tab)}
-                    className={`text-[10px] font-bold px-2.5 py-1 rounded border transition-colors cursor-pointer ${
+                    className={`text-[11px] font-bold px-2.5 py-1 rounded border transition-colors cursor-pointer ${
                       segmentTab === tab
                         ? 'bg-accent/15 text-accent border-accent/40'
                         : 'bg-panel text-muted border-line hover:border-accent/30'
@@ -580,7 +580,7 @@ export function TrainingView() {
             <div className="overflow-x-auto -mx-1">
               <table className="w-full text-left border-collapse min-w-[720px]">
                 <thead>
-                  <tr className="text-[10px] uppercase tracking-wide text-faint border-b border-line">
+                  <tr className="text-[11px] uppercase tracking-wide text-faint border-b border-line">
                     <th className="py-2 px-2 font-bold">Market</th>
                     <th className="py-2 px-2 font-bold">Model</th>
                     <th className="py-2 px-2 font-bold text-right">Dir</th>
@@ -598,7 +598,7 @@ export function TrainingView() {
                     .sort((a, b) => b.confirmedBarTime - a.confirmedBarTime)
                     .slice(0, 40)
                     .map((t) => (
-                      <tr key={t.id} className="text-[11px]">
+                      <tr key={t.id} className="text-[12px]">
                         <td className="py-2 px-2 text-ink font-semibold whitespace-nowrap">
                           {t.symbol} <span className="text-faint font-mono">{t.timeframe}</span>
                         </td>
@@ -626,7 +626,7 @@ export function TrainingView() {
                         </td>
                         <td className="py-2 px-2 text-right">
                           <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                            className={`text-[11px] font-bold px-2 py-0.5 rounded border ${
                               t.status === 'TARGET_HIT'
                                 ? 'bg-emerald-500/12 text-emerald-400 border-emerald-500/30'
                                 : t.status === 'STOP_HIT'

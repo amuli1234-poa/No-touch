@@ -185,7 +185,7 @@ export type SectionBadges = Partial<Record<AppSection, number>>;
 function Badge({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
-    <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-white text-[10px] font-bold">
+    <span className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-white text-[11px] font-bold">
       {count > 99 ? '99+' : count}
     </span>
   );
@@ -217,7 +217,7 @@ export function Sidebar({ active, onSelect, statusBadge, badges, hidden = false 
         </div>
         <div className="min-w-0">
           <div className="text-[15px] font-bold tracking-tight text-ink leading-none">Deriv AI</div>
-          <div className="text-[11px] font-medium text-muted leading-none mt-0.5">Scanner</div>
+          <div className="text-[12px] font-medium text-muted leading-none mt-0.5">Scanner</div>
         </div>
       </div>
 
@@ -252,7 +252,7 @@ export function Sidebar({ active, onSelect, statusBadge, badges, hidden = false 
                           type="button"
                           onClick={() => onSelect(s.key)}
                           aria-current={sub ? 'page' : undefined}
-                          className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[12px] font-medium transition-colors cursor-pointer ${
+                          className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] font-medium transition-colors cursor-pointer ${
                             sub ? 'bg-elevated text-accent' : 'text-faint hover:text-ink hover:bg-elevated/60'
                           }`}
                         >
@@ -308,12 +308,12 @@ export function MobileNav({ active, onSelect, badges, onOpenMenu }: MobileNavPro
                 <span className="relative">
                   {tab.icon}
                   {tabBadge > 0 && (
-                    <span className="absolute -top-1.5 -right-2 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-accent text-white text-[9px] font-bold">
+                    <span className="absolute -top-1.5 -right-2 inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-accent text-white text-[10px] font-bold">
                       {tabBadge > 9 ? '9+' : tabBadge}
                     </span>
                   )}
                 </span>
-                <span className="text-[9px] font-medium tracking-tight">{tab.shortLabel}</span>
+                <span className="text-[10px] font-medium tracking-tight">{tab.shortLabel}</span>
               </button>
             </li>
           );
@@ -326,7 +326,7 @@ export function MobileNav({ active, onSelect, badges, onOpenMenu }: MobileNavPro
             className="w-full flex flex-col items-center justify-center gap-1 py-2 min-h-[54px] text-faint cursor-pointer"
           >
             <Layers className="w-[18px] h-[18px]" />
-            <span className="text-[9px] font-medium tracking-tight">More</span>
+            <span className="text-[10px] font-medium tracking-tight">More</span>
           </button>
         </li>
       </ul>
@@ -353,14 +353,14 @@ export function MobileMenuSheet({
           <button
             type="button"
             onClick={onClose}
-            className="h-8 px-3 text-[12px] font-medium text-muted bg-elevated border border-line rounded-lg cursor-pointer"
+            className="h-8 px-3 text-[13px] font-medium text-muted bg-elevated border border-line rounded-lg cursor-pointer"
           >
             Close
           </button>
         </div>
         {MAIN_TABS.map((tab) => (
           <div key={tab.key} className="mb-3">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-faint px-1 pb-1">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-faint px-1 pb-1">
               {tab.label}
             </div>
             <ul className="space-y-0.5">

@@ -69,7 +69,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     showTestedZones: false,
   },
   compactChart: false,
-  theme: 'dark',
+  theme: 'light',
   accentMode: 'auto',
   soundEnabled: true,
   soundVolume: 70,

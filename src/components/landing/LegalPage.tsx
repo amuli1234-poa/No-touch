@@ -8,7 +8,7 @@ type LegalKind = 'privacy' | 'terms' | 'risk-disclaimer';
 const INDEPENDENCE_NOTICE = (
   <div className="flex items-start gap-3 rounded-[12px] border border-[var(--ws-hairline)] bg-surface px-4 py-3.5">
     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-tint-sky" />
-    <p className="text-[12.5px] leading-relaxed text-fg-4">
+    <p className="text-[13.5px] leading-relaxed text-fg-4">
       WickSentinel is an independent third-party market intelligence platform. It is not officially
       affiliated with, endorsed by, sponsored by or otherwise connected to Deriv. All product names
       and brands are the property of their respective owners.
@@ -132,7 +132,7 @@ export const LegalPage: React.FC<{ kind: LegalKind }> = ({ kind }) => {
         <h1 className="text-[30px] font-extrabold tracking-[-0.03em] text-fg-1 sm:text-[36px]">
           {doc.title}
         </h1>
-        <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-warning/25 bg-warning/[0.07] px-3 py-1 text-[11px] font-semibold text-tint-amber">
+        <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-warning/25 bg-warning/[0.07] px-3 py-1 text-[12px] font-semibold text-tint-amber">
           {doc.updated}
         </p>
         <p className="mt-5 max-w-2xl text-[14px] leading-relaxed text-fg-4">{doc.intro}</p>

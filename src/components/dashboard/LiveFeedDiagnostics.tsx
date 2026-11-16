@@ -46,7 +46,7 @@ export function LiveFeedDiagnostics() {
             )}
           </span>
           <div className="min-w-0">
-            <div className="text-[10px] font-bold uppercase tracking-widest text-faint">
+            <div className="text-[11px] font-bold uppercase tracking-widest text-faint">
               Live Deriv feed
             </div>
             <div className={`text-sm font-extrabold tracking-tight ${tone}`}>
@@ -73,7 +73,7 @@ export function LiveFeedDiagnostics() {
 
       <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
         <div>
-          <dt className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+          <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">
             Last tick
           </dt>
           <dd className="text-xs font-mono font-semibold text-ink mt-0.5">
@@ -81,7 +81,7 @@ export function LiveFeedDiagnostics() {
           </dd>
         </div>
         <div>
-          <dt className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+          <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">
             Last message
           </dt>
           <dd className="text-xs font-mono font-semibold text-ink mt-0.5">
@@ -89,7 +89,7 @@ export function LiveFeedDiagnostics() {
           </dd>
         </div>
         <div>
-          <dt className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+          <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">
             Reconnects
           </dt>
           <dd className="text-xs font-mono font-semibold text-ink mt-0.5">
@@ -97,7 +97,7 @@ export function LiveFeedDiagnostics() {
           </dd>
         </div>
         <div>
-          <dt className="text-[10px] font-semibold uppercase tracking-wide text-faint">
+          <dt className="text-[11px] font-semibold uppercase tracking-wide text-faint">
             Subscriptions
           </dt>
           <dd className="text-xs font-mono font-semibold text-ink mt-0.5">
@@ -106,20 +106,20 @@ export function LiveFeedDiagnostics() {
         </div>
       </dl>
 
-      <div className="flex items-center gap-2 mt-3 text-[11px] text-muted">
+      <div className="flex items-center gap-2 mt-3 text-[12px] text-muted">
         <RadioTower className="w-3.5 h-3.5 text-faint shrink-0" aria-hidden="true" />
         <span className="font-mono truncate">{diag.url}</span>
       </div>
 
       {diag.lastError && !healthy && (
-        <p className="mt-2 text-[11px] text-bear leading-relaxed break-words">
+        <p className="mt-2 text-[12px] text-bear leading-relaxed break-words">
           {diag.lastError.code ? `[${diag.lastError.code}] ` : ''}
           {diag.lastError.message}
         </p>
       )}
 
       {healthy && (
-        <p className="mt-2 text-[11px] text-muted leading-relaxed inline-flex items-center gap-1.5">
+        <p className="mt-2 text-[12px] text-muted leading-relaxed inline-flex items-center gap-1.5">
           <Activity className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
           Real Deriv market data — no simulated or cached prices are ever displayed.
         </p>

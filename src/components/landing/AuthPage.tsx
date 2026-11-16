@@ -73,7 +73,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ mode }) => {
       <main className="relative z-10 flex flex-1 items-center justify-center px-5 py-14 sm:px-8">
         <div className="w-full max-w-md">
           <div className="rounded-[18px] border border-[var(--ws-hairline)] bg-surface p-6 shadow-[var(--shadow-modal)] sm:p-8">
-            <span className="inline-flex items-center gap-2 rounded-full border border-[var(--ws-hairline)] bg-surface-deepest px-3 py-1 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-accent-soft">
+            <span className="inline-flex items-center gap-2 rounded-full border border-[var(--ws-hairline)] bg-surface-deepest px-3 py-1 text-[11.5px] font-semibold uppercase tracking-[0.14em] text-accent-soft">
               {copy.eyebrow}
             </span>
 
@@ -83,7 +83,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ mode }) => {
             <p className="mt-3 text-[13.5px] leading-relaxed text-fg-4">{copy.description}</p>
 
             {auth.status === 'loading' && (
-              <div className="mt-6 flex items-center gap-2 text-[12.5px] text-fg-5">
+              <div className="mt-6 flex items-center gap-2 text-[13.5px] text-fg-5">
                 <Loader2 className="h-4 w-4 animate-spin" /> Checking your session…
               </div>
             )}
@@ -105,12 +105,12 @@ export const AuthPage: React.FC<AuthPageProps> = ({ mode }) => {
               </WsButton>
             </div>
 
-            <p className="mt-4 text-[11.5px] leading-relaxed text-fg-5">
+            <p className="mt-4 text-[12.5px] leading-relaxed text-fg-5">
               You'll be redirected to Deriv to {mode === 'login' ? 'sign in' : 'register'}. WickSentinel
               never sees your Deriv password and requests no trading or payment permissions.
             </p>
 
-            <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-[var(--ws-hairline)] pt-5 text-[11.5px] text-fg-5">
+            <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-[var(--ws-hairline)] pt-5 text-[12.5px] text-fg-5">
               <span className="inline-flex items-center gap-1.5">
                 <ShieldCheck className="h-3.5 w-3.5 text-tint-teal" />
                 Official Deriv OAuth 2.0 + PKCE
@@ -122,7 +122,7 @@ export const AuthPage: React.FC<AuthPageProps> = ({ mode }) => {
             </div>
           </div>
 
-          <p className="mt-5 text-center text-[11px] leading-relaxed text-fg-6">
+          <p className="mt-5 text-center text-[12px] leading-relaxed text-fg-6">
             WickSentinel is an independent market intelligence platform and is not affiliated with or
             endorsed by Deriv.
           </p>
@@ -184,7 +184,7 @@ export const AuthErrorPage: React.FC<{ code: string }> = ({ code }) => {
       <main className="relative z-10 flex flex-1 items-center justify-center px-5 py-14 sm:px-8">
         <div className="w-full max-w-md">
           <div className="rounded-[18px] border border-[var(--ws-hairline)] bg-surface p-6 shadow-[var(--shadow-modal)] sm:p-8">
-            <span className="inline-flex items-center gap-2 rounded-full border border-danger/25 bg-danger/[0.07] px-3 py-1 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-danger">
+            <span className="inline-flex items-center gap-2 rounded-full border border-danger/25 bg-danger/[0.07] px-3 py-1 text-[11.5px] font-semibold uppercase tracking-[0.14em] text-danger">
               <AlertTriangle className="h-3.5 w-3.5" />
               Authentication error
             </span>
@@ -202,7 +202,7 @@ export const AuthErrorPage: React.FC<{ code: string }> = ({ code }) => {
               </WsButton>
             </div>
 
-            <div className="mt-6 flex items-center gap-1.5 border-t border-[var(--ws-hairline)] pt-5 text-[11.5px] text-fg-5">
+            <div className="mt-6 flex items-center gap-1.5 border-t border-[var(--ws-hairline)] pt-5 text-[12.5px] text-fg-5">
               <Lock className="h-3.5 w-3.5 text-tint-sky" />
               Error reference: <span className="font-mono text-fg-4">{code}</span>
             </div>

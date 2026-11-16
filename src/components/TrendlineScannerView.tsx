@@ -88,7 +88,7 @@ function SignalCard({
           >
             {signal.direction}
           </span>
-          <span className="text-[11px] text-muted truncate">{signal.displayName}</span>
+          <span className="text-[12px] text-muted truncate">{signal.displayName}</span>
         </div>
         <span className={`text-sm font-bold font-mono ${scoreColor(signal.score)}`}>
           {signal.score}/100
@@ -131,13 +131,13 @@ function SignalCard({
         />
       </div>
 
-      <div className="mt-2 text-[10px] text-faint leading-snug">
+      <div className="mt-2 text-[11px] text-faint leading-snug">
         <span className="text-accent font-semibold">M1 entry:</span> {signal.m1Confirmation}
       </div>
 
       <div className="mt-3 space-y-1">
         {signal.reasons.slice(0, 3).map((r, i) => (
-          <div key={i} className="text-[11px] text-muted leading-snug flex gap-1.5">
+          <div key={i} className="text-[12px] text-muted leading-snug flex gap-1.5">
             <span className="text-accent shrink-0">•</span>
             <span>{r}</span>
           </div>
@@ -148,7 +148,7 @@ function SignalCard({
         <button
           type="button"
           onClick={onFocus}
-          className="mt-3 inline-flex items-center gap-1.5 h-8 px-3 text-[11px] font-semibold text-app bg-accent rounded-md hover:bg-accent-soft cursor-pointer"
+          className="mt-3 inline-flex items-center gap-1.5 h-8 px-3 text-[12px] font-semibold text-app bg-accent rounded-md hover:bg-accent-soft cursor-pointer"
         >
           <LineChart className="w-3.5 h-3.5" aria-hidden="true" />
           View on chart
@@ -195,29 +195,29 @@ function AnalysisRow({
         <span className="flex items-center gap-1.5 shrink-0">
           {direction && (
             <span
-              className={`text-[11px] font-bold ${direction === 'RISE' ? 'text-emerald-400' : 'text-bear'}`}
+              className={`text-[12px] font-bold ${direction === 'RISE' ? 'text-emerald-400' : 'text-bear'}`}
             >
               {direction}
             </span>
           )}
-          <span className={`text-[11px] font-bold font-mono ${score !== null ? scoreColor(score) : 'text-faint'}`}>
+          <span className={`text-[12px] font-bold font-mono ${score !== null ? scoreColor(score) : 'text-faint'}`}>
             {score !== null ? `${score}/100` : '—'}
           </span>
         </span>
       </div>
 
       <div className="mt-1 flex items-center gap-2 flex-wrap">
-        <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${statusTone}`}>
+        <span className={`text-[11px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${statusTone}`}>
           {statusLabel}
         </span>
-        <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${CONDITION_STYLE[analysis.condition]}`}>
+        <span className={`text-[11px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${CONDITION_STYLE[analysis.condition]}`}>
           {analysis.condition.replace(/_/g, ' ')}
         </span>
-        {setupType && <span className="text-[10px] text-muted truncate">{setupType}</span>}
+        {setupType && <span className="text-[11px] text-muted truncate">{setupType}</span>}
       </div>
 
       {candidate && (
-        <div className="mt-1.5 grid grid-cols-3 gap-1.5 text-[10px] font-mono">
+        <div className="mt-1.5 grid grid-cols-3 gap-1.5 text-[11px] font-mono">
           <span className="text-faint">
             Entry <span className="text-ink">{formatPrice(candidate.entryPrice, precision)}</span>
           </span>
@@ -231,7 +231,7 @@ function AnalysisRow({
       )}
 
       {!candidate && (
-        <div className="mt-1 flex items-center gap-2 flex-wrap text-[10px] text-faint">
+        <div className="mt-1 flex items-center gap-2 flex-wrap text-[11px] text-faint">
           <span className="font-mono">{formatPrice(analysis.price, precision)}</span>
           <span>
             {analysis.trendlines.filter((l) => l.valid).length} valid line
@@ -277,9 +277,9 @@ function AlignmentBanner({ alignment }: { alignment: TrendlineAlignment }) {
               />
             )}
           </div>
-          <p className="text-[11px] text-muted leading-snug mt-1.5">{alignment.reason}</p>
+          <p className="text-[12px] text-muted leading-snug mt-1.5">{alignment.reason}</p>
           {alignment.continuationBos && (
-            <p className="text-[11px] text-emerald-400 leading-snug mt-1">
+            <p className="text-[12px] text-emerald-400 leading-snug mt-1">
               Continuation BOS: {alignment.continuationBos}
             </p>
           )}
@@ -301,11 +301,11 @@ function SetupZoneRow({ zone, precision }: { zone: TrendlineSetupZone; precision
         <span className={`text-xs font-bold ${isRise ? 'text-blue-400' : 'text-bear'}`}>
           {isRise ? 'WATCH RISE' : 'WATCH FALL'} · {zone.label}
         </span>
-        <span className="text-[10px] font-mono text-faint">
+        <span className="text-[11px] font-mono text-faint">
           {zone.distanceAtr.toFixed(1)}× ATR
         </span>
       </div>
-      <div className="mt-1 flex items-center gap-2 flex-wrap text-[10px] text-faint">
+      <div className="mt-1 flex items-center gap-2 flex-wrap text-[11px] text-faint">
         <span className="font-mono">
           {formatPrice(zone.lowerPrice, precision)} – {formatPrice(zone.upperPrice, precision)}
         </span>
@@ -324,7 +324,7 @@ function SetupZoneRow({ zone, precision }: { zone: TrendlineSetupZone; precision
         <span>·</span>
         <span className="capitalize">{zone.source.replace(/-/g, ' ')}</span>
       </div>
-      <p className="text-[11px] text-muted leading-snug mt-1">{zone.reason}</p>
+      <p className="text-[12px] text-muted leading-snug mt-1">{zone.reason}</p>
     </div>
   );
 }
@@ -465,7 +465,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
           <div className="text-xs font-semibold text-ink truncate">
             {scanner.progressMessage}
           </div>
-          <div className="text-[10px] text-faint">
+          <div className="text-[11px] text-faint">
             {scanner.targetMarketCount} markets · M30 → M15 → M10 → M7 → M6 → M5 → M4 → M3 → M2 → M1
             {scanner.lastScannedAt
               ? ` · last scan ${new Date(scanner.lastScannedAt).toLocaleTimeString()}`
@@ -473,7 +473,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
           </div>
         </div>
         {scanner.isScanning && (
-          <span className="text-[11px] font-mono text-accent shrink-0">
+          <span className="text-[12px] font-mono text-accent shrink-0">
             {scanner.scanProgress}%
           </span>
         )}
@@ -513,7 +513,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
                       <Icon className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
                       {TRENDLINE_MODEL_LABELS[id]}
                     </span>
-                    <span className="block text-[10px] text-faint leading-snug mt-0.5">
+                    <span className="block text-[11px] text-faint leading-snug mt-0.5">
                       {id === 'TRENDLINE_REJECTION'
                         ? 'Rejection at a validated trendline (touch + close back).'
                         : id === 'TRENDLINE_BREAKOUT'
@@ -530,7 +530,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
 
           <div className="mt-4 flex flex-wrap items-center gap-4">
             <div>
-              <div className="text-[11px] font-semibold text-ink mb-1.5">
+              <div className="text-[12px] font-semibold text-ink mb-1.5">
                 Minimum score gate: <span className="font-mono text-accent">{scanner.settings.minScore}</span>
               </div>
               <input
@@ -546,7 +546,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
             </div>
 
             <div>
-              <div className="text-[11px] font-semibold text-ink mb-1.5">Direction</div>
+              <div className="text-[12px] font-semibold text-ink mb-1.5">Direction</div>
               <div className="inline-flex items-center gap-0.5 p-0.5 bg-elevated rounded-lg border border-line">
                 {(['RISE', 'FALL', 'BOTH'] as const).map((d) => (
                   <button
@@ -554,7 +554,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
                     type="button"
                     onClick={() => scanner.setDirectionPreference(d)}
                     aria-pressed={scanner.settings.directionPreference === d}
-                    className={`h-7 px-3 text-[11px] font-bold rounded-md capitalize transition-colors cursor-pointer ${
+                    className={`h-7 px-3 text-[12px] font-bold rounded-md capitalize transition-colors cursor-pointer ${
                       scanner.settings.directionPreference === d
                         ? 'bg-accent text-app'
                         : 'text-muted hover:text-ink'
@@ -567,7 +567,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
             </div>
 
             <div>
-              <div className="text-[11px] font-semibold text-ink mb-1.5">Chart timeframe</div>
+              <div className="text-[12px] font-semibold text-ink mb-1.5">Chart timeframe</div>
               <div className="inline-flex items-center gap-0.5 p-0.5 bg-elevated rounded-lg border border-line">
                 {TIMEFRAMES.map((tf) => (
                   <button
@@ -575,7 +575,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
                     type="button"
                     onClick={() => scanner.setChartTimeframe(tf.key)}
                     aria-pressed={scanner.settings.chartTimeframe === tf.key}
-                    className={`h-7 px-2.5 text-[11px] font-bold rounded-md transition-colors cursor-pointer ${
+                    className={`h-7 px-2.5 text-[12px] font-bold rounded-md transition-colors cursor-pointer ${
                       scanner.settings.chartTimeframe === tf.key
                         ? 'bg-accent text-app'
                         : 'text-muted hover:text-ink'
@@ -593,7 +593,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
               type="button"
               onClick={() => scanner.setInclude1Sec(!scanner.settings.include1Sec)}
               aria-pressed={scanner.settings.include1Sec}
-              className={`h-8 px-3 text-[11px] font-semibold rounded-md border transition-colors cursor-pointer ${
+              className={`h-8 px-3 text-[12px] font-semibold rounded-md border transition-colors cursor-pointer ${
                 scanner.settings.include1Sec
                   ? 'bg-accent/12 text-accent border-accent/40'
                   : 'bg-elevated text-muted border-line hover:text-ink'
@@ -604,21 +604,21 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
             <button
               type="button"
               onClick={() => scanner.setAllModels(true)}
-              className="h-8 px-3 text-[11px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-accent/50 cursor-pointer"
+              className="h-8 px-3 text-[12px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-accent/50 cursor-pointer"
             >
               Enable all models
             </button>
             <button
               type="button"
               onClick={() => scanner.setAllModels(false)}
-              className="h-8 px-3 text-[11px] font-semibold text-muted bg-elevated border border-line rounded-md hover:text-ink cursor-pointer"
+              className="h-8 px-3 text-[12px] font-semibold text-muted bg-elevated border border-line rounded-md hover:text-ink cursor-pointer"
             >
               Disable all
             </button>
             <button
               type="button"
               onClick={scanner.resetSettings}
-              className="h-8 px-3 text-[11px] font-semibold text-muted bg-elevated border border-line rounded-md hover:text-ink cursor-pointer"
+              className="h-8 px-3 text-[12px] font-semibold text-muted bg-elevated border border-line rounded-md hover:text-ink cursor-pointer"
             >
               Reset module
             </button>
@@ -639,7 +639,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
             icon={<Layers className="w-3.5 h-3.5" aria-hidden="true" />}
           >
             {!chartAnalysis || chartAnalysis.timeframes.length === 0 ? (
-              <div className="text-[11px] text-faint py-4 text-center">
+              <div className="text-[12px] text-faint py-4 text-center">
                 Awaiting trendline analysis for this instrument…
               </div>
             ) : (
@@ -647,10 +647,10 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
                 {chartAnalysis.timeframes.map((tf) => (
                   <div key={tf.timeframe} className="rounded-lg border border-line bg-panel px-3 py-2">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-bold text-ink">{tf.label}</span>
-                      <span className="text-[10px] font-mono text-faint">{tf.timeframe}</span>
+                      <span className="text-[12px] font-bold text-ink">{tf.label}</span>
+                      <span className="text-[11px] font-mono text-faint">{tf.timeframe}</span>
                     </div>
-                    <p className={`text-[11px] leading-snug mt-1 ${toneClass(tf.tone)}`}>{tf.detail}</p>
+                    <p className={`text-[12px] leading-snug mt-1 ${toneClass(tf.tone)}`}>{tf.detail}</p>
                   </div>
                 ))}
               </div>
@@ -664,16 +664,16 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
             icon={<Crosshair className="w-3.5 h-3.5" aria-hidden="true" />}
           >
             {!chartAnalysis ? (
-              <div className="text-[11px] text-faint py-4 text-center">
+              <div className="text-[12px] text-faint py-4 text-center">
                 Awaiting trendline analysis for this instrument…
               </div>
             ) : chartAnalysis.alignment.tradableDirection === null ? (
-              <div className="text-[11px] text-warn py-4 text-center leading-snug">
+              <div className="text-[12px] text-warn py-4 text-center leading-snug">
                 WAIT — no dominant trend to align with. Zones appear once M15 structure confirms
                 an uptrend (RISE zones below price) or a downtrend (FALL zones above price).
               </div>
             ) : chartAnalysis.setupZones.length === 0 ? (
-              <div className="text-[11px] text-faint py-4 text-center leading-snug">
+              <div className="text-[12px] text-faint py-4 text-center leading-snug">
                 No valid trend-side zone within reach — the nearest support / demand / trendline
                 is too far from price to watch yet.
               </div>
@@ -693,11 +693,11 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
             icon={<Activity className="w-3.5 h-3.5" aria-hidden="true" />}
           >
             {!chartAnalysis ? (
-              <div className="text-[11px] text-faint py-4 text-center">
+              <div className="text-[12px] text-faint py-4 text-center">
                 Awaiting trendline analysis for this instrument…
               </div>
             ) : validLines.length === 0 && brokenLines.length === 0 ? (
-              <div className="text-[11px] text-faint py-4 text-center">
+              <div className="text-[12px] text-faint py-4 text-center">
                 No validated trendlines on the current M15 structure.
               </div>
             ) : (
@@ -708,11 +708,11 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
                       <span className="text-xs font-bold text-ink capitalize">
                         {line.broken ? 'Broken' : line.trend} {line.kind}
                       </span>
-                      <span className="text-[10px] font-mono text-faint">
+                      <span className="text-[11px] font-mono text-faint">
                         {line.touches} touch{line.touches === 1 ? '' : 'es'}
                       </span>
                     </div>
-                    <div className="text-[11px] text-muted leading-snug mt-1">{line.reason}</div>
+                    <div className="text-[12px] text-muted leading-snug mt-1">{line.reason}</div>
                   </div>
                 ))}
               </div>
@@ -737,7 +737,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
               <div className="text-center py-6">
                 <Gauge className="w-7 h-7 text-faint mx-auto mb-2" aria-hidden="true" />
                 <div className="text-xs font-semibold text-ink">No qualifying trendline setup</div>
-                <p className="text-[11px] text-faint mt-1 max-w-xs mx-auto leading-snug">
+                <p className="text-[12px] text-faint mt-1 max-w-xs mx-auto leading-snug">
                   {scanner.summary
                     ? scanner.summary.statusBanner
                     : 'Run a trendline scan to search all enabled markets.'}
@@ -754,7 +754,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
             icon={<ScanSearch className="w-3.5 h-3.5" aria-hidden="true" />}
           >
             {scanner.analyses.length === 0 ? (
-              <div className="text-[11px] text-faint py-4 text-center">
+              <div className="text-[12px] text-faint py-4 text-center">
                 No scan results yet.
               </div>
             ) : (
@@ -783,7 +783,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
                 <button
                   type="button"
                   onClick={scanner.clearHistory}
-                  className="text-[11px] font-semibold text-muted hover:text-ink cursor-pointer"
+                  className="text-[12px] font-semibold text-muted hover:text-ink cursor-pointer"
                 >
                   Clear
                 </button>
@@ -791,7 +791,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
             }
           >
             {scanner.history.length === 0 ? (
-              <div className="text-[11px] text-faint py-4 text-center">
+              <div className="text-[12px] text-faint py-4 text-center">
                 Confirmed trendline signals will be logged here.
               </div>
             ) : (
@@ -806,14 +806,14 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
                         {sig.displayName}
                       </span>
                       <span
-                        className={`text-[11px] font-bold font-mono ${
+                        className={`text-[12px] font-bold font-mono ${
                           sig.direction === 'RISE' ? 'text-emerald-400' : 'text-bear'
                         }`}
                       >
                         {sig.direction} · {sig.score}
                       </span>
                     </div>
-                    <div className="mt-1 flex items-center gap-2 flex-wrap text-[10px] text-faint">
+                    <div className="mt-1 flex items-center gap-2 flex-wrap text-[11px] text-faint">
                       <span>{TRENDLINE_MODEL_SHORT[sig.model]}</span>
                       <span>·</span>
                       <span className="font-mono">
@@ -843,7 +843,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
       {/* Methodology note */}
       <Card className="p-3 flex items-start gap-2.5">
         <Loader2 className="w-3.5 h-3.5 text-faint mt-0.5 shrink-0" aria-hidden="true" />
-        <p className="text-[11px] text-faint leading-snug">
+        <p className="text-[12px] text-faint leading-snug">
           The Trendline AI runs independently of the price-action engine and reuses the same live
           Deriv feed. Structure, swings and trendlines are built on confirmed M15 candles; the
           trend and market structure are read on M7; the rejection setup develops on M5; the M3

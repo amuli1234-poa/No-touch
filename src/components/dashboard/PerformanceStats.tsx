@@ -68,12 +68,12 @@ export function PerformanceStats() {
       </div>
 
       <div>
-        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-faint mb-2">
+        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-faint mb-2">
           <Award className="w-3 h-3" aria-hidden="true" />
           Best-performing entry models
         </div>
         {stats.ranked.length === 0 ? (
-          <p className="text-[11px] text-faint">
+          <p className="text-[12px] text-faint">
             Model performance appears once setups have settled.
           </p>
         ) : (
@@ -82,7 +82,7 @@ export function PerformanceStats() {
               const rate = (m.wins / m.total) * 100;
               return (
                 <li key={m.label}>
-                  <div className="flex items-center justify-between gap-2 text-[11px]">
+                  <div className="flex items-center justify-between gap-2 text-[12px]">
                     <span className="text-ink truncate">{m.label}</span>
                     <span className="font-mono text-muted shrink-0">
                       {m.wins}/{m.total} · {rate.toFixed(0)}%
@@ -102,7 +102,7 @@ export function PerformanceStats() {
         )}
       </div>
 
-      <div className="flex items-center gap-3 text-[10px] text-faint">
+      <div className="flex items-center gap-3 text-[11px] text-faint">
         <span className="inline-flex items-center gap-1">
           <TrendingUp className="w-3 h-3 text-emerald-400" aria-hidden="true" /> Rise setups
         </span>

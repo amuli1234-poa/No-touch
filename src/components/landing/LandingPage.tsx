@@ -37,7 +37,7 @@ const Hero: React.FC = () => (
     <div className="relative z-10 mx-auto w-full max-w-6xl px-5 pb-8 sm:px-8">
       <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:gap-10">
         <Reveal className="text-center lg:text-left">
-          <span className="inline-flex items-center gap-2 rounded-full border border-[var(--ws-hairline)] bg-surface/80 px-3.5 py-1.5 text-[11px] font-semibold text-fg-3">
+          <span className="inline-flex items-center gap-2 rounded-full border border-[var(--ws-hairline)] bg-surface/80 px-3.5 py-1.5 text-[12px] font-semibold text-fg-3">
             <span className="h-1.5 w-1.5 rounded-full bg-accent-cyan" />
             {BRAND.category}
           </span>
@@ -73,7 +73,7 @@ const Hero: React.FC = () => (
             </WsButton>
           </div>
 
-          <div className="mt-7 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[12px] text-fg-5 lg:justify-start">
+          <div className="mt-7 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[13px] text-fg-5 lg:justify-start">
             <span className="inline-flex items-center gap-2">
               <ShieldCheck className="h-4 w-4 text-tint-teal" />
               Structured, rules-based scanning
@@ -111,7 +111,7 @@ const TrustStrip: React.FC = () => (
       {TRUST.map((t) => (
         <span
           key={t.label}
-          className="inline-flex items-center gap-2 rounded-full border border-[var(--ws-hairline)] bg-surface/70 px-3.5 py-2 text-[12px] font-medium text-fg-3"
+          className="inline-flex items-center gap-2 rounded-full border border-[var(--ws-hairline)] bg-surface/70 px-3.5 py-2 text-[13px] font-medium text-fg-3"
         >
           <span className="text-accent-soft">{t.icon}</span>
           {t.label}
@@ -333,7 +333,7 @@ const WhyWickSentinel: React.FC = () => (
               {p.icon}
             </span>
             <h3 className="mt-4 text-[14.5px] font-bold tracking-tight text-fg-1">{p.title}</h3>
-            <p className="mt-2 text-[12.5px] leading-relaxed text-fg-4">{p.body}</p>
+            <p className="mt-2 text-[13.5px] leading-relaxed text-fg-4">{p.body}</p>
           </div>
         </Reveal>
       ))}
@@ -341,7 +341,7 @@ const WhyWickSentinel: React.FC = () => (
       <Reveal delay={300} as="article" className="h-full">
         <div className="flex h-full flex-col justify-center rounded-[16px] border border-accent/30 bg-accent/[0.08] p-5">
           <h3 className="text-[14.5px] font-bold tracking-tight text-fg-1">Independent by design</h3>
-          <p className="mt-2 text-[12.5px] leading-relaxed text-fg-3">
+          <p className="mt-2 text-[13.5px] leading-relaxed text-fg-3">
             WickSentinel is a third-party analytical tool. It is not affiliated with, endorsed by, or
             operated by Deriv or any broker.
           </p>
@@ -511,12 +511,12 @@ const LandingFooter: React.FC = () => (
       <div className="grid gap-10 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
         <div>
           <BrandLogo showTagline />
-          <p className="mt-4 max-w-xs text-[12.5px] leading-relaxed text-fg-4">
+          <p className="mt-4 max-w-xs text-[13.5px] leading-relaxed text-fg-4">
             {BRAND.tagline}
           </p>
           <a
             href="mailto:contact@wicksentinel.app"
-            className="mt-4 inline-flex items-center gap-2 text-[12.5px] font-medium text-fg-3 transition-colors hover:text-fg-1"
+            className="mt-4 inline-flex items-center gap-2 text-[13.5px] font-medium text-fg-3 transition-colors hover:text-fg-1"
           >
             <Mail className="h-3.5 w-3.5 text-accent-soft" />
             contact@wicksentinel.app
@@ -525,7 +525,7 @@ const LandingFooter: React.FC = () => (
 
         {FOOTER_NAV.map((col) => (
           <div key={col.heading}>
-            <h3 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-fg-5">
+            <h3 className="text-[12px] font-semibold uppercase tracking-[0.14em] text-fg-5">
               {col.heading}
             </h3>
             <ul className="mt-4 space-y-2.5">
@@ -547,7 +547,7 @@ const LandingFooter: React.FC = () => (
       <div className="mt-12 space-y-4 border-t border-[var(--ws-hairline)] pt-8">
         <div className="flex items-start gap-3 rounded-[12px] border border-warning/20 bg-warning/[0.06] px-4 py-3.5">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-tint-amber" />
-          <p className="text-[12px] leading-relaxed text-fg-3">
+          <p className="text-[13px] leading-relaxed text-fg-3">
             <span className="font-semibold text-fg-1">Risk warning.</span> Trading synthetic indices
             and related options is high risk and can result in the loss of all capital committed.
             WickSentinel provides analytical tools only. It does not provide financial advice, does
@@ -558,7 +558,7 @@ const LandingFooter: React.FC = () => (
 
         <div className="flex items-start gap-3 rounded-[12px] border border-[var(--ws-hairline)] bg-surface px-4 py-3.5">
           <Lock className="mt-0.5 h-4 w-4 shrink-0 text-tint-sky" />
-          <p className="text-[12px] leading-relaxed text-fg-4">
+          <p className="text-[13px] leading-relaxed text-fg-4">
             <span className="font-semibold text-fg-2">Independent platform.</span> WickSentinel
             is an independent third-party market intelligence platform. It is not officially
             affiliated with, endorsed by, sponsored by or otherwise connected to Deriv. All product
@@ -567,7 +567,7 @@ const LandingFooter: React.FC = () => (
           </p>
         </div>
 
-        <div className="flex flex-col gap-2 pt-2 text-[11.5px] text-fg-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 pt-2 text-[12.5px] text-fg-5 sm:flex-row sm:items-center sm:justify-between">
           <span>© {new Date().getFullYear()} WickSentinel. All rights reserved.</span>
           <span>{BRAND.category}</span>
         </div>

@@ -316,7 +316,7 @@ export function TradeView() {
         </div>
         <div className="min-w-0">
           <h2 className="text-[14px] font-extrabold tracking-tight text-ink leading-tight">Trade</h2>
-          <p className="text-[11px] text-muted leading-snug">
+          <p className="text-[12px] text-muted leading-snug">
             Place a trade by hand, or let the scanner trade the setups it finds.
           </p>
         </div>
@@ -327,8 +327,8 @@ export function TradeView() {
           <div className="flex items-start gap-2">
             <Lock className="w-4 h-4 text-warn shrink-0 mt-0.5" />
             <div>
-              <div className="text-[12px] font-bold text-ink">Connect your Deriv account</div>
-              <p className="text-[11px] text-muted mt-0.5">
+              <div className="text-[13px] font-bold text-ink">Connect your Deriv account</div>
+              <p className="text-[12px] text-muted mt-0.5">
                 Trading needs a live Deriv session. Sign in to load your accounts, stake and duration.
               </p>
             </div>
@@ -338,7 +338,7 @@ export function TradeView() {
 
       {loading && (
         <Card className="p-3">
-          <div className="text-[11px] text-muted">Loading your trade settings…</div>
+          <div className="text-[12px] text-muted">Loading your trade settings…</div>
         </Card>
       )}
 
@@ -346,7 +346,7 @@ export function TradeView() {
         <>
           {/* ------------------------------ mode ------------------------------ */}
           <Card className="p-3">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-faint mb-2">Mode</div>
+            <div className="text-[11px] font-bold uppercase tracking-wider text-faint mb-2">Mode</div>
             <div className="grid grid-cols-2 gap-2">
               <ModeButton
                 active={mode === 'manual'}
@@ -370,12 +370,12 @@ export function TradeView() {
               <div className="mt-2.5 flex items-start gap-2 rounded-lg border border-line-soft bg-panel px-2.5 py-2">
                 <Info className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5" />
                 <div className="min-w-0">
-                  <p className="text-[10.5px] text-muted leading-snug">
+                  <p className="text-[11.5px] text-muted leading-snug">
                     Automatic execution runs on your <strong className="text-ink">demo</strong> account in this
                     build. Real-money automation stays switched off until it is explicitly released.
                   </p>
                   {authenticated && (
-                    <p className="text-[10.5px] text-muted leading-snug mt-1.5 flex items-center gap-1.5">
+                    <p className="text-[11.5px] text-muted leading-snug mt-1.5 flex items-center gap-1.5">
                       <span
                         className={`inline-block w-1.5 h-1.5 rounded-full ${
                           scanner?.running ? 'bg-success' : 'bg-faint'
@@ -394,7 +394,7 @@ export function TradeView() {
                   )}
                   {scanner?.running && scanner.watchedMarkets.length > 0 && (
                     <p
-                      className="mt-1 text-[9px] text-faint font-mono truncate"
+                      className="mt-1 text-[10px] text-faint font-mono truncate"
                       title={scanner.watchedMarkets.map((market) => market.symbol).join(', ')}
                     >
                       Watching: {scanner.watchedMarkets.map((market) => market.symbol).join(', ')}
@@ -406,7 +406,7 @@ export function TradeView() {
                         .slice(-3)
                         .reverse()
                         .map((r, i) => (
-                          <li key={`${r.symbol}-${i}`} className="text-[10px] text-faint font-mono">
+                          <li key={`${r.symbol}-${i}`} className="text-[11px] text-faint font-mono">
                             {r.symbol}
                             {r.direction ? ` · ${r.direction}` : ''}
                             {r.confidence !== null ? ` · ${r.confidence.toFixed(2)}` : ''}
@@ -422,7 +422,7 @@ export function TradeView() {
 
           {/* ---------------------------- instrument -------------------------- */}
           <Card className="p-3">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-faint mb-2">Contract</div>
+            <div className="text-[11px] font-bold uppercase tracking-wider text-faint mb-2">Contract</div>
             <div className="grid grid-cols-2 gap-2">
               <ModeButton
                 active={family === 'rise_fall'}
@@ -441,7 +441,7 @@ export function TradeView() {
                 disabled={!authenticated || saving}
               />
             </div>
-            <div className="mt-2.5 text-[10.5px] text-muted">
+            <div className="mt-2.5 text-[11.5px] text-muted">
               Trading on{' '}
               <span className="font-bold text-ink">{ws.marketName || ws.selectedSymbol || '—'}</span>
               {ws.timeframe ? <span className="text-faint"> · {ws.timeframe}</span> : null}
@@ -450,11 +450,11 @@ export function TradeView() {
 
           {/* ------------------------------ stake ----------------------------- */}
           <Card className="p-3">
-            <label htmlFor="trade-stake" className="text-[10px] font-bold uppercase tracking-wider text-faint">
+            <label htmlFor="trade-stake" className="text-[11px] font-bold uppercase tracking-wider text-faint">
               Stake
             </label>
             <div className="mt-1.5 flex items-center gap-2">
-              <span className="text-[12px] font-bold text-muted">{currency}</span>
+              <span className="text-[13px] font-bold text-muted">{currency}</span>
               <input
                 id="trade-stake"
                 type="number"
@@ -468,7 +468,7 @@ export function TradeView() {
                 className="flex-1 min-w-0 bg-panel border border-line rounded-lg px-2.5 py-2 text-[13px] font-mono tabular-nums text-ink outline-none focus:border-accent/50"
               />
             </div>
-            <p className="text-[10px] text-faint mt-1">
+            <p className="text-[11px] text-faint mt-1">
               Minimum {MIN_STAKE}. {family === 'multipliers' ? 'Staked per contract.' : 'Fixed stake per trade.'}
             </p>
           </Card>
@@ -477,7 +477,7 @@ export function TradeView() {
           <Card className="p-3">
             {family === 'multipliers' ? (
               <>
-                <label htmlFor="trade-multiplier" className="text-[10px] font-bold uppercase tracking-wider text-faint">
+                <label htmlFor="trade-multiplier" className="text-[11px] font-bold uppercase tracking-wider text-faint">
                   Multiplier
                 </label>
                 <input
@@ -491,13 +491,13 @@ export function TradeView() {
                   disabled={!authenticated}
                   className="mt-1.5 w-full bg-panel border border-line rounded-lg px-2.5 py-2 text-[13px] font-mono tabular-nums text-ink outline-none focus:border-accent/50"
                 />
-                <p className="text-[10px] text-faint mt-1">
+                <p className="text-[11px] text-faint mt-1">
                   Multipliers contracts have no fixed duration; they run until you close them.
                 </p>
               </>
             ) : (
               <>
-                <label htmlFor="trade-duration" className="text-[10px] font-bold uppercase tracking-wider text-faint">
+                <label htmlFor="trade-duration" className="text-[11px] font-bold uppercase tracking-wider text-faint">
                   Duration
                 </label>
                 <div className="mt-1.5 flex items-center gap-2">
@@ -514,9 +514,9 @@ export function TradeView() {
                     disabled={!authenticated}
                     className="flex-1 min-w-0 bg-panel border border-line rounded-lg px-2.5 py-2 text-[13px] font-mono tabular-nums text-ink outline-none focus:border-accent/50 disabled:opacity-50"
                   />
-                  <span className="text-[12px] font-bold text-muted">minutes</span>
+                  <span className="text-[13px] font-bold text-muted">minutes</span>
                 </div>
-                <p className="text-[10px] text-faint mt-1">
+                <p className="text-[11px] text-faint mt-1">
                   Between {bounds.minMinutes} and {bounds.maxMinutes} minutes.
                 </p>
               </>
@@ -525,7 +525,7 @@ export function TradeView() {
 
           {/* ------------------------------ account --------------------------- */}
           <Card className="p-3">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-faint mb-2">Account</div>
+            <div className="text-[11px] font-bold uppercase tracking-wider text-faint mb-2">Account</div>
             <div className="grid grid-cols-2 gap-2">
               <StatTile
                 label="Demo"
@@ -547,7 +547,7 @@ export function TradeView() {
               />
             </div>
             {tradingAccount && (
-              <p className="text-[10px] text-faint mt-1.5">
+              <p className="text-[11px] text-faint mt-1.5">
                 Placing on <span className="font-bold text-ink">{tradingAccount.accountId}</span> (
                 {tradingAccount.mode}).
               </p>
@@ -557,14 +557,14 @@ export function TradeView() {
           {/* --------------------------- manual placement --------------------- */}
           {mode === 'manual' && (
             <Card className="p-3">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-faint mb-2">Direction</div>
+              <div className="text-[11px] font-bold uppercase tracking-wider text-faint mb-2">Direction</div>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setDirection('RISE')}
                   disabled={!authenticated}
                   aria-pressed={direction === 'RISE'}
-                  className={`flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-[12px] font-bold transition-colors cursor-pointer disabled:opacity-50 ${
+                  className={`flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-[13px] font-bold transition-colors cursor-pointer disabled:opacity-50 ${
                     direction === 'RISE'
                       ? 'border-success/45 bg-success/10 text-success'
                       : 'border-line bg-panel text-ink hover:border-success/30'
@@ -577,7 +577,7 @@ export function TradeView() {
                   onClick={() => setDirection('FALL')}
                   disabled={!authenticated}
                   aria-pressed={direction === 'FALL'}
-                  className={`flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-[12px] font-bold transition-colors cursor-pointer disabled:opacity-50 ${
+                  className={`flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-[13px] font-bold transition-colors cursor-pointer disabled:opacity-50 ${
                     direction === 'FALL'
                       ? 'border-danger/45 bg-danger/10 text-danger'
                       : 'border-line bg-panel text-ink hover:border-danger/30'
@@ -591,7 +591,7 @@ export function TradeView() {
                 type="button"
                 onClick={getQuote}
                 disabled={!canTrade || !direction || previewing}
-                className="mt-2.5 w-full flex items-center justify-center gap-1.5 rounded-lg border border-accent/40 bg-accent/8 text-accent px-3 py-2 text-[12px] font-bold hover:bg-accent/12 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="mt-2.5 w-full flex items-center justify-center gap-1.5 rounded-lg border border-accent/40 bg-accent/8 text-accent px-3 py-2 text-[13px] font-bold hover:bg-accent/12 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {previewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                 {previewing ? 'Getting price…' : 'Get price'}
@@ -599,7 +599,7 @@ export function TradeView() {
 
               {preview && (
                 <div className="mt-2.5 rounded-lg border border-line-soft bg-panel px-3 py-2.5">
-                  <dl className="space-y-1.5 text-[11.5px]">
+                  <dl className="space-y-1.5 text-[12.5px]">
                     <Row label="Stake" value={`${preview.askPrice.toFixed(2)} ${currency}`} />
                     <Row label="Payout" value={`${preview.payout.toFixed(2)} ${currency}`} />
                     <Row
@@ -609,7 +609,7 @@ export function TradeView() {
                     />
                     <Row label="Entry spot" value={preview.spot ? preview.spot.toFixed(2) : '—'} />
                   </dl>
-                  <p className="text-[10px] text-faint mt-2 leading-snug">
+                  <p className="text-[11px] text-faint mt-2 leading-snug">
                     A payout below 1.50× the stake is a poor return for the risk. This is a quote, not a
                     commitment — the price is re-taken when you confirm.
                   </p>
@@ -620,7 +620,7 @@ export function TradeView() {
                 type="button"
                 onClick={confirmTrade}
                 disabled={!canTrade || !direction || placing}
-                className="mt-2.5 w-full flex items-center justify-center gap-1.5 rounded-lg bg-accent text-on-accent px-3 py-2.5 text-[12.5px] font-extrabold hover:bg-accent-strong transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="mt-2.5 w-full flex items-center justify-center gap-1.5 rounded-lg bg-accent text-on-accent px-3 py-2.5 text-[13.5px] font-extrabold hover:bg-accent-strong transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {placing ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUpRight className="w-4 h-4" />}
                 {placing
@@ -634,8 +634,8 @@ export function TradeView() {
                 <div className="mt-2.5 flex items-start gap-2 rounded-lg border border-success/40 bg-success/8 px-3 py-2">
                   <CheckCircle2 className="w-4 h-4 text-success shrink-0 mt-0.5" />
                   <div>
-                    <div className="text-[11.5px] font-bold text-success">Trade placed</div>
-                    <p className="text-[10.5px] text-muted mt-0.5">
+                    <div className="text-[12.5px] font-bold text-success">Trade placed</div>
+                    <p className="text-[11.5px] text-muted mt-0.5">
                       Contract {placed.contractId ?? '—'}
                       {placed.payout !== null ? ` · payout ${placed.payout.toFixed(2)} ${currency}` : ''}. Track
                       it in Trade History.
@@ -648,8 +648,8 @@ export function TradeView() {
 
           {/* ------------------------------ summary --------------------------- */}
           <Card className="p-3">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-faint mb-2">Summary</div>
-            <dl className="space-y-1.5 text-[11.5px]">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-faint mb-2">Summary</div>
+            <dl className="space-y-1.5 text-[12.5px]">
               <Row label="Mode" value={mode === 'manual' ? 'Manual' : 'Automatic'} />
               <Row label="Contract" value={family === 'rise_fall' ? 'Rise / Fall' : 'Multipliers'} />
               {mode === 'manual' && <Row label="Direction" value={direction ?? '—'} />}
@@ -666,8 +666,8 @@ export function TradeView() {
               <div className="flex items-start gap-2">
                 <ShieldAlert className="w-4 h-4 text-danger shrink-0 mt-0.5" />
                 <div>
-                  <div className="text-[12px] font-bold text-danger">Automatic execution is stopped</div>
-                  <p className="text-[11px] text-muted mt-0.5">
+                  <div className="text-[13px] font-bold text-danger">Automatic execution is stopped</div>
+                  <p className="text-[12px] text-muted mt-0.5">
                     Risk controls stopped automatic execution after a loss limit was reached.
                   </p>
                   {tradingAccount?.mode === 'demo' && (
@@ -676,13 +676,13 @@ export function TradeView() {
                         <button
                           type="button"
                           onClick={() => setRiskResetConfirm(true)}
-                          className="rounded-md border border-danger/30 bg-danger/10 px-2.5 py-1.5 text-[10px] font-bold text-danger hover:bg-danger/15 cursor-pointer"
+                          className="rounded-md border border-danger/30 bg-danger/10 px-2.5 py-1.5 text-[11px] font-bold text-danger hover:bg-danger/15 cursor-pointer"
                         >
                           <span>Start new DEMO risk session</span>
                         </button>
                       ) : (
                         <div className="rounded-md border border-warn/30 bg-warn/10 p-2">
-                          <p className="text-[10px] text-muted">
+                          <p className="text-[11px] text-muted">
                             This resets the loss-streak baseline for {tradingAccount.accountId} and clears the
                             automatic stop. Old trades and audit records stay intact. Daily-loss, balance,
                             exposure, open-position, frequency and all other checks remain active.
@@ -692,7 +692,7 @@ export function TradeView() {
                               type="button"
                               onClick={() => void resetRiskSession()}
                               disabled={riskResetting}
-                              className="rounded-md border border-danger/30 bg-danger/10 px-2.5 py-1.5 text-[10px] font-bold text-danger hover:bg-danger/15 disabled:opacity-50 cursor-pointer"
+                              className="rounded-md border border-danger/30 bg-danger/10 px-2.5 py-1.5 text-[11px] font-bold text-danger hover:bg-danger/15 disabled:opacity-50 cursor-pointer"
                             >
                               <span>{riskResetting ? 'Starting…' : 'Confirm reset'}</span>
                             </button>
@@ -700,7 +700,7 @@ export function TradeView() {
                               type="button"
                               onClick={() => setRiskResetConfirm(false)}
                               disabled={riskResetting}
-                              className="rounded-md border border-line bg-surface px-2.5 py-1.5 text-[10px] font-bold text-muted hover:bg-elevated disabled:opacity-50 cursor-pointer"
+                              className="rounded-md border border-line bg-surface px-2.5 py-1.5 text-[11px] font-bold text-muted hover:bg-elevated disabled:opacity-50 cursor-pointer"
                             >
                               <span>Cancel</span>
                             </button>
@@ -717,7 +717,7 @@ export function TradeView() {
           <Card className="p-3">
             <div className="flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 text-warn shrink-0 mt-0.5" />
-              <p className="text-[10.5px] text-muted leading-snug">
+              <p className="text-[11.5px] text-muted leading-snug">
                 Trading is a real risk to your capital. Every trade is checked by the server's risk controls
                 before it is sent to Deriv.
               </p>
@@ -729,7 +729,7 @@ export function TradeView() {
       {notice && (
         <div
           role="status"
-          className={`rounded-lg border px-3 py-2 text-[11px] font-semibold ${
+          className={`rounded-lg border px-3 py-2 text-[12px] font-semibold ${
             notice.tone === 'ok'
               ? 'border-success/40 text-success bg-success/8'
               : notice.tone === 'error'
@@ -778,11 +778,11 @@ function ModeButton({
         active ? 'border-accent/40 bg-accent/10' : 'border-line bg-panel hover:border-accent/25'
       }`}
     >
-      <span className={`flex items-center gap-1.5 text-[11.5px] font-bold ${active ? 'text-accent' : 'text-ink'}`}>
+      <span className={`flex items-center gap-1.5 text-[12.5px] font-bold ${active ? 'text-accent' : 'text-ink'}`}>
         {icon}
         {label}
       </span>
-      <span className="text-[9.5px] text-faint leading-tight">{hint}</span>
+      <span className="text-[10.5px] text-faint leading-tight">{hint}</span>
     </button>
   );
 }

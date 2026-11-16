@@ -101,7 +101,7 @@ export function EntryModelAIView() {
               <Crosshair className="w-4 h-4 text-accent" aria-hidden="true" />
               <h1 className="text-lg font-extrabold tracking-tight text-ink">Entry Model AI</h1>
             </div>
-            <p className="text-[12px] text-muted leading-snug mt-1 max-w-2xl">
+            <p className="text-[13px] text-muted leading-snug mt-1 max-w-2xl">
               One universal AI selects the best entry model for every qualified setup produced by
               every specialised strategy — it never forces one model onto every strategy and only
               reports an entry when the strategy produced a valid opportunity.
@@ -125,7 +125,7 @@ export function EntryModelAIView() {
                   onClick={() => ws.selectTimeframe(tf)}
                   aria-pressed={ws.timeframe === tf}
                   title={TIMEFRAME_ROLES[tf]}
-                  className={`h-7 px-2.5 rounded-md text-[11px] font-semibold cursor-pointer ${
+                  className={`h-7 px-2.5 rounded-md text-[12px] font-semibold cursor-pointer ${
                     ws.timeframe === tf ? 'bg-accent text-white' : 'text-muted hover:text-ink'
                   }`}
                 >
@@ -152,7 +152,7 @@ export function EntryModelAIView() {
           icon={<Target className="w-4 h-4" />}
           right={
             <span
-              className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-bold uppercase tracking-wide ${STATE_STYLE[focused.state]}`}
+              className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] font-bold uppercase tracking-wide ${STATE_STYLE[focused.state]}`}
             >
               {focused.state}
             </span>
@@ -172,7 +172,7 @@ export function EntryModelAIView() {
             <select
               value={stateFilter}
               onChange={(e) => setStateFilter(e.target.value as EntryDecisionState | 'ALL')}
-              className="h-7 px-2 rounded-md bg-elevated border border-line text-[11px] text-ink cursor-pointer"
+              className="h-7 px-2 rounded-md bg-elevated border border-line text-[12px] text-ink cursor-pointer"
               aria-label="Filter by state"
             >
               <option value="ALL">All states</option>
@@ -186,7 +186,7 @@ export function EntryModelAIView() {
         }
       >
         {decisions.length === 0 ? (
-          <p className="text-[12px] text-muted leading-snug py-4 text-center">
+          <p className="text-[13px] text-muted leading-snug py-4 text-center">
             No opportunities to evaluate yet. The Entry Model AI only reports an entry when a
             specialised strategy produces a valid, qualified setup — it never manufactures one.
           </p>
@@ -207,15 +207,15 @@ export function EntryModelAIView() {
         icon={<Activity className="w-4 h-4" />}
       >
         {modelPerformance.length === 0 ? (
-          <p className="text-[12px] text-muted leading-snug py-2">
+          <p className="text-[13px] text-muted leading-snug py-2">
             No recorded outcomes yet. Performance updates automatically as ranked setups settle at
             TP or SL.
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-[11px]">
+            <table className="w-full text-[12px]">
               <thead>
-                <tr className="text-left text-faint uppercase tracking-wide text-[10px]">
+                <tr className="text-left text-faint uppercase tracking-wide text-[11px]">
                   <th className="py-1.5 pr-3">Model</th>
                   <th className="py-1.5 px-3 text-right">Settled</th>
                   <th className="py-1.5 px-3 text-right">W / L</th>
@@ -259,25 +259,25 @@ function DecisionCard({
   return (
     <div className="rounded-xl border border-line bg-panel p-3">
       <div className="flex items-center gap-2">
-        <span className={`inline-flex items-center gap-1 text-[12px] font-bold ${isRise ? 'text-[#089981]' : 'text-[#f23645]'}`}>
+        <span className={`inline-flex items-center gap-1 text-[13px] font-bold ${isRise ? 'text-[#089981]' : 'text-[#f23645]'}`}>
           {isRise ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
           {decision.direction}
         </span>
-        <span className="text-[12px] font-semibold text-ink truncate">{decision.marketName}</span>
-        <span className="text-[10px] text-faint">{decision.timeframe}</span>
+        <span className="text-[13px] font-semibold text-ink truncate">{decision.marketName}</span>
+        <span className="text-[11px] text-faint">{decision.timeframe}</span>
         <span
-          className={`ml-auto inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-bold uppercase tracking-wide ${STATE_STYLE[decision.state]}`}
+          className={`ml-auto inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] font-bold uppercase tracking-wide ${STATE_STYLE[decision.state]}`}
         >
           {decision.state}
         </span>
       </div>
 
-      <p className="mt-1.5 text-[12px] font-semibold text-accent">{decision.modelLabel}</p>
-      <p className="text-[10px] text-faint">
+      <p className="mt-1.5 text-[13px] font-semibold text-accent">{decision.modelLabel}</p>
+      <p className="text-[11px] text-faint">
         via {decision.originatingStrategy} · quality {decision.qualityScore}/100
       </p>
 
-      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] tabular-nums">
+      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] tabular-nums">
         <span className="flex justify-between gap-2">
           <span className="text-faint">Entry</span>
           <span className="text-ink">{price(decision.entryPrice, precision)}</span>
@@ -298,7 +298,7 @@ function DecisionCard({
         </span>
       </div>
 
-      <p className="mt-2 text-[10px] text-muted leading-snug line-clamp-2">{decision.explanation}</p>
+      <p className="mt-2 text-[11px] text-muted leading-snug line-clamp-2">{decision.explanation}</p>
     </div>
   );
 }
@@ -338,30 +338,30 @@ function DecisionDetail({
       </div>
 
       <div className="rounded-lg border border-line bg-app p-2.5">
-        <p className="text-[10px] font-bold uppercase tracking-wide text-faint">Required confirmation</p>
-        <p className="mt-0.5 text-[11px] text-muted leading-snug">{decision.requiredConfirmation}</p>
+        <p className="text-[11px] font-bold uppercase tracking-wide text-faint">Required confirmation</p>
+        <p className="mt-0.5 text-[12px] text-muted leading-snug">{decision.requiredConfirmation}</p>
       </div>
 
       <div className="rounded-lg border border-line bg-app p-2.5">
-        <p className="text-[10px] font-bold uppercase tracking-wide text-faint">Invalidation</p>
-        <p className="mt-0.5 text-[11px] text-muted leading-snug">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-faint">Invalidation</p>
+        <p className="mt-0.5 text-[12px] text-muted leading-snug">
           {price(decision.invalidation.level, precision)} — {decision.invalidation.condition}
         </p>
       </div>
 
       <div className="rounded-lg border border-line bg-app p-2.5">
-        <p className="text-[10px] font-bold uppercase tracking-wide text-faint">Why this model</p>
-        <p className="mt-0.5 text-[11px] text-muted leading-snug">{decision.explanation}</p>
+        <p className="text-[11px] font-bold uppercase tracking-wide text-faint">Why this model</p>
+        <p className="mt-0.5 text-[12px] text-muted leading-snug">{decision.explanation}</p>
       </div>
 
       {supported.length > 0 && (
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-wide text-faint mb-1">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-faint mb-1">
             Model evaluation
           </p>
           <ul className="space-y-1">
             {supported.slice(0, 6).map((e) => (
-              <li key={e.kind} className="flex items-start gap-2 text-[11px]">
+              <li key={e.kind} className="flex items-start gap-2 text-[12px]">
                 <span className="text-accent shrink-0 tabular-nums w-8">{e.supportScore}</span>
                 <span className="text-ink font-medium shrink-0">{e.label}</span>
                 <span className="text-muted leading-snug truncate">{e.reason}</span>

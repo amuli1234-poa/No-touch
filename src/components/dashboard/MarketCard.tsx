@@ -42,7 +42,7 @@ export function MarketCard({
         aria-hidden="true"
       />
       <div className="relative flex items-center justify-between gap-2">
-        <span className="text-[11px] font-bold text-ink truncate">{reading.displayName}</span>
+        <span className="text-[12px] font-bold text-ink truncate">{reading.displayName}</span>
         <span className="shrink-0 inline-flex items-center gap-1">
           {reading.activityLabel === 'Active' && (
             <span className="relative flex w-1.5 h-1.5">
@@ -50,7 +50,7 @@ export function MarketCard({
               <span className="relative inline-flex w-1.5 h-1.5 rounded-full bg-emerald-400" />
             </span>
           )}
-          <span className="text-[9px] font-semibold uppercase tracking-wide text-faint">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-faint">
             {reading.activityLabel}
           </span>
         </span>
@@ -60,13 +60,13 @@ export function MarketCard({
         <span className="font-mono text-sm font-bold tabular-nums text-ink">
           {formatPrice(reading.price, reading.precision)}
         </span>
-        <span className={`inline-flex items-center gap-1 text-[11px] font-bold font-mono ${tone}`}>
+        <span className={`inline-flex items-center gap-1 text-[12px] font-bold font-mono ${tone}`}>
           <DirIcon className="w-3.5 h-3.5" aria-hidden="true" />
           {change === null ? '—' : `${change >= 0 ? '+' : ''}${change.toFixed(3)}%`}
         </span>
       </div>
 
-      <div className="relative flex items-center gap-1 mt-1.5 text-[9px] text-faint font-mono">
+      <div className="relative flex items-center gap-1 mt-1.5 text-[10px] text-faint font-mono">
         <Activity className="w-2.5 h-2.5" aria-hidden="true" />
         {reading.volatilityPercent !== null
           ? `range ${reading.volatilityPercent.toFixed(2)}%`

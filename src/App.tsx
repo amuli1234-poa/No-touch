@@ -1281,7 +1281,7 @@ export default function App() {
             type="button"
             onClick={() => setFloatingScannerOpen(true)}
             data-testid="open-floating-scanner"
-            className="fixed bottom-20 right-4 lg:bottom-6 z-20 inline-flex items-center gap-1.5 h-10 px-3.5 rounded-full bg-accent text-white text-[12px] font-semibold shadow-lg hover:bg-accent-soft active:scale-[0.98] transition-all duration-150 cursor-pointer"
+            className="fixed bottom-20 right-4 lg:bottom-6 z-20 inline-flex items-center gap-1.5 h-10 px-3.5 rounded-full bg-accent text-white text-[13px] font-semibold shadow-lg hover:bg-accent-soft active:scale-[0.98] transition-all duration-150 cursor-pointer"
           >
             <Radar className="w-4 h-4" aria-hidden="true" />
             Scanner

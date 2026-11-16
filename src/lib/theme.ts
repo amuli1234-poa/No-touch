@@ -12,8 +12,8 @@ const STORAGE_KEY = 'ws-theme';
    -------------------------------------------------------------------------- */
 
 function readAppliedTheme(): Theme {
-  if (typeof document === 'undefined') return 'dark';
-  return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+  if (typeof document === 'undefined') return 'light';
+  return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
 }
 
 const listeners = new Set<() => void>();
@@ -45,7 +45,7 @@ export function setTheme(theme: Theme): void {
  * subscribes to changes rather than owning separate state.
  */
 export function useTheme(): { theme: Theme; setTheme: (t: Theme) => void; toggle: () => void } {
-  const theme = useSyncExternalStore(subscribe, readAppliedTheme, () => 'dark' as Theme);
+  const theme = useSyncExternalStore(subscribe, readAppliedTheme, () => 'light' as Theme);
 
   useEffect(() => {
     /* Keep the attribute and colour-scheme correct if a value was stored after

@@ -26,7 +26,7 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({ className = '', varian
         aria-checked={isDark}
         aria-label={`Switch to ${next} theme`}
         title={`Switch to ${next} theme`}
-        className={`inline-flex items-center gap-2 rounded-full border border-line bg-surface-raised px-3 py-1.5 text-[12px] font-semibold text-fg-4 transition-colors hover:border-line-strong hover:text-fg-1 ${className}`}
+        className={`inline-flex items-center gap-2 rounded-full border border-line bg-surface-raised px-3 py-1.5 text-[13px] font-semibold text-fg-4 transition-colors hover:border-line-strong hover:text-fg-1 ${className}`}
       >
         {isDark ? <Moon className="h-3.5 w-3.5 text-accent-soft" /> : <Sun className="h-3.5 w-3.5 text-accent-soft" />}
         {isDark ? 'Dark' : 'Light'}

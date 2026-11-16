@@ -58,10 +58,10 @@ export function SignalReasoningPanel({
             <DirIcon className={`w-3.5 h-3.5 ${dirColor}`} aria-hidden="true" />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-[11px] font-bold text-ink truncate">
+            <span className="block text-[12px] font-bold text-ink truncate">
               {isRise ? 'RISE' : 'FALL'} signal reasoning
             </span>
-            <span className="block text-[10px] text-faint truncate">
+            <span className="block text-[11px] text-faint truncate">
               Tap the chart levels to inspect
             </span>
           </span>
@@ -79,7 +79,7 @@ export function SignalReasoningPanel({
               <Level label="TP" value={levels.takeProfit} icon={<Target className="w-2.5 h-2.5" />} tone="text-emerald-400" />
             </div>
 
-            <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-accent/30 bg-accent/12 text-accent font-bold">
                 <Lock className="w-2.5 h-2.5" aria-hidden="true" /> ENTRY + SL LOCKED
               </span>
@@ -122,7 +122,7 @@ export function SignalReasoningPanel({
               </>
             )}
             {!detail && (
-              <p className="text-[10px] text-faint leading-relaxed">
+              <p className="text-[11px] text-faint leading-relaxed">
                 Entry and stop-loss are locked at publication and never move. Only the
                 take-profit adjusts as structure and momentum evolve.
               </p>
@@ -147,11 +147,11 @@ function Level({
 }) {
   return (
     <div className="bg-panel border border-line-soft rounded-md px-1.5 py-1">
-      <div className="flex items-center gap-1 text-[8.5px] font-semibold uppercase tracking-wide text-faint">
+      <div className="flex items-center gap-1 text-[9.5px] font-semibold uppercase tracking-wide text-faint">
         {icon}
         {label}
       </div>
-      <div className={`text-[11px] font-mono tabular-nums font-bold ${tone}`}>
+      <div className={`text-[12px] font-mono tabular-nums font-bold ${tone}`}>
         {value.toFixed(3)}
       </div>
     </div>
@@ -171,8 +171,8 @@ function Row({
     <div className="flex gap-2">
       <span className="mt-0.5 shrink-0">{icon}</span>
       <div className="min-w-0">
-        <div className="text-[10px] font-bold text-ink">{title}</div>
-        <div className="text-[10px] text-muted leading-relaxed">{body}</div>
+        <div className="text-[11px] font-bold text-ink">{title}</div>
+        <div className="text-[11px] text-muted leading-relaxed">{body}</div>
       </div>
     </div>
   );

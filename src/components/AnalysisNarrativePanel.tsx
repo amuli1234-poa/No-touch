@@ -29,7 +29,7 @@ function DirectionBadge() {
       <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
       <div className="min-w-0">
         <div className="text-xs font-bold uppercase tracking-wide">{dir.label}</div>
-        <div className="text-[10px] font-mono text-faint truncate" title={dir.ladder}>
+        <div className="text-[11px] font-mono text-faint truncate" title={dir.ladder}>
           {dir.ladder}
         </div>
       </div>
@@ -49,10 +49,10 @@ function SnapshotBanner() {
     >
       <Pin className="w-3.5 h-3.5 text-accent shrink-0 mt-0.5" aria-hidden="true" />
       <div className="min-w-0 flex-1">
-        <div className="text-[11px] font-bold text-accent uppercase tracking-wide">
+        <div className="text-[12px] font-bold text-accent uppercase tracking-wide">
           Reproducing scanner signal
         </div>
-        <div className="text-[11px] text-muted leading-snug">
+        <div className="text-[12px] text-muted leading-snug">
           {snap.source === 'CO-ANALYSIS' ? 'Co-analysis' : 'Scanner'} · {snap.displayName}{' '}
           {isRise ? 'RISE' : 'FALL'} · {snap.modelLabel} · {snap.qualityTotal}/100. Chart levels
           show the exact evidence recorded at scan time.
@@ -61,7 +61,7 @@ function SnapshotBanner() {
       <button
         type="button"
         onClick={ws.clearPendingSnapshot}
-        className="shrink-0 text-[10px] font-semibold text-faint hover:text-ink cursor-pointer"
+        className="shrink-0 text-[11px] font-semibold text-faint hover:text-ink cursor-pointer"
       >
         Clear
       </button>
@@ -85,7 +85,7 @@ export function AnalysisNarrativePanel() {
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-line-soft">
         <Brain className="w-4 h-4 text-accent" aria-hidden="true" />
         <h3 className="text-[13px] font-bold text-ink">AI chart analysis</h3>
-        <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-faint">
+        <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-faint">
           <Compass className="w-3 h-3" aria-hidden="true" />
           Top-down
         </span>
@@ -107,10 +107,10 @@ export function AnalysisNarrativePanel() {
                 key={section.heading}
                 className={`rounded-lg border px-3 py-2 ${TONE_STYLE[section.tone]}`}
               >
-                <div className="text-[11px] font-bold text-ink uppercase tracking-wide">
+                <div className="text-[12px] font-bold text-ink uppercase tracking-wide">
                   {section.heading}
                 </div>
-                <p className="text-[11px] text-muted leading-relaxed mt-0.5">{section.body}</p>
+                <p className="text-[12px] text-muted leading-relaxed mt-0.5">{section.body}</p>
               </div>
             ))}
           </div>

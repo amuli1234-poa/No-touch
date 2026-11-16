@@ -98,7 +98,7 @@ export function LiveScannerView({ scanner }: LiveScannerViewProps) {
         </span>
         <div>
           <h1 className="text-base font-extrabold tracking-tight text-ink leading-none">Live Market Scanner</h1>
-          <p className="text-[11px] text-muted leading-none mt-0.5">
+          <p className="text-[12px] text-muted leading-none mt-0.5">
             Continuous multi-market opportunity ranking · M30 → M15 → M10 → M7 → M6 → M5 → M4 → M3 → M2 → M1
           </p>
         </div>
@@ -106,7 +106,7 @@ export function LiveScannerView({ scanner }: LiveScannerViewProps) {
           <button
             type="button"
             onClick={() => setShowSettings((v) => !v)}
-            className="h-8 px-3 text-[11px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-accent/50 cursor-pointer"
+            className="h-8 px-3 text-[12px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-accent/50 cursor-pointer"
           >
             Controls
           </button>
@@ -114,7 +114,7 @@ export function LiveScannerView({ scanner }: LiveScannerViewProps) {
             type="button"
             onClick={() => void scanner.scanMarkets()}
             disabled={scanner.isScanning}
-            className="h-8 px-3 text-[11px] font-semibold text-app bg-accent rounded-md hover:bg-accent-soft cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-60"
+            className="h-8 px-3 text-[12px] font-semibold text-app bg-accent rounded-md hover:bg-accent-soft cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-60"
           >
             <ScanSearch className="w-3.5 h-3.5" aria-hidden="true" />
             {scanner.isScanning ? 'Scanning…' : 'Start scanning'}
@@ -122,7 +122,7 @@ export function LiveScannerView({ scanner }: LiveScannerViewProps) {
           <button
             type="button"
             onClick={() => scanner.setAutoRefresh(!scanner.autoRefresh)}
-            className={`h-8 px-3 text-[11px] font-semibold rounded-md border cursor-pointer ${
+            className={`h-8 px-3 text-[12px] font-semibold rounded-md border cursor-pointer ${
               scanner.autoRefresh ? 'border-accent/60 bg-accent/12 text-ink' : 'border-line bg-elevated text-muted hover:text-ink'
             }`}
           >
@@ -131,7 +131,7 @@ export function LiveScannerView({ scanner }: LiveScannerViewProps) {
           <button
             type="button"
             onClick={scanner.cancelScan}
-            className="h-8 px-3 text-[11px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-bear/50 cursor-pointer inline-flex items-center gap-1.5"
+            className="h-8 px-3 text-[12px] font-semibold text-ink bg-elevated border border-line rounded-md hover:border-bear/50 cursor-pointer inline-flex items-center gap-1.5"
           >
             <Square className="w-3 h-3" aria-hidden="true" />
             Stop
@@ -146,8 +146,8 @@ export function LiveScannerView({ scanner }: LiveScannerViewProps) {
         ) : (
           <Radar className="w-3.5 h-3.5 text-faint shrink-0" aria-hidden="true" />
         )}
-        <span className="text-[11px] text-muted truncate flex-1">{scanner.progressMessage}</span>
-        <span className="text-[10px] font-mono text-faint shrink-0">
+        <span className="text-[12px] text-muted truncate flex-1">{scanner.progressMessage}</span>
+        <span className="text-[11px] font-mono text-faint shrink-0">
           {scanner.targetMarketCount} markets · {rows.length} ranked
           {scanner.lastScannedAt ? ` · ${new Date(scanner.lastScannedAt).toLocaleTimeString()}` : ''}
         </span>
@@ -158,7 +158,7 @@ export function LiveScannerView({ scanner }: LiveScannerViewProps) {
         <SectionCard title="Scanner Controls" subtitle="Filters feed the live ranking engine" icon={<Radar className="w-3.5 h-3.5" aria-hidden="true" />}>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div>
-              <div className="text-[11px] font-semibold text-muted mb-1">
+              <div className="text-[12px] font-semibold text-muted mb-1">
                 Minimum quality: <span className="font-mono text-ink">{minQuality}</span>
               </div>
               <input
@@ -175,7 +175,7 @@ export function LiveScannerView({ scanner }: LiveScannerViewProps) {
               />
             </div>
             <div>
-              <div className="text-[11px] font-semibold text-muted mb-1">
+              <div className="text-[12px] font-semibold text-muted mb-1">
                 Max opportunities: <span className="font-mono text-ink">{maxRows}</span>
               </div>
               <input
@@ -188,14 +188,14 @@ export function LiveScannerView({ scanner }: LiveScannerViewProps) {
               />
             </div>
             <div>
-              <div className="text-[11px] font-semibold text-muted mb-1">Sort by</div>
+              <div className="text-[12px] font-semibold text-muted mb-1">Sort by</div>
               <div className="flex items-center gap-1.5">
                 {(['quality', 'symbol', 'direction'] as const).map((k) => (
                   <button
                     key={k}
                     type="button"
                     onClick={() => setSortKey(k)}
-                    className={`h-7 px-2.5 text-[11px] font-semibold rounded-md border cursor-pointer ${
+                    className={`h-7 px-2.5 text-[12px] font-semibold rounded-md border cursor-pointer ${
                       sortKey === k ? 'border-accent/60 bg-accent/12 text-ink' : 'border-line bg-elevated text-muted hover:text-ink'
                     }`}
                   >
@@ -205,14 +205,14 @@ export function LiveScannerView({ scanner }: LiveScannerViewProps) {
               </div>
             </div>
             <div className="flex flex-col gap-2">
-              <div className="text-[11px] font-semibold text-muted">Direction preference</div>
+              <div className="text-[12px] font-semibold text-muted">Direction preference</div>
               <div className="flex items-center gap-1.5">
                 {(['BOTH', 'RISE', 'FALL'] as const).map((d) => (
                   <button
                     key={d}
                     type="button"
                     onClick={() => scanner.setDirectionPreference(d)}
-                    className={`h-7 px-2.5 text-[11px] font-semibold rounded-md border cursor-pointer ${
+                    className={`h-7 px-2.5 text-[12px] font-semibold rounded-md border cursor-pointer ${
                       scanner.settings.directionPreference === d
                         ? 'border-accent/60 bg-accent/12 text-ink'
                         : 'border-line bg-elevated text-muted hover:text-ink'
@@ -225,7 +225,7 @@ export function LiveScannerView({ scanner }: LiveScannerViewProps) {
               <button
                 type="button"
                 onClick={() => scanner.setInclude1Sec(!scanner.settings.include1Sec)}
-                className={`h-7 px-2.5 text-[11px] font-semibold rounded-md border cursor-pointer ${
+                className={`h-7 px-2.5 text-[12px] font-semibold rounded-md border cursor-pointer ${
                   scanner.settings.include1Sec ? 'border-accent/60 bg-accent/12 text-ink' : 'border-line bg-elevated text-muted hover:text-ink'
                 }`}
               >
@@ -246,7 +246,7 @@ export function LiveScannerView({ scanner }: LiveScannerViewProps) {
             <button
               type="button"
               onClick={() => void scanner.scanMarkets()}
-              className="text-[11px] font-semibold text-accent hover:underline cursor-pointer inline-flex items-center gap-1"
+              className="text-[12px] font-semibold text-accent hover:underline cursor-pointer inline-flex items-center gap-1"
             >
               <RefreshCw className="w-3 h-3" aria-hidden="true" />
               Refresh
@@ -256,7 +256,7 @@ export function LiveScannerView({ scanner }: LiveScannerViewProps) {
           {scanner.analyses.length === 0 ? (
             <EmptyState title="No scan yet" description="Run a scan to hunt for opportunities across every Volatility Index." />
           ) : rows.length === 0 ? (
-            <div className="text-[11px] text-faint py-6 text-center">
+            <div className="text-[12px] text-faint py-6 text-center">
               NO HIGH-QUALITY OPPORTUNITY RIGHT NOW.
             </div>
           ) : (
@@ -277,27 +277,27 @@ export function LiveScannerView({ scanner }: LiveScannerViewProps) {
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-[10px] font-bold text-faint font-mono w-5 shrink-0">#{i + 1}</span>
+                        <span className="text-[11px] font-bold text-faint font-mono w-5 shrink-0">#{i + 1}</span>
                         <span className="text-xs font-bold text-ink truncate">{row.analysis.displayName}</span>
                       </div>
                       {sig ? (
-                        <span className={`text-[11px] font-bold font-mono ${isRise ? 'text-emerald-400' : 'text-bear'}`}>
+                        <span className={`text-[12px] font-bold font-mono ${isRise ? 'text-emerald-400' : 'text-bear'}`}>
                           {sig.direction} · {sig.score}
                         </span>
                       ) : (
-                        <span className="text-[11px] text-faint font-mono">{row.score}/100</span>
+                        <span className="text-[12px] text-faint font-mono">{row.score}/100</span>
                       )}
                     </div>
                     <div className="mt-1 flex items-center gap-2 flex-wrap">
-                      <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${statusStyle(row.analysis.status)}`}>
+                      <span className={`text-[11px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${statusStyle(row.analysis.status)}`}>
                         {AI_STATUS_LABELS[row.analysis.status]}
                       </span>
                       {sig && <StatusPill label={sig.modelLabel} className="bg-elevated text-muted border-line" />}
-                      <span className="text-[10px] text-faint font-mono">
+                      <span className="text-[11px] text-faint font-mono">
                         {formatPrice(row.analysis.price, row.analysis.precision)}
                       </span>
                       {sig && (
-                        <span className="text-[10px] text-faint font-mono">R:R {sig.riskRewardRatio.toFixed(2)}</span>
+                        <span className="text-[11px] text-faint font-mono">R:R {sig.riskRewardRatio.toFixed(2)}</span>
                       )}
                     </div>
                   </button>
@@ -334,7 +334,7 @@ export function LiveScannerView({ scanner }: LiveScannerViewProps) {
                     <StatTile label="Model" value={selectedAnalysis.signal.modelLabel} />
                   </div>
                 ) : (
-                  <div className="text-[11px] text-faint py-3">
+                  <div className="text-[12px] text-faint py-3">
                     {selectedAnalysis.rejectionReason ?? 'No qualifying opportunity for this index right now.'}
                   </div>
                 )}

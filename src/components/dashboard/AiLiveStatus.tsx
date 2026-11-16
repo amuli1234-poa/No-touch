@@ -74,7 +74,7 @@ export function AiLiveStatus() {
             )}
           </span>
           <div className="min-w-0">
-            <div className="text-[10px] font-bold uppercase tracking-widest text-faint">
+            <div className="text-[11px] font-bold uppercase tracking-widest text-faint">
               AI live status
             </div>
             <div className="flex items-center gap-2">
@@ -97,10 +97,10 @@ export function AiLiveStatus() {
               <div key={a.label} className="flex items-center gap-1.5">
                 <Icon className={`w-3.5 h-3.5 ${a.tone}`} aria-hidden="true" />
                 <div className="leading-tight">
-                  <div className="text-[9px] font-semibold uppercase tracking-wide text-faint">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-faint">
                     {a.label}
                   </div>
-                  <div className={`text-[11px] font-bold ${a.tone}`}>{a.value}</div>
+                  <div className={`text-[12px] font-bold ${a.tone}`}>{a.value}</div>
                 </div>
               </div>
             );
@@ -110,11 +110,11 @@ export function AiLiveStatus() {
 
       {lifecycle && (
         <div className="px-4 pb-3 -mt-1">
-          <p className="text-[11px] text-muted leading-relaxed">{lifecycle.description}</p>
+          <p className="text-[12px] text-muted leading-relaxed">{lifecycle.description}</p>
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2 px-4 pb-3 text-[10px]">
+      <div className="flex flex-wrap items-center gap-2 px-4 pb-3 text-[11px]">
         {(['bullish', 'bearish', 'analysis', 'training', 'warning'] as const).map((s) => (
           <span key={s} className="inline-flex items-center gap-1 text-faint">
             <span

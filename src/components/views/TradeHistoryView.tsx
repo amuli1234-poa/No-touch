@@ -33,15 +33,15 @@ export function TradeHistoryView() {
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right">
-            <div className="text-[10px] uppercase font-semibold text-faint">Total</div>
+            <div className="text-[11px] uppercase font-semibold text-faint">Total</div>
             <div className="font-mono font-bold text-ink">{records.length}</div>
           </div>
           <div className="text-right">
-            <div className="text-[10px] uppercase font-semibold text-faint">Settled</div>
+            <div className="text-[11px] uppercase font-semibold text-faint">Settled</div>
             <div className="font-mono font-bold text-ink">{settled.length}</div>
           </div>
           <div className="text-right">
-            <div className="text-[10px] uppercase font-semibold text-faint">Win rate</div>
+            <div className="text-[11px] uppercase font-semibold text-faint">Win rate</div>
             <div className="font-mono font-bold text-emerald-400">
               {winRate ?? 'Withheld (<3)'}
             </div>
@@ -71,7 +71,7 @@ export function TradeHistoryView() {
             <div className="overflow-x-auto -mx-4 px-4">
               <table className="w-full text-left text-xs">
                 <thead className="text-faint border-b border-line">
-                  <tr className="text-[10px] uppercase tracking-wide">
+                  <tr className="text-[11px] uppercase tracking-wide">
                     <th className="py-2 pr-3 font-semibold">Time</th>
                     <th className="py-2 pr-3 font-semibold">Market</th>
                     <th className="py-2 pr-3 font-semibold">Dir</th>
@@ -115,7 +115,7 @@ export function TradeHistoryView() {
                       </td>
                       <td className="py-2 pr-3">
                         <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                          className={`text-[11px] font-bold px-2 py-0.5 rounded ${
                             rec.outcome === 'WIN'
                               ? 'bg-emerald-500/15 text-emerald-400'
                               : rec.outcome === 'LOSS' || rec.outcome === 'INVALIDATED'
@@ -130,7 +130,7 @@ export function TradeHistoryView() {
                         <button
                           type="button"
                           onClick={() => ws.openChart(rec.symbol, rec.timeframe)}
-                          className="px-2.5 py-1 bg-accent text-app rounded-md hover:bg-accent-soft text-[11px] font-semibold cursor-pointer"
+                          className="px-2.5 py-1 bg-accent text-app rounded-md hover:bg-accent-soft text-[12px] font-semibold cursor-pointer"
                         >
                           Open
                         </button>
@@ -146,11 +146,11 @@ export function TradeHistoryView() {
             {segments.map((seg) => (
               <SectionCard key={seg.title} title={seg.title} subtitle="Segments are never combined across instruments">
                 {seg.rows.length === 0 ? (
-                  <p className="text-[11px] text-faint">No settled samples in this segment.</p>
+                  <p className="text-[12px] text-faint">No settled samples in this segment.</p>
                 ) : (
-                  <table className="w-full text-left text-[11px]">
+                  <table className="w-full text-left text-[12px]">
                     <thead className="text-faint border-b border-line">
-                      <tr className="text-[10px] uppercase">
+                      <tr className="text-[11px] uppercase">
                         <th className="py-1.5 pr-2 font-semibold">Segment</th>
                         <th className="py-1.5 pr-2 font-semibold text-right">n</th>
                         <th className="py-1.5 pr-2 font-semibold text-right">W/L</th>

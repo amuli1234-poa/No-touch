@@ -35,7 +35,7 @@ function StatusBadge({ status }: { status: HealthStatus }) {
   const Icon = s.icon;
   return (
     <span
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-semibold ${s.text} ${s.bg} ${s.border}`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-semibold ${s.text} ${s.bg} ${s.border}`}
     >
       <Icon className="w-3 h-3" aria-hidden="true" />
       {status.replace('_', ' ')}
@@ -49,7 +49,7 @@ function CheckRow({ check }: { check: HealthCheck }) {
       <div className="flex items-center gap-2">
         <span className="text-[13px] font-medium text-ink">{check.label}</span>
         {check.critical && (
-          <span className="text-[9px] font-semibold uppercase tracking-wide text-faint border border-line rounded px-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-faint border border-line rounded px-1">
             critical
           </span>
         )}
@@ -57,9 +57,9 @@ function CheckRow({ check }: { check: HealthCheck }) {
           <StatusBadge status={check.status} />
         </span>
       </div>
-      <p className="text-[11px] text-muted leading-snug">{check.detail}</p>
+      <p className="text-[12px] text-muted leading-snug">{check.detail}</p>
       {check.metric && (
-        <p className="text-[10px] font-mono text-faint">{check.metric}</p>
+        <p className="text-[11px] font-mono text-faint">{check.metric}</p>
       )}
     </li>
   );
@@ -90,14 +90,14 @@ export function SystemHealthView({ health }: { health: HealthReport }) {
           <h1 className="text-[17px] font-bold tracking-tight text-ink leading-none">
             System Health &amp; Diagnostics
           </h1>
-          <p className="text-[11px] text-muted leading-none mt-1">
+          <p className="text-[12px] text-muted leading-none mt-1">
             Every status is derived from real runtime evidence — never assumed.
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
           <span
             data-testid="overall-status"
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[12px] font-semibold ${OVERALL_STYLE[summary.overall]}`}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[13px] font-semibold ${OVERALL_STYLE[summary.overall]}`}
           >
             {summary.overall}
           </span>
@@ -137,7 +137,7 @@ export function SystemHealthView({ health }: { health: HealthReport }) {
             <button
               type="button"
               onClick={() => setShowAll((v) => !v)}
-              className="text-[11px] font-medium text-accent hover:underline cursor-pointer"
+              className="text-[12px] font-medium text-accent hover:underline cursor-pointer"
             >
               {showAll ? 'Show less' : `Show all ${ordered.length}`}
             </button>
@@ -155,7 +155,7 @@ export function SystemHealthView({ health }: { health: HealthReport }) {
               <Plug className="w-4 h-4 text-accent" aria-hidden="true" />
               <h2 className="text-[13px] font-semibold text-ink">Deriv live integration test</h2>
             </div>
-            <p className="text-[11px] text-muted mt-1 leading-snug">
+            <p className="text-[12px] text-muted mt-1 leading-snug">
               Probes real Volatility Indices (standard + 1-second). Boom/Crash excluded. No
               simulated prices are used — if real data cannot be received, the result is reported
               honestly.
@@ -164,7 +164,7 @@ export function SystemHealthView({ health }: { health: HealthReport }) {
               <div className="mt-3 space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <span
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] font-semibold ${
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[12px] font-semibold ${
                       live.status === 'PASS'
                         ? 'text-[#089981] border-[#089981]/30 bg-[#089981]/10'
                         : live.status === 'FAIL'
@@ -174,33 +174,33 @@ export function SystemHealthView({ health }: { health: HealthReport }) {
                   >
                     {live.status === 'PASS' ? 'LIVE PASS' : live.status === 'FAIL' ? 'LIVE FAIL' : 'NOT TESTED'}
                   </span>
-                  <span className="text-[11px] text-muted">
+                  <span className="text-[12px] text-muted">
                     {liveMarkets}/{eligibleProbed} markets receiving live data · {live.marketsDiscovered} discovered
                   </span>
                 </div>
                 <ul className="space-y-1.5">
                   {live.probes.map((p) => (
-                    <li key={p.symbol} className="text-[11px] border border-line rounded-lg px-2.5 py-1.5">
+                    <li key={p.symbol} className="text-[12px] border border-line rounded-lg px-2.5 py-1.5">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-ink truncate">{p.displayName}</span>
                         {p.isOneSecond && (
-                          <span className="text-[9px] font-semibold text-accent border border-accent/30 rounded px-1">
+                          <span className="text-[10px] font-semibold text-accent border border-accent/30 rounded px-1">
                             1s
                           </span>
                         )}
-                        <span className="ml-auto font-mono text-faint text-[10px]">{p.symbol}</span>
+                        <span className="ml-auto font-mono text-faint text-[11px]">{p.symbol}</span>
                       </div>
-                      <div className="flex flex-wrap gap-x-3 text-[10px] text-muted mt-0.5">
+                      <div className="flex flex-wrap gap-x-3 text-[11px] text-muted mt-0.5">
                         <span>ticks {p.ticksReceived}</span>
                         <span>candles {p.candlesReceived}</span>
                         <span>{p.candleFieldsValid ? 'fields valid' : 'fields invalid'}</span>
                         <span>{p.timestampsMonotonic ? 'timestamps ok' : 'timestamps bad'}</span>
                       </div>
-                      {p.error && <p className="text-[10px] text-[#f23645] mt-0.5">{p.error}</p>}
+                      {p.error && <p className="text-[11px] text-[#f23645] mt-0.5">{p.error}</p>}
                     </li>
                   ))}
                 </ul>
-                <div className="text-[10px] text-faint space-y-0.5">
+                <div className="text-[11px] text-faint space-y-0.5">
                   <p>Symbols valid: {live.symbolsCorrect ? 'yes' : 'no'} · Subscription cleanup: {live.subscriptionCleanupOk ? 'ok' : 'pending'}</p>
                   {live.notes.map((n) => (
                     <p key={n}>· {n}</p>
@@ -208,7 +208,7 @@ export function SystemHealthView({ health }: { health: HealthReport }) {
                 </div>
               </div>
             ) : (
-              <p className="text-[11px] text-faint mt-3">
+              <p className="text-[12px] text-faint mt-3">
                 {runAt ? 'Running…' : 'Not run yet — press “Run full diagnostics”.'}
               </p>
             )}
@@ -226,7 +226,7 @@ export function SystemHealthView({ health }: { health: HealthReport }) {
                 />
               ))}
             </div>
-            <p className="text-[10px] text-faint mt-2 leading-snug">
+            <p className="text-[11px] text-faint mt-2 leading-snug">
               The shared chart loads one timeframe at a time; the health centre fetches all ten
               (M30/M15/M10/M7/M6/M5/M4/M3/M2/M1) internally to verify synchronisation without cluttering the
               visible chart. M7 is built internally from M1; M3 is native 180s.
@@ -235,7 +235,7 @@ export function SystemHealthView({ health }: { health: HealthReport }) {
 
           <Card className="p-4">
             <h2 className="text-[13px] font-semibold text-ink">Fixed in this build</h2>
-            <ul className="mt-1.5 space-y-1 text-[11px] text-muted list-disc pl-4">
+            <ul className="mt-1.5 space-y-1 text-[12px] text-muted list-disc pl-4">
               {health.fixedIssues.map((issue) => (
                 <li key={issue}>{issue}</li>
               ))}
