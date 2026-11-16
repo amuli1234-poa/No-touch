@@ -95,12 +95,17 @@ export function realisedPnlSince(
  * Counts consecutive losses on an account, most recent first. A win or a
  * still-open contract resets the streak, so this measures an unbroken run.
  */
-export function consecutiveLosses(contracts: ContractRecord[], accountId: string): number {
+export function consecutiveLosses(contracts: ContractRecord[], accountId: string, resetAfterMs = 0): number {
   const settled = contracts
     .filter((c) => c.accountId === accountId && c.status !== 'open' && c.status !== 'unknown')
-    .sort((a, b) => (b.settlementTime ?? b.updatedAt) - (a.settlementTime ?? a.updatedAt));
+    .map((contract) => ({
+      contract,
+      settledAt: contract.settlementTime === null ? contract.updatedAt : contract.settlementTime * 1000
+    }))
+    .filter(({ settledAt }) => settledAt >= resetAfterMs)
+    .sort((a, b) => b.settledAt - a.settledAt);
   let streak = 0;
-  for (const c of settled) {
+  for (const { contract: c } of settled) {
     if (isLoss(c)) streak += 1;
     else break;
   }
@@ -141,7 +146,12 @@ export function evaluateRisk(
   const dailyPnl = realisedPnlSince(ledger, input.accountId, input.now - DAY_MS);
   push('daily_loss', dailyPnl > -profile.maxDailyLoss, `daily P/L ${dailyPnl.toFixed(2)} > -${profile.maxDailyLoss}`);
 
-  const streak = consecutiveLosses(contracts, input.accountId);
+  const resetAt = store.getExecutionPreferences(input.userId)?.lossStreakResetAtByAccount?.[input.accountId] ?? 0;
+  const streak = consecutiveLosses(
+    contracts,
+    input.accountId,
+    Number.isFinite(resetAt) && resetAt > 0 ? Math.floor(resetAt / 1000) * 1000 : 0
+  );
   push(
     'consecutive_losses',
     streak < profile.maxConsecutiveLosses,

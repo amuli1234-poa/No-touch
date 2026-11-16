@@ -78,6 +78,23 @@ export interface BuyResult {
   shortcode: string;
 }
 
+export interface SellRequest {
+  accountId: string;
+  accessToken: string;
+  accountMode: AccountMode;
+  contractId: number;
+  /** Zero means sell at the current market price. */
+  price: 0;
+  reqId: number;
+}
+
+export interface SellResult {
+  contractId: number;
+  soldFor: number | null;
+  balanceAfter: number | null;
+  transactionId: number | null;
+}
+
 export interface ContractUpdate {
   contractId: number;
   status: ContractStatus;
@@ -90,6 +107,8 @@ export interface ContractUpdate {
   dateStart: number | null;
   dateExpiry: number | null;
   dateSettlement: number | null;
+  soldFor?: number | null;
+  derivTransactionId?: number | null;
 }
 
 export type BrokerErrorCode =
@@ -125,6 +144,8 @@ export interface BrokerAdapter {
   requestProposal(req: ProposalRequest): Promise<ProposalResult>;
 
   buy(req: BuyRequest): Promise<BuyResult>;
+
+  sell(req: SellRequest): Promise<SellResult>;
 
   /**
    * Subscribes to a contract's lifecycle updates. Returns an unsubscribe

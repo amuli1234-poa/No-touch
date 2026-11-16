@@ -210,6 +210,7 @@ export function normalisePreferences(
       // Safety fields are never settable through this path.
       realExecutionAuthorised: base.realExecutionAuthorised,
       autoStopped: base.autoStopped,
+      lossStreakResetAtByAccount: base.lossStreakResetAtByAccount,
       updatedAt: Date.now()
     }
   };

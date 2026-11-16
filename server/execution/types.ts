@@ -70,6 +70,8 @@ export interface ExecutionPreferencesRecord {
   realExecutionAuthorised: boolean;
   /** Emergency stop. When true, automatic execution must not run. */
   autoStopped: boolean;
+  /** Per-account loss-streak baselines set only by the explicit risk-session reset route. */
+  lossStreakResetAtByAccount?: Record<string, number>;
   updatedAt: number;
 }
 
@@ -156,8 +158,8 @@ export interface SignalRecord {
 
 /**
  * The durable execution state machine. Every intent moves through these states;
- * every transition is recorded. `UNKNOWN`/`RECONCILIATION_REQUIRED` exist so a
- * network timeout after submission is never blindly retried.
+ * every transition is recorded. `UNKNOWN`/`RECONCILIATION_REQUIRED` ensure an
+ * uncertain purchase or close is checked against Deriv before another request.
  */
 export const INTENT_STATES = [
   'CREATED',
@@ -223,8 +225,8 @@ export interface TradeIntentRecord {
 /* --------------------------- execution attempts --------------------------- */
 
 /**
- * One submission attempt. Kept separate from the intent so a purchase that
- * timed out is provably recorded as uncertain, not silently retried.
+ * One broker attempt. Kept separate from the intent so uncertain outcomes are
+ * durably recorded and never silently retried.
  */
 export interface ExecutionAttemptRecord {
   id: string;
@@ -233,7 +235,7 @@ export interface ExecutionAttemptRecord {
   /** Monotonic per intent, so duplicate attempts are detectable. */
   attemptNumber: number;
   phase: 'proposal' | 'purchase' | 'close';
-  outcome: 'ok' | 'rejected' | 'timeout' | 'unknown' | 'error';
+  outcome: 'pending' | 'ok' | 'rejected' | 'timeout' | 'unknown' | 'error';
   /** Deriv request id, when one was sent. */
   reqId: number | null;
   /** Redacted request summary — never a token, never a full credential. */
@@ -243,7 +245,8 @@ export interface ExecutionAttemptRecord {
   errorCode: string | null;
   errorMessage: string | null;
   startedAt: number;
-  finishedAt: number;
+  /** Null while the request outcome has not yet been durably resolved. */
+  finishedAt: number | null;
 }
 
 /* -------------------------------- contracts ------------------------------- */

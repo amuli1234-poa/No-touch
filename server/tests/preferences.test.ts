@@ -123,6 +123,18 @@ test('the safety fields cannot be flipped through a preferences write', () => {
   assert.equal(second.value.autoStopped, true, 'auto-stop must survive a preference save');
 });
 
+test('preference saves preserve server-owned risk-session baselines', () => {
+  const stored = { ...existing(), lossStreakResetAtByAccount: { DEMO: 1_800_000_000_000 } };
+  const result = normalisePreferences(
+    { lossStreakResetAtByAccount: { DEMO: 0 }, stake: { amount: 5 } } as Record<string, unknown>,
+    stored,
+    USER
+  );
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.deepEqual(result.value.lossStreakResetAtByAccount, stored.lossStreakResetAtByAccount);
+});
+
 test('absent fields keep their stored values', () => {
   const result = normalisePreferences({ mode: 'automatic' }, existing(), USER);
   assert.equal(result.ok, true);

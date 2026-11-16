@@ -168,7 +168,12 @@ function fakeSocket() {
 
 async function withScanner(
   fn: (ctx: { store: Store; scanner: MarketScanner; broker: FakeBroker; sock: any; market: MarketDataService }) => Promise<void>,
-  opts: { automatic?: boolean; withToken?: boolean; quotes?: number[] } = {}
+  opts: {
+    automatic?: boolean;
+    withToken?: boolean;
+    quotes?: number[];
+    marketQuotes?: Record<string, number[]>;
+  } = {}
 ) {
   const store = new Store(tmpDir(), { unsafeDisableLock: true });
   await store.load();
@@ -182,12 +187,17 @@ async function withScanner(
       msg_type: 'active_symbols',
       active_symbols: [
         { underlying_symbol: 'R_100', underlying_symbol_name: 'Volatility 100 Index', market: 'synthetic_index', submarket: 'random_index', pip_size: 2, exchange_is_open: 1 },
+        { underlying_symbol: 'R_50', underlying_symbol_name: 'Volatility 50 Index', market: 'synthetic_index', submarket: 'random_index', pip_size: 2, exchange_is_open: 1 },
+        { underlying_symbol: '1HZ100V', underlying_symbol_name: 'Volatility 100 (1s) Index', market: 'synthetic_index', submarket: 'random_index', pip_size: 2, exchange_is_open: 1 },
         { underlying_symbol: 'BOOM500', underlying_symbol_name: 'Boom 500 Index', market: 'synthetic_index', submarket: 'random_index', pip_size: 2, exchange_is_open: 1 }
       ]
     })
   });
-  for (const [i, q] of (opts.quotes ?? [100, 101, 102, 103, 104, 105]).entries()) {
-    sock.emit('message', { data: JSON.stringify({ msg_type: 'tick', tick: { symbol: 'R_100', quote: q, epoch: i, pip_size: 2 } }) });
+  const marketQuotes = opts.marketQuotes ?? { R_100: opts.quotes ?? [100, 101, 102, 103, 104, 105] };
+  for (const [symbol, quotes] of Object.entries(marketQuotes)) {
+    for (const [i, q] of quotes.entries()) {
+      sock.emit('message', { data: JSON.stringify({ msg_type: 'tick', tick: { symbol, quote: q, epoch: i, pip_size: 2 } }) });
+    }
   }
 
   await store.upsertUser(USER);
@@ -256,8 +266,26 @@ test('scanOnce proposes and executes a signal for an automatic user', async () =
 test('scanOnce watches only eligible markets', async () => {
   await withScanner(async ({ scanner }) => {
     const markets = await scanner.watchedMarkets();
-    assert.deepEqual(markets.map((m) => m.symbol), ['R_100']);
+    assert.deepEqual(markets.map((m) => m.symbol), ['R_100', 'R_50', '1HZ100V']);
   });
+});
+
+test('scanOnce evaluates and offers candidates from every eligible market', async () => {
+  await withScanner(
+    async ({ scanner, broker }) => {
+      const outcomes = await scanner.scanOnce();
+      assert.deepEqual(outcomes.map((outcome) => outcome.symbol), ['R_100', 'R_50', '1HZ100V']);
+      assert.equal(outcomes.filter((outcome) => outcome.outcome === 'proposed').length, 3);
+      assert.equal(broker.buys.length, 3);
+    },
+    {
+      marketQuotes: {
+        R_100: [100, 101, 102, 103, 104, 105],
+        R_50: [200, 201, 202, 203, 204, 205],
+        '1HZ100V': [300, 301, 302, 303, 304, 305]
+      }
+    }
+  );
 });
 
 test('scanOnce does nothing for a manual user', async () => {
@@ -308,10 +336,11 @@ test('start subscribes to the watched markets and stop unsubscribes', async () =
   await withScanner(async ({ scanner, sock }) => {
     await scanner.start();
     assert.equal(scanner.isRunning, true);
-    // The scanner subscribed to R_100 (and not to the excluded Boom index).
+    assert.deepEqual(scanner.activeMarkets.map((market) => market.symbol), ['R_100', 'R_50', '1HZ100V']);
     const subscribed = sock.sent.filter((m: any) => m.ticks).map((m: any) => m.ticks);
-    assert.deepEqual(subscribed, ['R_100']);
+    assert.deepEqual(subscribed, ['R_100', 'R_50', '1HZ100V']);
     scanner.stop();
     assert.equal(scanner.isRunning, false);
+    assert.deepEqual(scanner.activeMarkets, []);
   });
 });

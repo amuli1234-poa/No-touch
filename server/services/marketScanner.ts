@@ -151,7 +151,8 @@ export class MarketScanner {
   private readonly now: () => number;
 
   private timer: ReturnType<typeof setInterval> | null = null;
-  private unsubscribes: Array<() => void> = [];
+  private readonly tickSubscriptions = new Map<string, () => void>();
+  private activeMarketList: ScannerMarket[] = [];
   private running = false;
   private lastPassAt: number | null = null;
   private readonly recentOutcomes: ScanOutcome[] = [];
@@ -180,6 +181,11 @@ export class MarketScanner {
     return this.recentOutcomes;
   }
 
+  /** Markets with live tick subscriptions owned by this scanner. */
+  get activeMarkets(): readonly ScannerMarket[] {
+    return this.activeMarketList;
+  }
+
   /** The markets the scanner watches, from the live catalogue. */
   async watchedMarkets(): Promise<ScannerMarket[]> {
     const symbols = await this.market.getActiveSymbols();
@@ -194,11 +200,9 @@ export class MarketScanner {
    */
   async start(): Promise<void> {
     if (this.running) return;
-    this.running = true;
     const markets = await this.watchedMarkets();
-    // Subscribing keeps a live tick buffer per market; the scanner never asks
-    // Deriv for a price itself.
-    this.unsubscribes = markets.map((m) => this.market.subscribeTicks(m.symbol, () => {}));
+    this.syncSubscriptions(markets);
+    this.running = true;
     this.timer = setInterval(() => {
       void this.scanOnce().catch(() => {
         /* a failed pass must not stop the loop */
@@ -212,8 +216,9 @@ export class MarketScanner {
     this.running = false;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
-    for (const unsub of this.unsubscribes) unsub();
-    this.unsubscribes = [];
+    for (const unsubscribe of this.tickSubscriptions.values()) unsubscribe();
+    this.tickSubscriptions.clear();
+    this.activeMarketList = [];
   }
 
   /**
@@ -223,6 +228,7 @@ export class MarketScanner {
    */
   async scanOnce(): Promise<ScanOutcome[]> {
     const markets = await this.watchedMarkets();
+    if (this.running) this.syncSubscriptions(markets);
     const candidates: ScanCandidate[] = [];
     for (const m of markets) {
       const ticks = this.market.getTicks(m.symbol);
@@ -252,6 +258,22 @@ export class MarketScanner {
     // Keep the in-memory log bounded.
     if (this.recentOutcomes.length > 200) this.recentOutcomes.splice(0, this.recentOutcomes.length - 200);
     return outcomes;
+  }
+
+  private syncSubscriptions(markets: readonly ScannerMarket[]): void {
+    const uniqueMarkets = [...new Map(markets.map((market) => [market.symbol, market])).values()];
+    const symbols = new Set(uniqueMarkets.map((market) => market.symbol));
+    for (const [symbol, unsubscribe] of this.tickSubscriptions) {
+      if (symbols.has(symbol)) continue;
+      unsubscribe();
+      this.tickSubscriptions.delete(symbol);
+    }
+    for (const market of uniqueMarkets) {
+      if (!this.tickSubscriptions.has(market.symbol)) {
+        this.tickSubscriptions.set(market.symbol, this.market.subscribeTicks(market.symbol, () => {}));
+      }
+    }
+    this.activeMarketList = uniqueMarkets;
   }
 
   /** Proposes one candidate to one user, through the normal signal path. */

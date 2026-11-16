@@ -4,6 +4,8 @@ import type {
   ProposalResult,
   BuyRequest,
   BuyResult,
+  SellRequest,
+  SellResult,
   ContractUpdate
 } from './types.js';
 import { BrokerError } from './types.js';
@@ -28,6 +30,10 @@ export interface FakeBrokerScript {
   proposalError?: BrokerError;
   /** When set, `buy` throws this. */
   buyError?: BrokerError;
+  /** When set, `sell` throws this. */
+  sellError?: BrokerError;
+  /** sold_for reported by a successful sale. */
+  soldFor?: number | null;
   /** balanceAfter reported by a successful buy. */
   balanceAfter?: number;
   /** Open contracts the fake reports, for reconciliation tests. */
@@ -45,6 +51,7 @@ export class FakeBroker implements BrokerAdapter {
   /** Every proposal/buy the gateway sent, in order, for assertions. */
   readonly proposals: ProposalRequest[] = [];
   readonly buys: BuyRequest[] = [];
+  readonly sells: SellRequest[] = [];
 
   private readonly contractHandlers = new Map<number, Set<(u: ContractUpdate) => void>>();
 
@@ -87,6 +94,17 @@ export class FakeBroker implements BrokerAdapter {
       transactionId,
       longcode: 'Fake contract',
       shortcode: 'FAKE'
+    };
+  }
+
+  async sell(req: SellRequest): Promise<SellResult> {
+    this.sells.push(req);
+    if (this.script.sellError) throw this.script.sellError;
+    return {
+      contractId: req.contractId,
+      soldFor: this.script.soldFor ?? 1.5,
+      balanceAfter: this.balance,
+      transactionId: this.nextTransactionId++
     };
   }
 

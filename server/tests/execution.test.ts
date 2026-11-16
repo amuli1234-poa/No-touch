@@ -529,6 +529,8 @@ test('illegal intent transitions are rejected', () => {
   // A timeout after submission has somewhere honest to land.
   assert.equal(canTransition('PURCHASE_PENDING', 'UNKNOWN'), true);
   assert.equal(canTransition('UNKNOWN', 'RECONCILIATION_REQUIRED'), true);
+  assert.equal(canTransition('OPEN', 'CLOSE_PENDING'), true);
+  assert.equal(canTransition('CLOSE_PENDING', 'OPEN'), true);
 });
 
 /* ------------------------------- audit redaction -------------------------- */

@@ -162,6 +162,12 @@ start_time, transaction_id, longcode, shortcode }`.
 `entry_spot`, `exit_spot`, `date_start`, `date_expiry`, `date_settlement`,
 `buy_price`, `payout`, `is_valid_to_sell`, `is_valid_to_cancel`, `sell_price`.
 
+**sell** (scope `trade`): `{ sell: contract_id, price: 0 }` sells at the current
+market price and returns a `sell` receipt with `contract_id`, `sold_for`,
+`balance_after`, and `transaction_id`. The position UI requires an explicit
+confirmation; local status and realized P/L change only after Deriv confirms the
+sale. An uncertain response remains pending and is not blindly retried.
+
 **Contract parameters:** Rise/Fall = `CALL`/`PUT`; Multipliers = `MULTUP`/
 `MULTDOWN` with `multiplier`, `cancellation`, and `limit_order`
 (`stop_loss`/`take_profit`). The symbol field is **`underlying_symbol`**.
@@ -255,6 +261,13 @@ Registered in `COLLECTION_SPECS` so every backend stays consistent.
 | 8 | Contract monitoring + ledger reconciliation | Settlement reconciles to Deriv transaction data |
 | 9 | Security, failure recovery, forward testing | Full security + recovery suite |
 | 10 | REAL execution release review | **Stays disabled until separately authorised** |
+
+An authenticated, explicitly confirmed DEMO risk-session reset can clear the
+automatic stop and establish a new consecutive-loss baseline for one owned
+DEMO account. It does not delete contracts or audit records, and it does not
+change the daily-loss, balance, exposure, open-position, frequency, or other
+server risk checks. New losses after the reset still count toward the normal
+consecutive-loss limit.
 
 ---
 

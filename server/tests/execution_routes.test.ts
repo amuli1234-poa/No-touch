@@ -11,12 +11,14 @@ import { createExecutionRouter } from '../routes/execution.js';
 import { ExecutionGateway } from '../execution/gateway.js';
 import { MarketDataService } from '../services/marketData.js';
 import { FakeBroker } from '../execution/broker/fakeBroker.js';
+import { BrokerError } from '../execution/broker/types.js';
 import { loadExecutionFlags } from '../config/flags.js';
 import { sign, seal } from '../lib/crypto.js';
 import { AutoExecutionRunner } from '../execution/autoRunner.js';
 import { ContractMonitor } from '../execution/contractMonitor.js';
 import { ExecutionAuditor } from '../execution/audit.js';
 import type { ServerConfig } from '../config.js';
+import type { ContractRecord, ContractUpdate } from '../execution/types.js';
 import type { MinimalWebSocket } from '../lib/balance.js';
 
 /**
@@ -135,13 +137,20 @@ async function withServer(
   };
   await store.upsertUser(USER);
   const flags = { allowExecution: true, allowDemoExecution: true, allowRealExecution: false, ...opts.flags };
+  const auditor = new ExecutionAuditor(store);
+  const monitor = new ContractMonitor({ store, broker, auditor });
   const gateway = new ExecutionGateway({
     store,
     cfg,
     flags,
     broker,
+    auditor,
     balanceProvider: async () => 1000,
-    riskEvaluator: () => ({ approved: true, reasons: [] })
+    riskEvaluator: () => ({ approved: true, reasons: [] }),
+    onContractOpened: (user, contract, accessToken) => monitor.monitor(user, contract, accessToken),
+    onContractClosed: async (user, contract, sale) => {
+      await monitor.recordSale(user, contract.id, sale);
+    }
   });
 
   // A real session record and a signed cookie, so requireSession resolves it the
@@ -175,9 +184,6 @@ async function withServer(
       updatedAt: Date.now()
     });
   }
-  const auditor = new ExecutionAuditor(store);
-  const monitor = new ContractMonitor({ store, broker, auditor });
-  (gateway as any).onContractOpened = (u: any, c: any, t: string) => monitor.monitor(u, c, t);
   const app = express();
   app.use(
     createExecutionRouter({
@@ -211,14 +217,35 @@ async function withServer(
     await fn({
       store,
       broker,
+      monitor,
+      user: USER,
       post: (p, b) => call('POST', p, b),
       get: (p) => call('GET', p)
     });
   } finally {
     server.close();
+    monitor.close();
     market.close();
     await store.close();
   }
+}
+
+function openContractUpdate(contractId: number, profit: number): ContractUpdate {
+  return {
+    contractId,
+    status: 'open',
+    profit,
+    isExpired: false,
+    entrySpot: 100,
+    exitSpot: null,
+    currentSpot: 101,
+    payout: 1.95,
+    dateStart: Math.floor(Date.now() / 1000) - 60,
+    dateExpiry: null,
+    dateSettlement: null,
+    soldFor: null,
+    derivTransactionId: null
+  };
 }
 
 test('POST /signals requires a session', async () => {
@@ -275,6 +302,240 @@ test('a full signal -> intent -> submit flow executes on the fake broker', async
     assert.equal(submit.body.intent.state, 'OPEN');
     assert.ok(submit.body.contractId);
     assert.equal(broker.buys.length, 1);
+  });
+});
+
+test('a confirmed close sells only the selected open contract and records realized P/L', async () => {
+  await withServer(async ({ post, get, broker, store }) => {
+    const sig = await post('/api/execution/signals', {
+      symbol: 'R_100',
+      direction: 'RISE',
+      contractFamily: 'rise_fall',
+      accountId: 'DEMO',
+      timeframe: '5m'
+    });
+    const intent = await post('/api/execution/intents', {
+      signalId: sig.body.signal.id,
+      stake: 1,
+      contractFamily: 'rise_fall',
+      contractType: 'CALL',
+      parameters: { duration: 5, durationUnit: 'm' },
+      idempotencyKey: 'close-confirmed'
+    });
+    const submitted = await post(`/api/execution/intents/${intent.body.intent.id}/submit`);
+    const contractId = String(submitted.body.contractId);
+
+    const closed = await post(`/api/execution/contracts/${contractId}/close`);
+    assert.equal(closed.status, 200, JSON.stringify(closed.body));
+    assert.equal(broker.sells.length, 1);
+    assert.equal(broker.sells[0].contractId, Number(contractId));
+    assert.equal(broker.sells[0].price, 0);
+
+    const contract = store.getContract('u_a', contractId);
+    assert.equal(contract?.status, 'sold');
+    assert.equal(contract?.soldFor, 1.5);
+    assert.equal(contract?.profit, 0.5);
+    assert.equal(store.getTradeIntent('u_a', intent.body.intent.id)?.state, 'SETTLED');
+    const closeAttempt = store
+      .listExecutionAttempts('u_a', intent.body.intent.id)
+      .find((attempt) => attempt.phase === 'close');
+    assert.equal(closeAttempt?.outcome, 'ok');
+    assert.ok(closeAttempt?.finishedAt);
+
+    const ledger = await get('/api/execution/ledger');
+    assert.equal(ledger.body.entries.length, 2);
+    const settlement = ledger.body.entries.find((entry: { kind: string }) => entry.kind === 'settlement');
+    assert.equal(settlement?.amount, 0.5);
+
+    const history = await get('/api/execution/contracts');
+    assert.equal(history.body.contracts[0].status, 'sold');
+    assert.equal(history.body.contracts[0].closePending, false);
+
+    const repeated = await post(`/api/execution/contracts/${contractId}/close`);
+    assert.equal(repeated.status, 409);
+    assert.equal(repeated.body.error, 'contract_not_open');
+    assert.equal(broker.sells.length, 1);
+  });
+});
+
+test('a definite close rejection restores the open intent for a later attempt', async () => {
+  await withServer(async ({ post, get, broker, store }) => {
+    const sig = await post('/api/execution/signals', {
+      symbol: 'R_100',
+      direction: 'RISE',
+      contractFamily: 'rise_fall',
+      accountId: 'DEMO'
+    });
+    const intent = await post('/api/execution/intents', {
+      signalId: sig.body.signal.id,
+      stake: 1,
+      contractFamily: 'rise_fall',
+      contractType: 'CALL',
+      parameters: { duration: 5, durationUnit: 'm' },
+      idempotencyKey: 'close-rejected'
+    });
+    const submitted = await post(`/api/execution/intents/${intent.body.intent.id}/submit`);
+    const contractId = String(submitted.body.contractId);
+    broker.setScript({ sellError: new BrokerError('deriv_rejected', 'Sale rejected.', false, 'InvalidContract') });
+
+    const rejected = await post(`/api/execution/contracts/${contractId}/close`);
+    assert.equal(rejected.status, 409);
+    assert.equal(rejected.body.error, 'close_rejected');
+    assert.equal(store.getContract('u_a', contractId)?.status, 'open');
+    assert.equal(store.getTradeIntent('u_a', intent.body.intent.id)?.state, 'OPEN');
+    assert.equal((await get('/api/execution/contracts')).body.contracts[0].closePending, false);
+
+    broker.setScript({ soldFor: 1.5 });
+    const retried = await post(`/api/execution/contracts/${contractId}/close`);
+    assert.equal(retried.status, 200);
+    assert.equal(broker.sells.length, 2);
+  });
+});
+
+test('an uncertain close blocks a blind retry and leaves the position open', async () => {
+  await withServer(async ({ post, get, broker, store, monitor, user }) => {
+    const sig = await post('/api/execution/signals', {
+      symbol: 'R_100',
+      direction: 'RISE',
+      contractFamily: 'rise_fall',
+      accountId: 'DEMO'
+    });
+    const intent = await post('/api/execution/intents', {
+      signalId: sig.body.signal.id,
+      stake: 1,
+      contractFamily: 'rise_fall',
+      contractType: 'CALL',
+      parameters: { duration: 5, durationUnit: 'm' },
+      idempotencyKey: 'close-uncertain'
+    });
+    const submitted = await post(`/api/execution/intents/${intent.body.intent.id}/submit`);
+    const contractId = String(submitted.body.contractId);
+    broker.setScript({ sellError: new BrokerError('timeout', 'No sell confirmation.', true) });
+
+    const close = await post(`/api/execution/contracts/${contractId}/close`);
+    assert.equal(close.status, 409);
+    assert.equal(close.body.error, 'close_pending');
+    assert.equal(store.getContract('u_a', contractId)?.status, 'open');
+    assert.equal(store.getTradeIntent('u_a', intent.body.intent.id)?.state, 'RECONCILIATION_REQUIRED');
+
+    const history = await get('/api/execution/contracts');
+    assert.equal(history.body.contracts[0].closePending, true);
+
+    const retry = await post(`/api/execution/contracts/${contractId}/close`);
+    assert.equal(retry.status, 409);
+    assert.equal(retry.body.error, 'close_pending');
+    assert.equal(broker.sells.length, 1);
+
+    await monitor.onUpdate(user, contractId, openContractUpdate(Number(contractId), 0.25));
+    const refreshed = await get('/api/execution/contracts');
+    assert.equal(refreshed.body.contracts[0].closePending, false);
+    assert.equal(store.getTradeIntent('u_a', intent.body.intent.id)?.state, 'OPEN');
+
+    broker.setScript({ soldFor: 1.5 });
+    const confirmedRetry = await post(`/api/execution/contracts/${contractId}/close`);
+    assert.equal(confirmedRetry.status, 200);
+    assert.equal(broker.sells.length, 2);
+    assert.equal(store.getContract('u_a', contractId)?.status, 'sold');
+  });
+});
+
+test('a persisted close in progress is reconciled after a server restart', async () => {
+  await withServer(async ({ post, get, store, monitor, user }) => {
+    const sig = await post('/api/execution/signals', {
+      symbol: 'R_100',
+      direction: 'RISE',
+      contractFamily: 'rise_fall',
+      accountId: 'DEMO'
+    });
+    const intent = await post('/api/execution/intents', {
+      signalId: sig.body.signal.id,
+      stake: 1,
+      contractFamily: 'rise_fall',
+      contractType: 'CALL',
+      parameters: { duration: 5, durationUnit: 'm' },
+      idempotencyKey: 'close-recovery'
+    });
+    const submitted = await post(`/api/execution/intents/${intent.body.intent.id}/submit`);
+    const contractId = String(submitted.body.contractId);
+    const persistedIntent = store.getTradeIntent('u_a', intent.body.intent.id)!;
+    persistedIntent.state = 'CLOSE_PENDING';
+    await store.putTradeIntent(persistedIntent);
+    const attempts = store.listExecutionAttempts('u_a', intent.body.intent.id);
+    await store.putExecutionAttempt({
+      id: 'att_close_crash',
+      intentId: intent.body.intent.id,
+      userId: 'u_a',
+      attemptNumber: attempts.length + 1,
+      phase: 'close',
+      outcome: 'pending',
+      reqId: 1,
+      requestSummary: { contractId },
+      responseSummary: null,
+      errorCode: null,
+      errorMessage: null,
+      startedAt: Date.now(),
+      finishedAt: null
+    });
+
+    const history = await get('/api/execution/contracts');
+    assert.equal(history.status, 200);
+    assert.equal(store.getTradeIntent('u_a', intent.body.intent.id)?.state, 'RECONCILIATION_REQUIRED');
+
+    await monitor.onUpdate(user, contractId, openContractUpdate(Number(contractId), 0.25));
+    const reconciled = await get('/api/execution/contracts');
+    assert.equal(reconciled.body.contracts[0].closePending, false);
+    assert.equal(store.getTradeIntent('u_a', intent.body.intent.id)?.state, 'OPEN');
+    assert.equal(
+      store.listExecutionAttempts('u_a', intent.body.intent.id).find((attempt) => attempt.id === 'att_close_crash')?.outcome,
+      'error'
+    );
+  });
+
+});
+
+test('closing a contract requires an authenticated session', async () => {
+  await withServer(
+    async ({ post }) => {
+      const response = await post('/api/execution/contracts/500000/close');
+      assert.equal(response.status, 401);
+    },
+    { session: false }
+  );
+});
+
+test('a user cannot close a contract owned by another tenant', async () => {
+  await withServer(async ({ post, broker, store }) => {
+    const foreign: ContractRecord = {
+      id: '700001',
+      userId: 'u_other',
+      accountId: 'DEMO',
+      accountMode: 'demo',
+      intentId: 'int_foreign',
+      contractFamily: 'rise_fall',
+      contractType: 'CALL',
+      symbol: 'R_100',
+      buyPrice: 1,
+      stake: 1,
+      currency: 'USD',
+      payout: 1.95,
+      entrySpot: 100,
+      exitSpot: null,
+      purchaseTime: 1,
+      startTime: 1,
+      expiryTime: null,
+      settlementTime: null,
+      status: 'open',
+      profit: null,
+      soldFor: null,
+      buyTransactionId: 1,
+      updatedAt: 1
+    };
+    await store.putContract(foreign);
+
+    const response = await post(`/api/execution/contracts/${foreign.id}/close`);
+    assert.equal(response.status, 404);
+    assert.equal(response.body.error, 'not_found');
+    assert.equal(broker.sells.length, 0);
   });
 });
 
@@ -403,6 +664,77 @@ test('GET /ledger returns the stake entry for an executed contract', async () =>
     assert.equal(ledger.body.entries[0].kind, 'stake');
     assert.equal(ledger.body.entries[0].amount, -2);
   });
+});
+
+test('a confirmed DEMO risk-session reset clears the stop and keeps prior contracts', async () => {
+  await withServer(
+    async ({ store, post }) => {
+      const prefs = store.getExecutionPreferences('u_a');
+      assert.ok(prefs);
+      await store.putExecutionPreferences({ ...prefs, autoStopped: true });
+
+      const now = Date.now();
+      for (let index = 0; index < 3; index += 1) {
+        const closedAt = now - (index + 1) * 1000;
+        const contract: ContractRecord = {
+          id: `old-${index}`,
+          userId: 'u_a',
+          accountId: 'DEMO',
+          accountMode: 'demo',
+          intentId: `intent-old-${index}`,
+          contractFamily: 'rise_fall',
+          contractType: 'CALL',
+          symbol: 'R_100',
+          buyPrice: 1,
+          stake: 1,
+          currency: 'USD',
+          payout: 1.95,
+          entrySpot: 100,
+          exitSpot: 99,
+          purchaseTime: Math.floor(closedAt / 1000) - 60,
+          startTime: Math.floor(closedAt / 1000) - 60,
+          expiryTime: Math.floor(closedAt / 1000),
+          settlementTime: Math.floor(closedAt / 1000),
+          status: 'lost',
+          profit: -1,
+          soldFor: null,
+          buyTransactionId: index + 1,
+          updatedAt: closedAt
+        };
+        await store.putContract(contract);
+      }
+
+      const response = await post('/api/execution/risk-session/reset', { accountId: 'DEMO' });
+      assert.equal(response.status, 200);
+      assert.equal(response.body.preferences.autoStopped, false);
+      assert.equal(typeof response.body.resetAt, 'number');
+      assert.equal(store.listContracts('u_a').length, 3, 'reset must not delete trading history');
+      const audit = store.listExecutionAudit().find((entry) => entry.action === 'execution.risk_session_reset');
+      assert.equal(audit?.accountId, 'DEMO');
+      assert.equal(audit?.detail.priorLossStreak, 3);
+      assert.equal(
+        store.getExecutionPreferences('u_a')?.lossStreakResetAtByAccount?.DEMO,
+        response.body.resetAt
+      );
+    },
+    { automatic: true }
+  );
+});
+
+test('risk-session reset refuses an account the user does not own', async () => {
+  await withServer(
+    async ({ store, post }) => {
+      const prefs = store.getExecutionPreferences('u_a');
+      assert.ok(prefs);
+      await store.putExecutionPreferences({ ...prefs, autoStopped: true });
+      const response = await post('/api/execution/risk-session/reset', { accountId: 'FOREIGN' });
+      assert.equal(response.status, 403);
+      assert.equal(response.body.error, 'account_not_authorized');
+      assert.equal(store.getExecutionPreferences('u_a')?.autoStopped, true);
+      assert.equal(store.listExecutionAudit().some((entry) => entry.action === 'execution.risk_session_reset'), false);
+    },
+    { automatic: true }
+  );
 });
 
 test('POST /reconcile on a non-stuck intent is a no-op returning it', async () => {
@@ -541,8 +873,19 @@ test('GET /scanner reports running with the switches on', async () => {
       assert.equal(res.body.executionEnabled, true);
       assert.equal(res.body.demoEnabled, true);
       assert.equal(res.body.reason, null);
+      assert.deepEqual(res.body.watchedMarkets.map((market: { symbol: string }) => market.symbol), ['R_100', 'R_50']);
     },
-    { scanner: { isRunning: true, lastPassTime: 123, recent: [] } }
+    {
+      scanner: {
+        isRunning: true,
+        lastPassTime: 123,
+        recent: [],
+        activeMarkets: [
+          { symbol: 'R_100', displayName: 'Volatility 100 Index' },
+          { symbol: 'R_50', displayName: 'Volatility 50 Index' }
+        ]
+      }
+    }
   );
 });
 

@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  closeExecutionContract,
   fetchExecutionContracts,
   placeTrade,
+  resetDemoRiskSession,
   rejectionMessage,
   saveErrorMessage,
   saveExecutionPreferences
@@ -65,6 +67,45 @@ test('a server-supplied message is preferred over the local copy', async () => {
   }
 });
 
+test('a risk-session reset targets the selected DEMO account', async () => {
+  const original = globalThis.fetch;
+  let requestUrl = '';
+  let requestBody = '';
+  globalThis.fetch = (async (input, init) => {
+    requestUrl = String(input);
+    requestBody = String(init?.body);
+    return new Response(JSON.stringify({ preferences: { autoStopped: false } }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const result = await resetDemoRiskSession('VRTC123');
+    assert.equal(result.ok, true);
+    assert.equal(requestUrl, '/api/execution/risk-session/reset');
+    assert.deepEqual(JSON.parse(requestBody), { accountId: 'VRTC123' });
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('a risk-session reset displays the server rejection message', async () => {
+  const restore = stubFetch({
+    status: 409,
+    body: {
+      error: 'auto_stop_not_engaged',
+      message: 'Automatic execution is not stopped; no risk-session reset was made.'
+    }
+  });
+  try {
+    const result = await resetDemoRiskSession('VRTC123');
+    assert.equal(result.ok, false);
+    assert.equal(
+      result.ok === false && result.message,
+      'Automatic execution is not stopped; no risk-session reset was made.'
+    );
+  } finally {
+    restore();
+  }
+});
+
 test('a successful save returns the stored preferences', async () => {
   const restore = stubFetch({
     status: 200,
@@ -93,7 +134,8 @@ test('execution contracts are returned only when the server response is valid', 
     expiryTime: null,
     settlementTime: null,
     status: 'open',
-    profit: 0.4
+    profit: 0.4,
+    closePending: false
   };
   const restore = stubFetch({ status: 200, body: { contracts: [contract] } });
   try {
@@ -169,4 +211,29 @@ test('a risk rejection explains the open-contract limit without changing it', ()
     rejectionMessage('risk_rejected', ['max_open_contracts']),
     'Maximum open trades reached. Wait for an open position to settle before placing another.'
   );
+});
+
+test('a confirmed close request returns success', async () => {
+  const restore = stubFetch({ status: 200, body: { contract: { id: '123', status: 'sold' } } });
+  try {
+    const result = await closeExecutionContract('123');
+    assert.deepEqual(result, { ok: true });
+  } finally {
+    restore();
+  }
+});
+
+test('an uncertain close response is surfaced as pending and not retried by the client', async () => {
+  const restore = stubFetch({
+    status: 409,
+    body: { error: 'close_pending', message: 'Deriv has not confirmed the sale.' }
+  });
+  try {
+    const result = await closeExecutionContract('123');
+    assert.equal(result.ok, false);
+    assert.equal(result.ok === false && result.pending, true);
+    assert.equal(result.ok === false && result.message, 'Deriv has not confirmed the sale.');
+  } finally {
+    restore();
+  }
 });

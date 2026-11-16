@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { ExecutionContract } from './trade';
-import { summarizeContracts } from './positions';
+import { isHiddenSettledContract, summarizeContracts } from './positions';
 
 function contract(
   overrides: Partial<ExecutionContract> = {}
@@ -21,6 +21,7 @@ function contract(
     settlementTime: null,
     status: 'open',
     profit: 0.5,
+    closePending: false,
     ...overrides
   };
 }
@@ -70,4 +71,12 @@ test('incomplete live or settled profit is unavailable rather than partially sum
   assert.equal(summary.realizedProfitUnavailableCount, 1);
   assert.equal(summary.wins, 1);
   assert.equal(summary.losses, 1);
+});
+
+test('history cutoff hides only positions settled before the reset', () => {
+  const cutoff = 1_800_000_000_000;
+  assert.equal(isHiddenSettledContract(contract({ status: 'won', settlementTime: 1_799_999_999 }), cutoff), true);
+  assert.equal(isHiddenSettledContract(contract({ status: 'won', settlementTime: 1_800_000_001 }), cutoff), false);
+  assert.equal(isHiddenSettledContract(contract({ status: 'open' }), cutoff), false);
+  assert.equal(isHiddenSettledContract(contract({ status: 'won' }), null), false);
 });

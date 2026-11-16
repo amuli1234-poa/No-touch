@@ -7,16 +7,22 @@ import { RateLimiter } from '../services/admin/rateLimit.js';
 import { open } from '../lib/crypto.js';
 import type { ExecutionGateway } from '../execution/gateway.js';
 import { ExecutionError } from '../execution/gateway.js';
+import { ExecutionAuditor } from '../execution/audit.js';
 import type { AutoExecutionRunner } from '../execution/autoRunner.js';
 import type { ContractMonitor } from '../execution/contractMonitor.js';
 import type { MarketScanner } from '../services/marketScanner.js';
 import type { MarketDataService } from '../services/marketData.js';
 import type { ExecutionFlags } from '../config/flags.js';
 import { createSignal, SignalError } from '../services/signals.js';
+import { consecutiveLosses } from '../services/risk.js';
 import { adapterFor, AdapterError } from '../execution/adapters/index.js';
 import { normalisePreferences, MIN_DURATION_MINUTES, MAX_DURATION_MINUTES } from '../execution/preferences.js';
-import { AccountAccessError, resolveAccountForUser } from '../execution/accountGuard.js';
-import type { SignalDirection, ContractFamily, DerivContractType } from '../execution/types.js';
+import {
+  AccountAccessError,
+  resolveAccountForUser,
+  resolveTradableAccountForUser
+} from '../execution/accountGuard.js';
+import type { SignalDirection, ContractFamily, DerivContractType, ContractRecord } from '../execution/types.js';
 import { CONTRACT_FAMILY_TYPES } from '../execution/types.js';
 
 /**
@@ -81,6 +87,7 @@ function parseFamily(value: unknown): ContractFamily | null {
 export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
   const { store, gateway, market, runner, monitor, scanner } = deps;
   const ctx = { cfg: deps.cfg, store };
+  const auditor = new ExecutionAuditor(store);
   // Per-user limits. These blunt a runaway client or a stuck loop; the risk
   // engine's execution-frequency rule remains the real trading throttle.
   const submitLimiter = new RateLimiter(deps.limits?.submitsPerMinute ?? 30, 60_000);
@@ -319,7 +326,15 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
         ? 'demo_execution_disabled'
         : null;
     if (!scanner) {
-      res.json({ running: false, executionEnabled, demoEnabled, reason, lastPassAt: null, recent: [] });
+      res.json({
+        running: false,
+        executionEnabled,
+        demoEnabled,
+        reason,
+        lastPassAt: null,
+        recent: [],
+        watchedMarkets: []
+      });
       return;
     }
     const userId = req.user!.id;
@@ -339,12 +354,77 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
         confidence: o.candidate?.confidence ?? null,
         executed: o.auto?.outcome === 'executed'
       }));
-    res.json({ running: scanner.isRunning, executionEnabled, demoEnabled, reason, lastPassAt: scanner.lastPassTime, recent });
+    res.json({
+      running: scanner.isRunning,
+      executionEnabled,
+      demoEnabled,
+      reason,
+      lastPassAt: scanner.lastPassTime,
+      recent,
+      watchedMarkets: scanner.activeMarkets
+    });
   });
 
-  router.get('/api/execution/contracts', requireSession(ctx), (req: AuthedRequest, res: Response) => {
-    res.json({ contracts: store.listContracts(req.user!.id) });
+  router.get('/api/execution/contracts', requireSession(ctx), async (req: AuthedRequest, res: Response) => {
+    const user = req.user!;
+    const token = tokenFor(deps, req);
+    const contracts = store.listContracts(user.id);
+    try {
+      if (monitor && token) {
+        for (const contract of contracts) {
+          if (contract.status !== 'open') continue;
+          if (hasPendingClose(store, user.id, contract)) {
+            await gateway.recoverPendingClose(user, contract.id);
+            const current = store.getContract(user.id, contract.id) ?? contract;
+            monitor.monitor(user, current, token);
+          } else {
+            monitor.ensureMonitoring(user, contract, token);
+          }
+        }
+      }
+      res.json({
+        contracts: store.listContracts(user.id).map((contract) => ({
+          ...contract,
+          closePending: hasPendingClose(store, user.id, contract)
+        }))
+      });
+    } catch {
+      res.status(500).json({ error: 'contracts_unavailable', message: 'Could not load and reconcile account positions.' });
+    }
   });
+
+  router.post(
+    '/api/execution/contracts/:contractId/close',
+    requireSession(ctx),
+    json,
+    async (req: AuthedRequest, res: Response) => {
+      if (!limit(submitLimiter, req, res)) return;
+      try {
+        const sale = await gateway.closeContract(req.user!, req.params.contractId, tokenFor(deps, req));
+        const contract = store.getContract(req.user!.id, String(sale.contractId));
+        if (!contract) throw new Error('The confirmed sale has no stored contract.');
+        res.json({
+          contract: { ...contract, closePending: hasPendingClose(store, req.user!.id, contract) },
+          sale
+        });
+      } catch (err) {
+        if (err instanceof ExecutionError) {
+          const forbidden =
+            err.code === 'account_not_authorized' ||
+            err.code === 'account_mode_mismatch' ||
+            err.code === 'account_mode_invalid' ||
+            err.code === 'account_unavailable';
+          res.status(err.code === 'not_found' ? 404 : forbidden ? 403 : 409).json({
+            error: err.code,
+            message: err.message,
+            reasons: err.reasons
+          });
+          return;
+        }
+        res.status(500).json({ error: 'close_failed', message: 'Could not close the position.' });
+      }
+    }
+  );
 
   /**
    * The Trade panel's preferences. A preference expresses intent only — it can
@@ -390,6 +470,75 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
     }
   );
 
+  router.post(
+    '/api/execution/risk-session/reset',
+    requireSession(ctx),
+    json,
+    async (req: AuthedRequest, res: Response) => {
+      if (!limit(submitLimiter, req, res)) return;
+      const user = req.user!;
+      const accountId = req.body?.accountId;
+      if (typeof accountId !== 'string' || accountId.trim() === '') {
+        res.status(400).json({ error: 'invalid_account', message: 'Select a DEMO account to reset.' });
+        return;
+      }
+
+      try {
+        resolveTradableAccountForUser(user, accountId, 'demo');
+      } catch (err) {
+        if (err instanceof AccountAccessError) {
+          res.status(403).json({ error: err.code, message: err.message });
+          return;
+        }
+        res.status(500).json({
+          error: 'risk_account_check_failed',
+          message: 'Could not verify the DEMO account for this reset.'
+        });
+        return;
+      }
+
+      const preferences = store.getExecutionPreferences(user.id);
+      if (!preferences?.autoStopped) {
+        res.status(409).json({
+          error: 'auto_stop_not_engaged',
+          message: 'Automatic execution is not stopped; no risk-session reset was made.'
+        });
+        return;
+      }
+
+      const resetAt = Date.now();
+      const priorLossStreak = consecutiveLosses(store.listContracts(user.id), accountId);
+      const updated = {
+        ...preferences,
+        autoStopped: false,
+        lossStreakResetAtByAccount: {
+          ...preferences.lossStreakResetAtByAccount,
+          [accountId]: resetAt
+        },
+        updatedAt: resetAt
+      };
+
+      try {
+        await store.transaction(async () => {
+          await store.putExecutionPreferences(updated);
+          await auditor.record({
+            userId: user.id,
+            action: 'execution.risk_session_reset',
+            outcome: 'allowed',
+            accountId,
+            detail: { priorLossStreak, resetAt, mode: 'demo' }
+          });
+        });
+        res.json({ preferences: updated, resetAt });
+      } catch {
+        res.status(500).json({
+          error: 'risk_session_reset_failed',
+          message: 'Could not save the risk-session reset. Trading remains subject to all risk controls.'
+        });
+      }
+    }
+  );
+
   router.get('/api/execution/ledger', requireSession(ctx), (req: AuthedRequest, res: Response) => {
     res.json({ entries: store.listLedgerEntries(req.user!.id) });
   });
@@ -425,6 +574,18 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
   );
 
   return router;
+}
+
+function hasPendingClose(store: Store, userId: string, contract: ContractRecord): boolean {
+  const attempts = store
+    .listExecutionAttempts(userId, contract.intentId)
+    .filter(
+      (attempt) =>
+        attempt.phase === 'close' &&
+        attempt.requestSummary.contractId === contract.id
+    );
+  const outcome = attempts[attempts.length - 1]?.outcome;
+  return outcome === 'pending' || outcome === 'unknown';
 }
 
 function directionContractType(direction: SignalDirection, family: ContractFamily): DerivContractType {

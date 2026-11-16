@@ -8,16 +8,22 @@ import { executionPermitted } from '../config/flags.js';
 import type {
   TradeIntentRecord,
   ContractRecord,
+  ExecutionAttemptRecord,
   DerivContractType,
   AccountMode,
   ContractFamily
 } from './types.js';
-import { resolveTradableAccountForUser, AccountAccessError, type ResolvedAccount } from './accountGuard.js';
+import {
+  resolveAccountForUser,
+  resolveTradableAccountForUser,
+  AccountAccessError,
+  type ResolvedAccount
+} from './accountGuard.js';
 import { assertTransition } from './stateMachine.js';
-import { ExecutionLocks } from './locks.js';
+import { ExecutionLocks, LockTimeoutError } from './locks.js';
 import { adapterFor } from './adapters/index.js';
 import { ExecutionAuditor } from './audit.js';
-import type { BrokerAdapter, ProposalResult, BuyResult, ContractUpdate } from './broker/types.js';
+import type { BrokerAdapter, ProposalResult, BuyResult, ContractUpdate, SellResult } from './broker/types.js';
 import { BrokerError } from './broker/types.js';
 import type { SignalRecord } from './types.js';
 
@@ -64,7 +70,11 @@ export type ExecutionRejectionCode =
   | 'broker_uncertain'
   | 'not_found'
   | 'not_authorized'
-  | 'approval_expired';
+  | 'approval_expired'
+  | 'contract_not_open'
+  | 'close_pending'
+  | 'close_rejected'
+  | 'close_unavailable';
 
 export class ExecutionError extends Error {
   readonly code: ExecutionRejectionCode;
@@ -104,6 +114,8 @@ export interface GatewayDeps {
    * subscribe to its lifecycle. Optional; a no-op in tests that do not monitor.
    */
   onContractOpened?: (user: UserRecord, contract: ContractRecord, accessToken: string) => void;
+  /** Called after Deriv confirms a sale, before the account lock is released. */
+  onContractClosed?: (user: UserRecord, contract: ContractRecord, sale: SellResult) => Promise<void>;
   /** Balance reader, used by the risk engine. Null when unavailable. */
   balanceProvider?: (user: UserRecord, accountId: string, accessToken: string) => Promise<number | null>;
   /** Risk evaluation, injected so the gateway does not hard-depend on it. */
@@ -157,6 +169,7 @@ export class ExecutionGateway {
   private readonly balanceProvider: GatewayDeps['balanceProvider'];
   private readonly riskEvaluator: GatewayDeps['riskEvaluator'];
   private readonly onContractOpened: GatewayDeps['onContractOpened'];
+  private readonly onContractClosed: GatewayDeps['onContractClosed'];
   private readonly locks: ExecutionLocks;
   private readonly auditor: ExecutionAuditor;
   private readonly now: () => number;
@@ -169,6 +182,7 @@ export class ExecutionGateway {
     this.balanceProvider = deps.balanceProvider;
     this.riskEvaluator = deps.riskEvaluator;
     this.onContractOpened = deps.onContractOpened;
+    this.onContractClosed = deps.onContractClosed;
     this.locks = deps.locks ?? new ExecutionLocks();
     this.auditor = deps.auditor ?? new ExecutionAuditor(deps.store, { now: deps.now });
     this.now = deps.now ?? (() => Date.now());
@@ -218,6 +232,149 @@ export class ExecutionGateway {
       spot: proposal.spot,
       longform: proposal.longcode
     };
+  }
+
+  /**
+   * Sells an owned, currently open contract at market. The local contract is
+   * settled only after Deriv confirms the sale; an uncertain result is recorded
+   * so another close cannot be sent blindly.
+   */
+  async closeContract(user: UserRecord, contractId: string, accessToken: string | null): Promise<SellResult> {
+    const contract = this.store.getContract(user.id, contractId);
+    if (!contract) throw new ExecutionError('not_found', 'Contract not found.');
+
+    let account;
+    try {
+      account = resolveAccountForUser(user, contract.accountId, contract.accountMode);
+    } catch (err) {
+      const code = err instanceof AccountAccessError ? (err.code as ExecutionRejectionCode) : 'account_not_authorized';
+      throw new ExecutionError(code, 'Account is not authorized for this user.');
+    }
+
+    if (!accessToken) throw new ExecutionError('token_expired', 'The Deriv authorization has expired.');
+    if (!this.onContractClosed) {
+      throw new ExecutionError('close_unavailable', 'Position closing is not available on this server.');
+    }
+
+    const derivContractId = Number(contractId);
+    if (!Number.isSafeInteger(derivContractId) || derivContractId <= 0) {
+      throw new ExecutionError('not_found', 'Contract not found.');
+    }
+
+    try {
+      return await this.locks.withLock(contract.accountId, async () => {
+        const current = this.store.getContract(user.id, contractId);
+        if (!current || current.status !== 'open') {
+          throw new ExecutionError('contract_not_open', 'This contract is no longer open.');
+        }
+        if (this.hasPendingClose(current)) {
+          throw new ExecutionError(
+            'close_pending',
+            'Deriv has not confirmed the previous close request. Wait for the position status to update before trying again.'
+          );
+        }
+        const intent = this.store.getTradeIntent(user.id, current.intentId);
+        if (!intent || intent.state !== 'OPEN') {
+          throw new ExecutionError('contract_not_open', 'This contract is no longer available to close.');
+        }
+        const closeAttempt = await this.beginCloseAttempt(current);
+        await this.transition(intent, 'CLOSE_PENDING', null);
+
+        let sale: SellResult;
+        try {
+          sale = await this.broker.sell({
+            accountId: account.accountId,
+            accessToken,
+            accountMode: account.mode,
+            contractId: derivContractId,
+            price: 0,
+            reqId: 1
+          });
+        } catch (err) {
+          const uncertain = err instanceof BrokerError && err.uncertain;
+          await this.finishCloseAttempt(closeAttempt, uncertain ? 'unknown' : 'rejected', err);
+          const currentIntent = this.store.getTradeIntent(user.id, current.intentId);
+          if (currentIntent?.state === 'CLOSE_PENDING') {
+            await this.transition(
+              currentIntent,
+              uncertain ? 'RECONCILIATION_REQUIRED' : 'OPEN',
+              uncertain ? 'close_uncertain' : 'close_rejected'
+            );
+          }
+          await this.auditor.record({
+            userId: user.id,
+            action: 'execution.close',
+            outcome: uncertain ? 'error' : 'denied',
+            accountId: current.accountId,
+            intentId: current.intentId,
+            detail: {
+              contractId: current.id,
+              reason: err instanceof BrokerError ? err.code : 'close_failed',
+              uncertain
+            }
+          });
+          throw new ExecutionError(
+            uncertain ? 'close_pending' : 'close_rejected',
+            uncertain
+              ? 'Deriv may have received the close request. Wait for the position status to update before trying again.'
+              : 'Deriv rejected the close request.',
+            err instanceof BrokerError && err.derivCode ? [err.derivCode] : []
+          );
+        }
+
+        try {
+          await this.onContractClosed!(user, current, sale);
+        } catch (err) {
+          await this.finishCloseAttempt(closeAttempt, 'unknown', err, {
+            contractId: sale.contractId,
+            soldFor: sale.soldFor,
+            transactionId: sale.transactionId,
+            derivConfirmed: true
+          });
+          const currentIntent = this.store.getTradeIntent(user.id, current.intentId);
+          if (currentIntent?.state === 'CLOSE_PENDING') {
+            await this.transition(currentIntent, 'RECONCILIATION_REQUIRED', 'close_sync_pending');
+          }
+          await this.auditor.record({
+            userId: user.id,
+            action: 'execution.close',
+            outcome: 'error',
+            accountId: current.accountId,
+            intentId: current.intentId,
+            detail: { contractId: current.id, reason: 'local_close_sync_failed', derivConfirmed: true }
+          });
+          throw new ExecutionError(
+            'close_pending',
+            'Deriv confirmed the sale, but the position status is still syncing. Refresh before trying again.'
+          );
+        }
+
+        await this.finishCloseAttempt(closeAttempt, 'ok', null, {
+          contractId: sale.contractId,
+          soldFor: sale.soldFor,
+          transactionId: sale.transactionId
+        });
+        await this.auditor.record({
+          userId: user.id,
+          action: 'execution.close',
+          outcome: 'allowed',
+          accountId: current.accountId,
+          intentId: current.intentId,
+          detail: {
+            contractId: sale.contractId,
+            soldFor: sale.soldFor,
+            transactionId: sale.transactionId
+          }
+        });
+        return sale;
+      });
+    } catch (err) {
+      if (err instanceof ExecutionError) throw err;
+      if (err instanceof LockTimeoutError) {
+        throw new ExecutionError('lock_timeout', 'Another action is still running for this account. Try again shortly.');
+      }
+      throw err;
+    }
   }
 
   /**
@@ -586,6 +743,75 @@ export class ExecutionGateway {
       errorCode: err instanceof BrokerError ? err.code : err instanceof Error ? err.name : null,
       errorMessage: err instanceof Error ? err.message : null,
       startedAt: this.now(),
+      finishedAt: this.now()
+    });
+  }
+
+  private hasPendingClose(contract: ContractRecord): boolean {
+    const attempts = this.store
+      .listExecutionAttempts(contract.userId, contract.intentId)
+      .filter(
+        (attempt) =>
+          attempt.phase === 'close' &&
+          attempt.requestSummary.contractId === contract.id
+      );
+    const outcome = attempts[attempts.length - 1]?.outcome;
+    return outcome === 'pending' || outcome === 'unknown';
+  }
+
+  async recoverPendingClose(user: UserRecord, contractId: string): Promise<void> {
+    const contract = this.store.getContract(user.id, contractId);
+    if (!contract || contract.status !== 'open') return;
+    await this.locks.withLock(contract.accountId, async () => {
+      const current = this.store.getContract(user.id, contractId);
+      if (!current || current.status !== 'open' || !this.hasPendingClose(current)) return;
+      const intent = this.store.getTradeIntent(user.id, current.intentId);
+      if (intent && (intent.state === 'OPEN' || intent.state === 'CLOSE_PENDING')) {
+        await this.transition(intent, 'RECONCILIATION_REQUIRED', 'close_recovery');
+      }
+    });
+  }
+
+  private async beginCloseAttempt(contract: ContractRecord): Promise<ExecutionAttemptRecord> {
+    const attempts = this.store.listExecutionAttempts(contract.userId, contract.intentId);
+    const now = this.now();
+    const attempt: ExecutionAttemptRecord = {
+      id: `att_${randomUUID()}`,
+      intentId: contract.intentId,
+      userId: contract.userId,
+      attemptNumber: attempts.length + 1,
+      phase: 'close',
+      outcome: 'pending',
+      reqId: 1,
+      requestSummary: {
+        accountId: contract.accountId,
+        contractId: contract.id,
+        symbol: contract.symbol,
+        contractType: contract.contractType,
+        price: 0
+      },
+      responseSummary: null,
+      errorCode: null,
+      errorMessage: null,
+      startedAt: now,
+      finishedAt: null
+    };
+    await this.store.putExecutionAttempt(attempt);
+    return attempt;
+  }
+
+  private async finishCloseAttempt(
+    attempt: ExecutionAttemptRecord,
+    outcome: Exclude<ExecutionAttemptRecord['outcome'], 'pending'>,
+    error: unknown,
+    responseSummary: Record<string, unknown> | null = null
+  ): Promise<void> {
+    await this.store.putExecutionAttempt({
+      ...attempt,
+      outcome,
+      responseSummary,
+      errorCode: error instanceof BrokerError ? error.code : error instanceof Error ? error.name : null,
+      errorMessage: error instanceof Error ? error.message : null,
       finishedAt: this.now()
     });
   }

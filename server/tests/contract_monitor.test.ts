@@ -12,7 +12,7 @@ import { ContractMonitor } from '../execution/contractMonitor.js';
 import { ExecutionAuditor } from '../execution/audit.js';
 import { FakeBroker, uncertainBuyError } from '../execution/broker/fakeBroker.js';
 import type { ServerConfig } from '../config.js';
-import type { SignalRecord, ExecutionPreferencesRecord } from '../execution/types.js';
+import type { ContractUpdate, SignalRecord, ExecutionPreferencesRecord } from '../execution/types.js';
 
 /**
  * Phase 8 tests: contract monitoring and reconciliation.
@@ -99,6 +99,25 @@ function signal(overrides: Partial<SignalRecord> = {}): SignalRecord {
   };
 }
 
+function contractUpdate(contractId: number, status: ContractUpdate['status'], profit: number | null): ContractUpdate {
+  const isExpired = status !== 'open';
+  return {
+    contractId,
+    status,
+    profit,
+    isExpired,
+    entrySpot: 100,
+    exitSpot: isExpired ? 101 : null,
+    currentSpot: 101,
+    payout: 1.95,
+    dateStart: NOW,
+    dateExpiry: isExpired ? NOW : NOW + 300,
+    dateSettlement: isExpired ? NOW : null,
+    soldFor: null,
+    derivTransactionId: null
+  };
+}
+
 function prefs(overrides: Partial<ExecutionPreferencesRecord> = {}): ExecutionPreferencesRecord {
   return {
     userId: 'u_a',
@@ -155,9 +174,7 @@ test('a winning contract settles once and posts exactly one settlement entry', a
     const { contract } = await openOneContract(store, broker, runner);
     assert.equal(store.listLedgerEntries('u_a').length, 1, 'stake entry only, before settlement');
 
-    broker.emitContract(Number(contract.id), 'won', 0.95);
-    // The update is delivered asynchronously through the subscription.
-    await new Promise((r) => setTimeout(r, 5));
+    await monitor.onUpdate(USER, contract.id, contractUpdate(Number(contract.id), 'won', 0.95));
 
     const settled = store.getContract('u_a', contract.id)!;
     assert.equal(settled.status, 'won');
@@ -168,6 +185,27 @@ test('a winning contract settles once and posts exactly one settlement entry', a
     assert.equal(settlements.length, 1, 'exactly one settlement entry');
     assert.equal(settlements[0].amount, 0.95);
     assert.equal(store.getTradeIntent('u_a', store.listTradeIntents('u_a')[0].id)!.state, 'SETTLED');
+  } finally {
+    monitor.close();
+    await store.close();
+  }
+});
+
+test('a confirmed sale without proceeds does not fabricate a zero realized result', async () => {
+  const { store, broker, monitor, runner } = await harness();
+  try {
+    const { contract, intentId } = await openOneContract(store, broker, runner);
+    await monitor.recordSale(USER, contract.id, {
+      contractId: Number(contract.id),
+      soldFor: null,
+      balanceAfter: null,
+      transactionId: null
+    });
+
+    assert.equal(store.getContract('u_a', contract.id)?.status, 'sold');
+    assert.equal(store.getContract('u_a', contract.id)?.profit, null);
+    assert.equal(store.listLedgerEntries('u_a').length, 1, 'only the stake entry is recorded');
+    assert.equal(store.getTradeIntent('u_a', intentId)?.state, 'SETTLED');
   } finally {
     monitor.close();
     await store.close();
@@ -218,8 +256,7 @@ test('a losing contract records a zero-or-negative settlement and no profit', as
   const { store, broker, monitor, runner } = await harness();
   try {
     const { contract } = await openOneContract(store, broker, runner);
-    broker.emitContract(Number(contract.id), 'lost', -1);
-    await new Promise((r) => setTimeout(r, 5));
+    await monitor.onUpdate(USER, contract.id, contractUpdate(Number(contract.id), 'lost', -1));
     const settled = store.getContract('u_a', contract.id)!;
     assert.equal(settled.status, 'lost');
     assert.equal(settled.profit, -1);

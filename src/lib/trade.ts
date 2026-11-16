@@ -139,6 +139,38 @@ export async function saveExecutionPreferences(
   }
 }
 
+export type RiskSessionResetResult =
+  | { ok: true; preferences: ExecutionPreferences }
+  | { ok: false; error: string; message: string };
+
+export async function resetDemoRiskSession(accountId: string): Promise<RiskSessionResetResult> {
+  try {
+    const res = await fetch('/api/execution/risk-session/reset', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountId })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) expireAuth();
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: typeof data?.error === 'string' ? data.error : 'risk_session_reset_failed',
+        message:
+          (typeof data?.message === 'string' && data.message) ||
+          'Could not start a new risk session.'
+      };
+    }
+    if (!data?.preferences || typeof data.preferences !== 'object') {
+      return { ok: false, error: 'invalid_response', message: 'The reset response was invalid.' };
+    }
+    return { ok: true, preferences: data.preferences as ExecutionPreferences };
+  } catch {
+    return { ok: false, error: 'network', message: 'The server could not be reached.' };
+  }
+}
+
 /* ------------------------------- trading -------------------------------- */
 
 export type SignalDirection = 'RISE' | 'FALL';
@@ -181,6 +213,7 @@ export interface ExecutionContract {
   settlementTime: number | null;
   status: 'open' | 'sold' | 'won' | 'lost' | 'cancelled' | 'unknown';
   profit: number | null;
+  closePending: boolean;
 }
 
 export type ExecutionContractsResult =
@@ -213,7 +246,8 @@ function isExecutionContract(value: unknown): value is ExecutionContract {
       contract.status === 'lost' ||
       contract.status === 'cancelled' ||
       contract.status === 'unknown') &&
-    nullableNumber(contract.profit)
+    nullableNumber(contract.profit) &&
+    typeof contract.closePending === 'boolean'
   );
 }
 
@@ -256,6 +290,68 @@ export async function fetchExecutionContracts(): Promise<ExecutionContractsResul
       ok: false,
       error: 'network',
       message: CONTRACTS_ERROR_COPY.network
+    };
+  }
+}
+
+export type CloseContractResult =
+  | { ok: true }
+  | { ok: false; error: string; message: string; pending: boolean };
+
+const CLOSE_ERROR_COPY: Record<string, string> = {
+  unauthorized: 'Your session has expired. Sign in again before closing a position.',
+  token_expired: 'Your Deriv session has expired. Sign in again before closing a position.',
+  contract_not_open: 'This position is no longer open. Refresh your positions.',
+  close_pending: 'Deriv has not confirmed the close yet. Wait for the position status to update before trying again.',
+  close_rejected: 'Deriv rejected the close request. This position may not be sellable right now.',
+  close_unavailable: 'Position closing is not available on this server.',
+  lock_timeout: 'Another action is running for this account. Try closing the position again shortly.',
+  rate_limited: 'Too many requests — wait a moment before closing another position.',
+  network: 'The server could not be reached. Refresh your positions before trying again.'
+};
+
+/** Requests an explicit server-side sell at market for one owned position. */
+export async function closeExecutionContract(contractId: string): Promise<CloseContractResult> {
+  try {
+    const res = await fetch(`/api/execution/contracts/${encodeURIComponent(contractId)}/close`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401) expireAuth();
+    if (!res.ok) {
+      const error = typeof data?.error === 'string' ? data.error : 'close_failed';
+      return {
+        ok: false,
+        error,
+        message:
+          (typeof data?.message === 'string' && data.message) ||
+          CLOSE_ERROR_COPY[error] ||
+          'The position could not be closed.',
+        pending: error === 'close_pending'
+      };
+    }
+    const status = data?.contract?.status;
+    if (
+      data?.contract?.id !== contractId ||
+      !['sold', 'won', 'lost', 'cancelled'].includes(status)
+    ) {
+      return {
+        ok: false,
+        error: 'close_pending',
+        message: 'Deriv has not confirmed the final position status yet. Refresh before trying again.',
+        pending: true
+      };
+    }
+    return { ok: true };
+  } catch {
+    return {
+      ok: false,
+      error: 'network',
+      message: CLOSE_ERROR_COPY.network,
+      pending: false
     };
   }
 }
@@ -319,6 +415,7 @@ export interface ScannerStatus {
   /** Why the scanner is off: 'execution_disabled' | 'demo_execution_disabled' | null. */
   reason: 'execution_disabled' | 'demo_execution_disabled' | null;
   lastPassAt: number | null;
+  watchedMarkets: Array<{ symbol: string; displayName: string }>;
   recent: Array<{
     symbol: string;
     outcome: 'proposed' | 'skipped_cooldown' | 'no_signal' | 'skipped_manual_mode';
@@ -345,6 +442,14 @@ export async function fetchScannerStatus(): Promise<ScannerStatus | null> {
           ? data.reason
           : null,
       lastPassAt: typeof data.lastPassAt === 'number' ? data.lastPassAt : null,
+      watchedMarkets: Array.isArray(data.watchedMarkets)
+        ? data.watchedMarkets.filter(
+            (market: any) =>
+              market &&
+              typeof market.symbol === 'string' &&
+              typeof market.displayName === 'string'
+          )
+        : [],
       recent: Array.isArray(data.recent) ? data.recent : []
     };
   } catch {

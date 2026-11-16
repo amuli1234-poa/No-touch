@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DollarSign, RefreshCw } from 'lucide-react';
+import { useAuth } from '../../lib/auth';
 import { formatMoney } from '../../lib/balances';
-import { summarizeContracts } from '../../lib/positions';
+import { isHiddenSettledContract, summarizeContracts } from '../../lib/positions';
 import {
+  closeExecutionContract,
   fetchExecutionContracts,
   type AccountMode,
   type ExecutionContract
@@ -30,11 +32,13 @@ function directionLabel(contractType: ExecutionContract['contractType']): string
   return contractType === 'CALL' || contractType === 'MULTUP' ? 'Rise' : 'Fall';
 }
 
-function statusLabel(status: ExecutionContract['status']): string {
+function statusLabel(status: ExecutionContract['status'], closePending: boolean): string {
+  if (closePending) return 'Close pending';
   return status === 'unknown' ? 'Unconfirmed' : status;
 }
 
 export function ExecutionPositions() {
+  const auth = useAuth();
   const [mode, setMode] = useState<AccountMode>('demo');
   const [tab, setTab] = useState<PositionsTab>('open');
   const [contracts, setContracts] = useState<ExecutionContract[] | null>(null);
@@ -42,8 +46,15 @@ export function ExecutionPositions() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+  const [closeConfirmId, setCloseConfirmId] = useState<string | null>(null);
+  const [closingId, setClosingId] = useState<string | null>(null);
+  const [closeError, setCloseError] = useState<string | null>(null);
+  const [historyHiddenBefore, setHistoryHiddenBefore] = useState<number | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const inFlight = useRef(false);
   const mounted = useRef(false);
+  const historyStorageKey =
+    auth.status === 'authenticated' ? `wicksentinel_history_hidden_before:${auth.user.id}` : null;
 
   const refresh = useCallback(async () => {
     if (inFlight.current) return;
@@ -78,17 +89,88 @@ export function ExecutionPositions() {
     };
   }, [refresh]);
 
+  useEffect(() => {
+    if (!historyStorageKey) {
+      setHistoryHiddenBefore(null);
+      return;
+    }
+    try {
+      const saved = window.localStorage.getItem(historyStorageKey);
+      const cutoff = saved === null ? null : Number(saved);
+      if (cutoff !== null && (!Number.isFinite(cutoff) || cutoff <= 0)) {
+        setHistoryError('The saved history view setting is invalid. Restore or reset it to continue.');
+        return;
+      }
+      setHistoryHiddenBefore(cutoff);
+      setHistoryError(null);
+    } catch {
+      setHistoryError('Could not load the saved history view setting.');
+    }
+  }, [historyStorageKey]);
+
+  const hideClosedHistory = () => {
+    if (!historyStorageKey) return;
+    const cutoff = Date.now();
+    try {
+      window.localStorage.setItem(historyStorageKey, String(cutoff));
+      setHistoryHiddenBefore(cutoff);
+      setHistoryError(null);
+    } catch {
+      setHistoryError('Could not save the history view setting.');
+    }
+  };
+
+  const restoreClosedHistory = () => {
+    if (!historyStorageKey) return;
+    try {
+      window.localStorage.removeItem(historyStorageKey);
+      setHistoryHiddenBefore(null);
+      setHistoryError(null);
+    } catch {
+      setHistoryError('Could not restore the hidden history.');
+    }
+  };
+
+  const visibleHistoryContracts = useMemo(
+    () => (contracts ?? []).filter((contract) => !isHiddenSettledContract(contract, historyHiddenBefore)),
+    [contracts, historyHiddenBefore]
+  );
   const modeContracts = useMemo(
-    () => contracts?.filter((contract) => contract.accountMode === mode) ?? [],
-    [contracts, mode]
+    () => visibleHistoryContracts.filter((contract) => contract.accountMode === mode),
+    [visibleHistoryContracts, mode]
   );
   const summaries = useMemo(
-    () => summarizeContracts(contracts ?? [], mode),
-    [contracts, mode]
+    () => summarizeContracts(visibleHistoryContracts, mode),
+    [visibleHistoryContracts, mode]
   );
+  const hiddenClosedCount = (contracts ?? []).filter(
+    (contract) => contract.accountMode === mode && isHiddenSettledContract(contract, historyHiddenBefore)
+  ).length;
   const visibleContracts = modeContracts
     .filter((contract) => (tab === 'open' ? contract.status === 'open' : contract.status !== 'open'))
     .sort((a, b) => b.purchaseTime - a.purchaseTime);
+  const closeConfirmContract =
+    tab === 'open'
+      ? modeContracts.find(
+          (contract) => contract.id === closeConfirmId && contract.status === 'open' && !contract.closePending
+        )
+      : undefined;
+
+  const submitClose = async () => {
+    if (!closeConfirmContract || closingId !== null) return;
+    const contractId = closeConfirmContract.id;
+    setClosingId(contractId);
+    setCloseError(null);
+    try {
+      const result = await closeExecutionContract(contractId);
+      if (!mounted.current) return;
+      if (!result.ok) setCloseError(result.message);
+      setCloseConfirmId(null);
+      await refresh();
+    } finally {
+      if (mounted.current) setClosingId(null);
+    }
+  };
 
   return (
     <SectionCard
@@ -127,6 +209,46 @@ export function ExecutionPositions() {
       {error && (
         <div role="alert" className="mb-3 rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-[11px] text-warn">
           {error}
+        </div>
+      )}
+      {closeError && (
+        <div role="alert" className="mb-3 rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-[11px] text-warn">
+          {closeError}
+        </div>
+      )}
+      {historyError && (
+        <div role="alert" className="mb-3 rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-[11px] text-warn">
+          {historyError}
+        </div>
+      )}
+      {closeConfirmContract && (
+        <div
+          role="group"
+          aria-label="Confirm position close"
+          className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-warn/30 bg-warn/10 px-3 py-2"
+        >
+          <p className="text-[11px] text-ink">
+            Sell {closeConfirmContract.symbol} at Deriv&apos;s current market price? Final proceeds and P/L may differ
+            from the live estimate.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void submitClose()}
+              disabled={closingId !== null}
+              className="rounded-md border border-bear/30 bg-bear/10 px-2.5 py-1.5 text-[10px] font-bold text-bear hover:bg-bear/20 disabled:opacity-50 cursor-pointer"
+            >
+              {closingId === closeConfirmContract.id ? 'Closing…' : 'Confirm sale'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setCloseConfirmId(null)}
+              disabled={closingId !== null}
+              className="rounded-md border border-line bg-surface px-2.5 py-1.5 text-[10px] font-bold text-muted hover:bg-elevated disabled:opacity-50 cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 
@@ -190,11 +312,33 @@ export function ExecutionPositions() {
             </button>
           ))}
         </div>
-        {updatedAt !== null && (
-          <span className="text-[10px] text-faint">
-            Updated {new Date(updatedAt).toLocaleTimeString()}
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {tab === 'closed' && modeContracts.some((contract) => contract.status !== 'open') && (
+            <button
+              type="button"
+              onClick={hideClosedHistory}
+              disabled={!historyStorageKey}
+              className="rounded-md border border-line bg-surface px-2 py-1 text-[10px] font-semibold text-muted hover:bg-elevated disabled:opacity-50 cursor-pointer"
+            >
+              <span>Hide closed history</span>
+            </button>
+          )}
+          {tab === 'closed' && hiddenClosedCount > 0 && (
+            <button
+              type="button"
+              onClick={restoreClosedHistory}
+              disabled={!historyStorageKey}
+              className="rounded-md border border-line bg-surface px-2 py-1 text-[10px] font-semibold text-muted hover:bg-elevated disabled:opacity-50 cursor-pointer"
+            >
+              <span>Restore hidden ({hiddenClosedCount})</span>
+            </button>
+          )}
+          {updatedAt !== null && (
+            <span className="text-[10px] text-faint">
+              Updated {new Date(updatedAt).toLocaleTimeString()}
+            </span>
+          )}
+        </div>
       </div>
 
       {loading && contracts === null ? (
@@ -205,12 +349,14 @@ export function ExecutionPositions() {
           description={
             contracts === null
               ? 'Positions could not be loaded. Refresh or sign in again to retry.'
-              : `No ${tab} ${mode.toUpperCase()} contracts are recorded yet.`
+              : tab === 'closed' && hiddenClosedCount > 0
+                ? `${hiddenClosedCount} older closed position${hiddenClosedCount === 1 ? ' is' : 's are'} hidden from this view.`
+                : `No ${tab} ${mode.toUpperCase()} contracts are recorded yet.`
           }
         />
       ) : (
         <div className="overflow-x-auto -mx-4 px-4">
-          <table className="w-full min-w-[720px] text-left text-xs">
+          <table className="w-full min-w-[820px] text-left text-xs">
             <thead className="text-faint border-b border-line">
               <tr className="text-[10px] uppercase tracking-wide">
                 <th className="py-2 pr-3 font-semibold">Market / contract</th>
@@ -219,6 +365,7 @@ export function ExecutionPositions() {
                 <th className="py-2 pr-3 font-semibold text-right">Stake</th>
                 <th className="py-2 pr-3 font-semibold text-right">Profit / loss</th>
                 <th className="py-2 font-semibold text-right">Status</th>
+                <th className="py-2 pl-3 font-semibold text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line-soft font-mono tabular-nums">
@@ -247,13 +394,34 @@ export function ExecutionPositions() {
                           ? 'bg-success/10 text-success'
                           : contract.status === 'lost'
                             ? 'bg-bear/10 text-bear'
-                            : contract.status === 'open'
+                            : contract.closePending
+                              ? 'bg-warn/10 text-warn'
+                              : contract.status === 'open'
                               ? 'bg-accent/10 text-accent'
                               : 'bg-elevated text-muted'
                       }`}
                     >
-                      {statusLabel(contract.status)}
+                      {statusLabel(contract.status, contract.closePending)}
                     </span>
+                  </td>
+                  <td className="py-2 pl-3 text-right whitespace-nowrap">
+                    {contract.status === 'open' &&
+                      (contract.closePending ? (
+                        <span className="text-[10px] font-semibold text-warn">Waiting for Deriv</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCloseError(null);
+                            setCloseConfirmId(contract.id);
+                          }}
+                          disabled={closingId !== null}
+                          aria-label={`Close ${contract.symbol} at market`}
+                          className="rounded-md border border-bear/30 bg-bear/10 px-2 py-1 text-[10px] font-bold text-bear hover:bg-bear/20 disabled:opacity-50 cursor-pointer"
+                        >
+                          Close at market
+                        </button>
+                      ))}
                   </td>
                 </tr>
               ))}

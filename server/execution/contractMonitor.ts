@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { Store, UserRecord } from '../store/store.js';
-import type { BrokerAdapter, ContractUpdate } from './broker/types.js';
+import type { BrokerAdapter, ContractUpdate, SellResult } from './broker/types.js';
 import type { ContractRecord, ContractStatus, LedgerEntryRecord, TradeIntentRecord } from './types.js';
 import type { ExecutionAuditor } from './audit.js';
 
@@ -15,10 +15,9 @@ import type { ExecutionAuditor } from './audit.js';
  *     Settlement is idempotent: the ledger's `dedupeKey` makes a replayed update
  *     a no-op, so a reconnect or a duplicate message can never double-post.
  *
- *  2. Reconcile. An intent left `UNKNOWN`/`RECONCILIATION_REQUIRED` (a purchase
- *     that may have reached Deriv) is resolved against Deriv's own record of the
- *     contract, never retried. `reconcile` reads the contract's true status and
- *     moves the intent to OPEN, SETTLED or FAILED accordingly.
+ *  2. Reconcile. An intent left `UNKNOWN`/`RECONCILIATION_REQUIRED` after an
+ *     uncertain purchase or close is resolved against Deriv's own contract
+ *     record, never retried blindly.
  *
  * Nothing here submits a purchase. It only observes and records.
  */
@@ -70,10 +69,43 @@ export class ContractMonitor {
     });
   }
 
+  /** Starts a subscription only when this process is not already monitoring the contract. */
+  ensureMonitoring(user: UserRecord, contract: ContractRecord, accessToken: string): void {
+    if (!this.subscriptions.has(contract.id)) this.monitor(user, contract, accessToken);
+  }
+
+  /** Applies a confirmed Deriv sale through the same settlement path as lifecycle updates. */
+  async recordSale(user: UserRecord, contractId: string, sale: SellResult): Promise<ContractRecord> {
+    const contract = this.store.getContract(user.id, contractId);
+    if (!contract) throw new Error('Cannot record a sale for an unknown contract.');
+    if (sale.contractId !== Number(contractId)) {
+      throw new Error('Deriv returned a sale for a different contract.');
+    }
+    const update: ContractUpdate = {
+      contractId: sale.contractId,
+      status: 'sold',
+      profit: sale.soldFor === null ? null : sale.soldFor - contract.buyPrice,
+      isExpired: true,
+      entrySpot: contract.entrySpot,
+      exitSpot: contract.exitSpot,
+      currentSpot: contract.exitSpot,
+      payout: contract.payout,
+      dateStart: contract.startTime,
+      dateExpiry: contract.expiryTime,
+      dateSettlement: Math.floor(this.now() / 1000),
+      soldFor: sale.soldFor,
+      derivTransactionId: sale.transactionId
+    };
+    const settled = await this.onUpdate(user, contractId, update);
+    if (!settled) throw new Error('The confirmed sale could not be matched to a stored contract.');
+    return settled;
+  }
+
   /** Applies one lifecycle update to a stored contract. */
   async onUpdate(user: UserRecord, contractId: string, update: ContractUpdate): Promise<ContractRecord | null> {
     const contract = this.store.getContract(user.id, contractId);
     if (!contract) return null;
+    await this.resolvePendingCloseAttempt(user, contract, update);
 
     // An open update only refreshes the live fields; it never settles.
     if (!update.isExpired && update.status === 'open') {
@@ -100,7 +132,10 @@ export class ContractMonitor {
     // Idempotency is judged against what is stored, not against the object the
     // caller holds, so a fresh record with a terminal status still settles once.
     const stored = this.store.getContract(user.id, contract.id);
-    if (stored && SETTLED_STATUSES.includes(stored.status)) return stored;
+    if (stored && SETTLED_STATUSES.includes(stored.status)) {
+      this.subscriptions.get(contract.id)?.();
+      return stored;
+    }
 
     const status = SETTLED_STATUSES.includes(update.status) ? update.status : 'unknown';
     const profit = update.profit ?? null;
@@ -110,6 +145,7 @@ export class ContractMonitor {
       ...contract,
       status,
       profit,
+      soldFor: update.soldFor ?? contract.soldFor,
       exitSpot: update.exitSpot ?? contract.exitSpot,
       settlementTime: settledAt,
       updatedAt: this.now()
@@ -118,23 +154,25 @@ export class ContractMonitor {
 
     // One settlement entry per contract, deduped so a replay cannot double-post.
     // A positive profit returns stake+profit; a loss returns nothing.
-    const settlementAmount = profit ?? 0;
-    const entry: LedgerEntryRecord = {
-      id: `led_${randomUUID()}`,
-      userId: user.id,
-      accountId: contract.accountId,
-      accountMode: contract.accountMode,
-      contractId: contract.id,
-      intentId: contract.intentId,
-      kind: 'settlement',
-      amount: settlementAmount,
-      currency: contract.currency,
-      derivTransactionId: null,
-      dedupeKey: `settlement:${contract.id}`,
-      settled: true,
-      createdAt: settledAt
-    };
-    const posted = await this.store.putLedgerEntry(entry);
+    let posted = false;
+    if (profit !== null) {
+      const entry: LedgerEntryRecord = {
+        id: `led_${randomUUID()}`,
+        userId: user.id,
+        accountId: contract.accountId,
+        accountMode: contract.accountMode,
+        contractId: contract.id,
+        intentId: contract.intentId,
+        kind: 'settlement',
+        amount: profit,
+        currency: contract.currency,
+        derivTransactionId: update.derivTransactionId ?? null,
+        dedupeKey: `settlement:${contract.id}`,
+        settled: true,
+        createdAt: settledAt
+      };
+      posted = await this.store.putLedgerEntry(entry);
+    }
 
     // Move the intent to SETTLED, if it is in a state that allows it.
     await this.settleIntent(user, contract.intentId);
@@ -150,6 +188,40 @@ export class ContractMonitor {
 
     this.subscriptions.get(contract.id)?.();
     return settled;
+  }
+
+  private async resolvePendingCloseAttempt(
+    user: UserRecord,
+    contract: ContractRecord,
+    update: ContractUpdate
+  ): Promise<void> {
+    const intent = this.store.getTradeIntent(user.id, contract.intentId);
+    if (intent?.state !== 'RECONCILIATION_REQUIRED') return;
+    const attempts = this.store
+      .listExecutionAttempts(user.id, contract.intentId)
+      .filter(
+        (attempt) =>
+          attempt.phase === 'close' &&
+          attempt.requestSummary.contractId === contract.id &&
+          (attempt.outcome === 'pending' || attempt.outcome === 'unknown')
+      );
+    const attempt = attempts[attempts.length - 1];
+    if (!attempt) return;
+
+    const stillOpen = update.status === 'open' && !update.isExpired;
+    const confirmedClosed = update.isExpired && SETTLED_STATUSES.includes(update.status);
+    if (!stillOpen && !confirmedClosed) return;
+    await this.store.putExecutionAttempt({
+      ...attempt,
+      outcome: stillOpen ? 'error' : 'ok',
+      responseSummary: { contractId: contract.id, status: update.status, isExpired: update.isExpired },
+      errorCode: stillOpen ? 'close_not_confirmed' : null,
+      errorMessage: stillOpen ? 'Deriv confirmed that the contract remains open.' : null,
+      finishedAt: this.now()
+    });
+    if (stillOpen && intent) {
+      await this.transition(user, intent, 'OPEN', 'close_not_confirmed');
+    }
   }
 
   /**

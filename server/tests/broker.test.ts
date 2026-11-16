@@ -288,6 +288,105 @@ test('a buy timeout is classified uncertain, so it is never blindly retried', as
   }
 });
 
+test('a sell is scoped to the account and requests the contract at market price', async () => {
+  const otp = stubOtp();
+  const sock = fakeSocket();
+  const broker = new DerivBroker(makeConfig(), {
+    wsFactory: () => sock as unknown as MinimalWebSocket,
+    timeoutMs: 200
+  });
+  try {
+    const salePromise = broker.sell({
+      accountId: 'VRTC1',
+      accessToken: 'tok',
+      accountMode: 'demo',
+      contractId: 999,
+      price: 0,
+      reqId: 3
+    });
+    await tick();
+    assert.ok(otp.calls.some((url) => url.includes('/accounts/VRTC1/otp')));
+    sock.emit('open');
+    assert.deepEqual(sock.sent[0], { sell: 999, price: 0, req_id: 3 });
+    sock.emit('message', {
+      data: JSON.stringify({
+        msg_type: 'sell',
+        req_id: 3,
+        sell: { contract_id: 999, sold_for: 1.75, balance_after: 100.5, transaction_id: 601 }
+      })
+    });
+    assert.deepEqual(await salePromise, {
+      contractId: 999,
+      soldFor: 1.75,
+      balanceAfter: 100.5,
+      transactionId: 601
+    });
+    assert.equal(sock.isClosed(), true);
+  } finally {
+    broker.close();
+    otp.restore();
+  }
+});
+
+test('a sell timeout is uncertain and cannot be treated as a confirmed close', async () => {
+  const otp = stubOtp();
+  const sock = fakeSocket();
+  const broker = new DerivBroker(makeConfig(), {
+    wsFactory: () => sock as unknown as MinimalWebSocket,
+    timeoutMs: 20
+  });
+  try {
+    const salePromise = broker.sell({
+      accountId: 'VRTC1',
+      accessToken: 'tok',
+      accountMode: 'demo',
+      contractId: 999,
+      price: 0,
+      reqId: 3
+    });
+    await tick();
+    sock.emit('open');
+    await assert.rejects(
+      salePromise,
+      (error: unknown) => error instanceof BrokerError && error.code === 'timeout' && error.uncertain
+    );
+  } finally {
+    broker.close();
+    otp.restore();
+  }
+});
+
+test('a sell response without the requested contract id remains uncertain', async () => {
+  const otp = stubOtp();
+  const sock = fakeSocket();
+  const broker = new DerivBroker(makeConfig(), {
+    wsFactory: () => sock as unknown as MinimalWebSocket,
+    timeoutMs: 200
+  });
+  try {
+    const salePromise = broker.sell({
+      accountId: 'VRTC1',
+      accessToken: 'tok',
+      accountMode: 'demo',
+      contractId: 999,
+      price: 0,
+      reqId: 3
+    });
+    await tick();
+    sock.emit('open');
+    sock.emit('message', {
+      data: JSON.stringify({ msg_type: 'sell', req_id: 3, sell: { sold_for: 1.75 } })
+    });
+    await assert.rejects(
+      salePromise,
+      (error: unknown) => error instanceof BrokerError && error.code === 'unknown' && error.uncertain
+    );
+  } finally {
+    broker.close();
+    otp.restore();
+  }
+});
+
 test('a proposal timeout is NOT uncertain, because no money moved', async () => {
   const otp = stubOtp();
   const sock = fakeSocket();
@@ -370,4 +469,18 @@ test('mapContract normalises a settled win', () => {
   assert.equal(u.isExpired, true);
   assert.equal(u.entrySpot, 100);
   assert.equal(u.exitSpot, 101);
+});
+
+test('mapContract recognizes a Deriv-sold contract as settled', () => {
+  const update = mapContract({
+    contract_id: 2,
+    status: 'sold',
+    is_sold: 1,
+    is_expired: 1,
+    profit: -0.25,
+    sell_price: 0.75
+  });
+  assert.equal(update.status, 'sold');
+  assert.equal(update.isExpired, true);
+  assert.equal(update.soldFor, 0.75);
 });

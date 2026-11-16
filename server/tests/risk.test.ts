@@ -240,6 +240,36 @@ test('consecutive_losses locks trading after the configured run', async () => {
   }
 });
 
+test('a DEMO risk-session baseline ignores old losses but counts new ones', async () => {
+  const store = await storeWith();
+  try {
+    await store.putRiskProfile(profile({ maxConsecutiveLosses: 2 }));
+    await store.putExecutionPreferences({
+      userId: 'u_a',
+      mode: 'automatic',
+      contractFamily: 'rise_fall',
+      preferredAccountId: { demo: 'ACC' },
+      stake: { basis: 'stake', amount: 1, currency: 'USD' },
+      parameters: { duration: 5, durationUnit: 'm', multiplier: null, cancellation: null, stopLoss: null, takeProfit: null },
+      realExecutionAuthorised: false,
+      autoStopped: false,
+      lossStreakResetAtByAccount: { ACC: NOW },
+      updatedAt: NOW
+    });
+    await store.putContract(contract({ id: 'old-1', status: 'lost', profit: -1, settlementTime: (NOW - 3000) / 1000 }));
+    await store.putContract(contract({ id: 'old-2', status: 'lost', profit: -1, settlementTime: (NOW - 2000) / 1000 }));
+    await store.putContract(contract({ id: 'old-3', status: 'lost', profit: -1, settlementTime: (NOW - 1000) / 1000 }));
+
+    await store.putContract(contract({ id: 'new-1', status: 'lost', profit: -1, settlementTime: (NOW + 1000) / 1000 }));
+    assert.equal(evaluateRisk(store, { ...baseInput, now: NOW + 1500 }).reasons.includes('consecutive_losses'), false);
+
+    await store.putContract(contract({ id: 'new-2', status: 'lost', profit: -1, settlementTime: (NOW + 2000) / 1000 }));
+    assert.equal(evaluateRisk(store, { ...baseInput, now: NOW + 2500 }).reasons.includes('consecutive_losses'), true);
+  } finally {
+    await store.close();
+  }
+});
+
 test('max_open_contracts and max_exposure are both enforced', async () => {
   const store = await storeWith();
   try {

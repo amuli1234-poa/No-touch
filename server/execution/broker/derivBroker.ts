@@ -7,6 +7,8 @@ import type {
   ProposalResult,
   BuyRequest,
   BuyResult,
+  SellRequest,
+  SellResult,
   ContractUpdate
 } from './types.js';
 import type { AccountMode, ContractStatus } from '../types.js';
@@ -292,6 +294,33 @@ export class DerivBroker implements BrokerAdapter {
     };
   }
 
+  async sell(req: SellRequest): Promise<SellResult> {
+    const { response: msg } = await this.request<any>(
+      req.accessToken,
+      req.accountId,
+      { sell: req.contractId, price: req.price, req_id: req.reqId },
+      {
+        // A sell may have reached Deriv before the response was lost.
+        uncertainOnTimeout: true,
+        expect: 'sell'
+      }
+    );
+    const sale = msg.sell ?? {};
+    const contractId = toNumber(sale.contract_id);
+    if (contractId === null) {
+      throw new BrokerError('unknown', 'Deriv confirmed a sell response without a contract id.', true);
+    }
+    if (contractId !== req.contractId) {
+      throw new BrokerError('unknown', 'Deriv returned a different contract id for the sale.', true);
+    }
+    return {
+      contractId,
+      soldFor: toNumber(sale.sold_for),
+      balanceAfter: toNumber(sale.balance_after),
+      transactionId: toNumber(sale.transaction_id)
+    };
+  }
+
   /**
    * Subscribes to a contract's lifecycle. Opens a dedicated authenticated
    * socket that stays open for the life of the subscription; the returned
@@ -457,12 +486,15 @@ export function mapContract(c: any): ContractUpdate {
     payout: toNumber(c.payout),
     dateStart: toNumber(c.date_start),
     dateExpiry: toNumber(c.date_expiry),
-    dateSettlement: toNumber(c.date_settlement)
+    dateSettlement: toNumber(c.date_settlement),
+    soldFor: toNumber(c.sell_price) ?? toNumber(c.sold_for)
   };
 }
 
 function normaliseStatus(status: unknown, isSold: boolean): ContractStatus {
-  if (status === 'won' || status === 'lost' || status === 'open') return status;
-  if (isSold) return 'unknown';
+  if (status === 'won' || status === 'lost' || status === 'open' || status === 'sold' || status === 'cancelled') {
+    return status;
+  }
+  if (isSold) return 'sold';
   return 'open';
 }

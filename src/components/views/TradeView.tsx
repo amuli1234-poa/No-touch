@@ -22,6 +22,7 @@ import {
   fetchScannerStatus,
   placeTrade,
   previewTrade,
+  resetDemoRiskSession,
   saveExecutionPreferences,
   toMinutes,
   type ContractFamily,
@@ -78,6 +79,8 @@ export function TradeView() {
   const [placing, setPlacing] = useState(false);
   const [placed, setPlaced] = useState<{ contractId: number | null; payout: number | null } | null>(null);
   const [scanner, setScanner] = useState<ScannerStatus | null>(null);
+  const [riskResetConfirm, setRiskResetConfirm] = useState(false);
+  const [riskResetting, setRiskResetting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,6 +154,10 @@ export function TradeView() {
   const multiplierValid = Number.isFinite(multiplier) && multiplier > 0;
 
   const currency = tradingAccount?.currency ?? prefs?.stake.currency ?? 'USD';
+
+  useEffect(() => {
+    setRiskResetConfirm(false);
+  }, [tradingAccount?.accountId, prefs?.autoStopped]);
 
   const parameters: ExecutionParameters = useMemo(
     () => ({
@@ -230,6 +237,24 @@ export function TradeView() {
         duration: minutes,
         durationUnit: 'm'
       }
+    });
+  };
+
+  const resetRiskSession = async () => {
+    if (!tradingAccount || tradingAccount.mode !== 'demo' || riskResetting) return;
+    setRiskResetting(true);
+    setNotice(null);
+    const result = await resetDemoRiskSession(tradingAccount.accountId);
+    setRiskResetting(false);
+    if (!result.ok) {
+      setNotice({ tone: 'error', text: result.message });
+      return;
+    }
+    setPrefs(result.preferences);
+    setRiskResetConfirm(false);
+    setNotice({
+      tone: 'ok',
+      text: 'New DEMO risk session started. Previous trades remain recorded and all other risk limits still apply.'
     });
   };
 
@@ -358,13 +383,21 @@ export function TradeView() {
                       />
                       {scanner?.running
                         ? scanner.lastPassAt
-                          ? `Scanner running · last pass ${new Date(scanner.lastPassAt).toLocaleTimeString()}`
-                          : 'Scanner running · first pass pending'
+                          ? `Scanner running · watching ${scanner.watchedMarkets.length} markets · last pass ${new Date(scanner.lastPassAt).toLocaleTimeString()}`
+                          : `Scanner running · watching ${scanner.watchedMarkets.length} markets · first pass pending`
                         : scanner?.reason === 'execution_disabled'
                           ? 'Scanner off — the server master switch is off (set ALLOW_EXECUTION=true)'
                           : scanner?.reason === 'demo_execution_disabled'
                             ? 'Scanner off — demo execution is off (set ALLOW_DEMO_EXECUTION=true)'
                             : 'Scanner is not running on the server'}
+                    </p>
+                  )}
+                  {scanner?.running && scanner.watchedMarkets.length > 0 && (
+                    <p
+                      className="mt-1 text-[9px] text-faint font-mono truncate"
+                      title={scanner.watchedMarkets.map((market) => market.symbol).join(', ')}
+                    >
+                      Watching: {scanner.watchedMarkets.map((market) => market.symbol).join(', ')}
                     </p>
                   )}
                   {scanner && scanner.recent.length > 0 && (
@@ -635,8 +668,47 @@ export function TradeView() {
                 <div>
                   <div className="text-[12px] font-bold text-danger">Automatic execution is stopped</div>
                   <p className="text-[11px] text-muted mt-0.5">
-                    Risk controls engaged the emergency stop. It will not resume until you turn it back on.
+                    Risk controls stopped automatic execution after a loss limit was reached.
                   </p>
+                  {tradingAccount?.mode === 'demo' && (
+                    <div className="mt-2">
+                      {!riskResetConfirm ? (
+                        <button
+                          type="button"
+                          onClick={() => setRiskResetConfirm(true)}
+                          className="rounded-md border border-danger/30 bg-danger/10 px-2.5 py-1.5 text-[10px] font-bold text-danger hover:bg-danger/15 cursor-pointer"
+                        >
+                          <span>Start new DEMO risk session</span>
+                        </button>
+                      ) : (
+                        <div className="rounded-md border border-warn/30 bg-warn/10 p-2">
+                          <p className="text-[10px] text-muted">
+                            This resets the loss-streak baseline for {tradingAccount.accountId} and clears the
+                            automatic stop. Old trades and audit records stay intact. Daily-loss, balance,
+                            exposure, open-position, frequency and all other checks remain active.
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void resetRiskSession()}
+                              disabled={riskResetting}
+                              className="rounded-md border border-danger/30 bg-danger/10 px-2.5 py-1.5 text-[10px] font-bold text-danger hover:bg-danger/15 disabled:opacity-50 cursor-pointer"
+                            >
+                              <span>{riskResetting ? 'Starting…' : 'Confirm reset'}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setRiskResetConfirm(false)}
+                              disabled={riskResetting}
+                              className="rounded-md border border-line bg-surface px-2.5 py-1.5 text-[10px] font-bold text-muted hover:bg-elevated disabled:opacity-50 cursor-pointer"
+                            >
+                              <span>Cancel</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </Card>

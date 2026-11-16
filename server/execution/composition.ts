@@ -49,6 +49,9 @@ export function createExecution(cfg: ServerConfig, store: Store, market: MarketD
     // When a purchase succeeds, hand the contract to the monitor so its
     // lifecycle is tracked to settlement.
     onContractOpened: (user, contract, accessToken) => monitor.monitor(user, contract, accessToken),
+    onContractClosed: async (user, contract, sale) => {
+      await monitor.recordSale(user, contract.id, sale);
+    },
     balanceProvider: async (user: UserRecord, accountId: string, accessToken: string) => {
       try {
         const read = await balances.read(user, accountId, accessToken);

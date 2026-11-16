@@ -13,6 +13,13 @@ export interface ContractPnlSummary {
   realizedProfitUnavailableCount: number;
 }
 
+/** A local history cutoff hides old settled rows without changing server records. */
+export function isHiddenSettledContract(contract: ExecutionContract, hiddenBeforeMs: number | null): boolean {
+  if (contract.status === 'open' || hiddenBeforeMs === null) return false;
+  const closedAt = contract.settlementTime ?? contract.purchaseTime;
+  return closedAt * 1000 <= hiddenBeforeMs;
+}
+
 /**
  * Produces P/L totals per account and currency. Missing profit values make that
  * total unavailable instead of turning incomplete data into a misleading sum.
