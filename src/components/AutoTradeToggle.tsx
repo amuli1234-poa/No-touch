@@ -14,7 +14,7 @@ import { toggleAutomaticTrading, useExecutionControl } from '../lib/execution';
  * for automatic entry (see App.tsx), so what this switch acts on is exactly the
  * set the customer is shown.
  */
-export function AutoTradeToggle() {
+export function AutoTradeToggle({ mobileLabel }: { mobileLabel?: string } = {}) {
   const auth = useAuth();
   const control = useExecutionControl();
 
@@ -39,7 +39,7 @@ export function AutoTradeToggle() {
       onClick={() => void toggleAutomaticTrading(!on)}
       disabled={control.saving || disabled}
       aria-pressed={on}
-      aria-label="Toggle automatic trading"
+      aria-label={mobileLabel ?? 'Toggle automatic trading'}
       data-testid="auto-trade-toggle"
       title={title}
       className={`inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg border text-[12px] font-bold transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer ${

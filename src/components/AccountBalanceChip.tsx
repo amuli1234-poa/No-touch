@@ -128,7 +128,7 @@ export function AccountBalanceChip() {
   };
 
   const triggerClass =
-    'flex items-center gap-1.5 h-9 px-2.5 rounded-lg bg-elevated border border-line text-muted hover:text-ink hover:border-accent/50 transition-colors cursor-pointer';
+    'flex items-center gap-1 sm:gap-1.5 h-9 px-1.5 sm:px-2.5 rounded-lg bg-elevated border border-line text-muted hover:text-ink hover:border-accent/50 transition-colors cursor-pointer';
 
   if (status === 'loading' && accounts.length === 0) {
     return (

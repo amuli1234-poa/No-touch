@@ -12,8 +12,8 @@ export function TopBar() {
   const isDark = ws.settings.theme === 'dark';
 
   return (
-    <header className="h-14 shrink-0 border-b border-line bg-nav px-3 sm:px-5 flex items-center justify-between gap-3">
-      <div className="flex items-center gap-2.5 min-w-0">
+    <header className="h-14 shrink-0 border-b border-line bg-nav px-2 sm:px-5 flex items-center justify-between gap-2 sm:gap-3">
+      <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
         <div className="lg:hidden w-8 h-8 rounded-lg bg-accent/15 text-accent border border-accent/30 flex items-center justify-center shrink-0">
           <ScanSearch className="w-4 h-4" />
         </div>
@@ -45,15 +45,20 @@ export function TopBar() {
           </span>
         )}
 
-        <div className="hidden sm:block">
+        <div className="hidden lg:block">
           <ConnectionBadge status={ws.connectionStatus} onReconnect={ws.reconnect} />
         </div>
-        <div className="sm:hidden">
+        <div className="lg:hidden">
           <ConnectionBadge status={ws.connectionStatus} onReconnect={ws.reconnect} compact />
         </div>
 
         <div className="hidden sm:block">
           <AutoTradeToggle />
+        </div>
+        {/* Icon-only on phones: the Auto/Manual word is hidden below lg, so the
+            header can keep the switch visible without crowding the balance chip. */}
+        <div className="sm:hidden">
+          <AutoTradeToggle mobileLabel="Automatic trading" />
         </div>
 
         <AccountBalanceChip />
@@ -64,7 +69,7 @@ export function TopBar() {
           data-testid="theme-toggle"
           aria-label={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
           title={isDark ? 'Light theme' : 'Dark theme'}
-          className="inline-flex items-center justify-center w-9 h-9 text-muted bg-elevated border border-line rounded-lg hover:text-accent hover:border-accent/50 transition-colors cursor-pointer"
+          className="hidden sm:inline-flex items-center justify-center w-9 h-9 text-muted bg-elevated border border-line rounded-lg hover:text-accent hover:border-accent/50 transition-colors cursor-pointer"
         >
           {isDark ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
         </button>
