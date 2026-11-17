@@ -8,9 +8,7 @@ import { effectiveRiskProfile, evaluateRisk } from '../services/risk.js';
 import { ExecutionAuditor } from './audit.js';
 import { AutoExecutionRunner } from './autoRunner.js';
 import { ContractMonitor } from './contractMonitor.js';
-import { MarketScanner } from '../services/marketScanner.js';
-import type { MarketDataService } from '../services/marketData.js';
-import type { Cache } from '../services/cache.js';
+import { SystemSignalService } from '../services/systemSignals.js';
 import type { SignalRecord } from './types.js';
 
 /**
@@ -30,15 +28,13 @@ export interface ExecutionBundle {
   runner: AutoExecutionRunner;
   monitor: ContractMonitor;
   flags: ExecutionFlags;
-  /** The automatic-mode scanner. Created here so the runner has one owner. */
-  scanner: MarketScanner;
+  /** The bridge the dashboard's best signal is published to. */
+  systemSignals: SystemSignalService;
 }
 
 export function createExecution(
   cfg: ServerConfig,
   store: Store,
-  market: MarketDataService,
-  cache?: Cache,
   balances?: BalanceService
 ): ExecutionBundle {
   const flags = loadExecutionFlags();
@@ -79,13 +75,23 @@ export function createExecution(
       signal: SignalRecord,
       balance: number | null,
       now: number,
-      intentId: string
+      intentId: string,
+      symbol: string
     ) => {
       const profile = effectiveRiskProfile(store, user.id);
       const ageSeconds = (now - signal.createdAt) / 1000;
       const decision = evaluateRisk(
         store,
-        { userId: user.id, accountId, stake, balance, signalAgeSeconds: ageSeconds, now, excludeIntentId: intentId },
+        {
+          userId: user.id,
+          accountId,
+          stake,
+          balance,
+          signalAgeSeconds: ageSeconds,
+          now,
+          excludeIntentId: intentId,
+          symbol
+        },
         profile
       );
       return { approved: decision.approved, reasons: decision.reasons };
@@ -94,6 +100,6 @@ export function createExecution(
   });
 
   const runner = new AutoExecutionRunner({ store, gateway, auditor });
-  const scanner = new MarketScanner({ store, cfg, market, runner, cache });
-  return { gateway, runner, monitor, flags, scanner };
+  const systemSignals = new SystemSignalService();
+  return { gateway, runner, monitor, flags, systemSignals };
 }

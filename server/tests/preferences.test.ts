@@ -60,16 +60,30 @@ test('a fresh user gets safe defaults', () => {
 
 test('stake, duration and mode round-trip', () => {
   const result = normalisePreferences(
-    { mode: 'automatic', contractFamily: 'multipliers', stake: { amount: 20, basis: 'stake' }, parameters: { duration: 45, durationUnit: 'm' } },
+    { mode: 'automatic', contractFamily: 'rise_fall', stake: { amount: 20, basis: 'stake' }, parameters: { duration: 45, durationUnit: 'm' } },
     existing(),
     USER
   );
   assert.equal(result.ok, true);
   if (!result.ok) return;
   assert.equal(result.value.mode, 'automatic');
-  assert.equal(result.value.contractFamily, 'multipliers');
+  assert.equal(result.value.contractFamily, 'rise_fall');
   assert.equal(result.value.stake.amount, 20);
   assert.equal(result.value.parameters.duration, 45);
+});
+
+test('Multipliers are disabled: selecting them is refused', () => {
+  const result = normalisePreferences({ contractFamily: 'multipliers' }, existing(), USER);
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.error.code, 'contract_family_disabled');
+});
+
+test('a stored Multipliers preference is coerced back to Rise/Fall', () => {
+  const stored = { ...existing(), contractFamily: 'multipliers' as const };
+  const result = normalisePreferences({}, stored, USER);
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.value.contractFamily, 'rise_fall');
 });
 
 test('a duration outside 5–300 minutes is refused', () => {

@@ -28,6 +28,14 @@ import type {
 export const MIN_DURATION_MINUTES = 5;
 export const MAX_DURATION_MINUTES = 300;
 
+/**
+ * Multipliers are temporarily disabled. Rise/Fall is the only tradeable family
+ * while this is false: the preferences normaliser refuses to select Multipliers
+ * and coerces any stored one back to Rise/Fall. Flip to true to re-enable; the
+ * adapter and contract-family plumbing are intentionally left intact.
+ */
+export const MULTIPLIERS_ENABLED = false;
+
 const DURATION_UNITS = ['s', 'm', 'h', 'd', 't'] as const;
 export type DurationUnit = (typeof DURATION_UNITS)[number];
 
@@ -108,12 +116,24 @@ export function normalisePreferences(
   }
 
   /* --------------------------- contract family ------------------------ */
-  let contractFamily: ContractFamily = base.contractFamily;
+  // Multipliers are disabled for now; a stored preference for them is coerced
+  // back to Rise/Fall so an old record cannot keep a disabled family selected.
+  let contractFamily: ContractFamily =
+    !MULTIPLIERS_ENABLED && base.contractFamily === 'multipliers' ? 'rise_fall' : base.contractFamily;
   if (body.contractFamily !== undefined) {
     if (body.contractFamily !== 'rise_fall' && body.contractFamily !== 'multipliers') {
       return {
         ok: false,
         error: { code: 'invalid_contract_family', message: 'Unsupported contract family.' }
+      };
+    }
+    if (body.contractFamily === 'multipliers' && !MULTIPLIERS_ENABLED) {
+      return {
+        ok: false,
+        error: {
+          code: 'contract_family_disabled',
+          message: 'Multipliers are temporarily unavailable. Use Rise / Fall.'
+        }
       };
     }
     contractFamily = body.contractFamily;

@@ -17,8 +17,10 @@ import { sign, seal } from '../lib/crypto.js';
 import { AutoExecutionRunner } from '../execution/autoRunner.js';
 import { ContractMonitor } from '../execution/contractMonitor.js';
 import { ExecutionAuditor } from '../execution/audit.js';
+import { SystemSignalService } from '../services/systemSignals.js';
+import { evaluateRisk, effectiveRiskProfile } from '../services/risk.js';
 import type { ServerConfig } from '../config.js';
-import type { ContractRecord, ContractUpdate } from '../execution/types.js';
+import type { ContractRecord, ContractUpdate, RiskProfileRecord } from '../execution/types.js';
 import type { MinimalWebSocket } from '../lib/balance.js';
 
 /**
@@ -96,10 +98,16 @@ async function marketWithTick() {
   sock.emit('message', {
     data: JSON.stringify({
       msg_type: 'active_symbols',
-      active_symbols: [{ underlying_symbol: 'R_100', underlying_symbol_name: 'Volatility 100', pip_size: 2, exchange_is_open: 1 }]
+      active_symbols: [
+        { underlying_symbol: 'R_100', underlying_symbol_name: 'Volatility 100', pip_size: 2, exchange_is_open: 1 },
+        { underlying_symbol: 'R_75', underlying_symbol_name: 'Volatility 75', pip_size: 2, exchange_is_open: 1 },
+        { underlying_symbol: 'R_50', underlying_symbol_name: 'Volatility 50', pip_size: 2, exchange_is_open: 1 }
+      ]
     })
   });
   sock.emit('message', { data: JSON.stringify({ msg_type: 'tick', tick: { symbol: 'R_100', quote: 100, epoch: 1, pip_size: 2 } }) });
+  sock.emit('message', { data: JSON.stringify({ msg_type: 'tick', tick: { symbol: 'R_75', quote: 100, epoch: 1, pip_size: 2 } }) });
+  sock.emit('message', { data: JSON.stringify({ msg_type: 'tick', tick: { symbol: 'R_50', quote: 100, epoch: 1, pip_size: 2 } }) });
   return market;
 }
 
@@ -118,14 +126,24 @@ async function withServer(
     limits?: { signalsPerMinute?: number; submitsPerMinute?: number };
     /** When set, the risk evaluator rejects with these reasons. */
     riskRejected?: string[];
-    /** When set, a fake scanner is passed to the router for status tests. */
-    scanner?: {
-      isRunning: boolean;
-      lastPassTime: number | null;
-      recent: unknown[];
-      activeMarkets?: Array<{ symbol: string; displayName: string }>;
-      /** Live readings, so the scanner's setup surface can be exercised. */
-      readings?: Array<{ symbol: string; direction: 'RISE' | 'FALL'; stale?: boolean; confidence?: number }>;
+    /**
+     * When set, the REAL risk engine runs instead of a stub, so the per-symbol
+     * guard is exercised end-to-end. The profile overrides the conservative
+     * defaults (the stake here is 1, so the stub profile keeps other rules quiet).
+     */
+    realRisk?: { profile?: Partial<RiskProfileRecord> };
+    /**
+     * When set, a best signal is published for the user before the request, so
+     * the automatic-entry gate sees a current signal. Its shape mirrors what the
+     * dashboard POSTs to /api/execution/system-signal.
+     */
+    systemSignal?: {
+      symbol: string;
+      direction: 'RISE' | 'FALL';
+      displayName?: string;
+      confidence?: number;
+      setupKey?: string;
+      source?: string;
     };
   } = {}
 ) {
@@ -155,8 +173,15 @@ async function withServer(
     broker,
     auditor,
     balanceProvider: async () => 1000,
-    riskEvaluator: () =>
-      opts.riskRejected ? { approved: false, reasons: opts.riskRejected } : { approved: true, reasons: [] },
+    riskEvaluator: opts.realRisk
+      ? (user, accountId, stake, signal, balance, now, intentId, symbol) =>
+          evaluateRisk(
+            store,
+            { userId: user.id, accountId, stake, balance, signalAgeSeconds: (now - signal.createdAt) / 1000, now, excludeIntentId: intentId, symbol },
+            { userId: user.id, ...effectiveRiskProfile(store, user.id), ...opts.realRisk!.profile }
+          )
+      : () =>
+          opts.riskRejected ? { approved: false, reasons: opts.riskRejected } : { approved: true, reasons: [] },
     onContractOpened: (user, contract, accessToken) => monitor.monitor(user, contract, accessToken),
     onContractClosed: async (user, contract, sale) => {
       await monitor.recordSale(user, contract.id, sale);
@@ -195,31 +220,24 @@ async function withServer(
     });
   }
   const app = express();
-  // The scanner fake exposes the live-reading API the status surface uses.
-  const scannerFake = opts.scanner
-    ? {
-        ...opts.scanner,
-        activeMarkets: opts.scanner.activeMarkets ?? [],
-        liveReading: (symbol: string) => {
-          const r = (opts.scanner!.readings ?? []).find((x) => x.symbol === symbol);
-          if (!r) return null;
-          return {
-            candidate: {
-              symbol: r.symbol,
-              displayName: r.symbol,
-              direction: r.direction,
-              confidence: r.confidence ?? 0.5,
-              reason: 'test'
-            },
-            stale: r.stale ?? false
-          };
-        },
-        hasLiveSignal: (symbol: string, direction: string) => {
-          const r = (opts.scanner!.readings ?? []).find((x) => x.symbol === symbol);
-          return !!r && !r.stale && r.direction === direction;
-        }
-      }
-    : undefined;
+  // A real bridge, so the automatic-entry gate and the status surface read the
+  // same published best signal the dashboard would POST.
+  const systemSignals = new SystemSignalService();
+  if (opts.systemSignal) {
+    systemSignals.publish({
+      userId: 'u_a',
+      symbol: opts.systemSignal.symbol,
+      displayName: opts.systemSignal.displayName ?? opts.systemSignal.symbol,
+      direction: opts.systemSignal.direction,
+      timeframe: '5m',
+      confidence: opts.systemSignal.confidence ?? 60,
+      entryPrice: null,
+      stopLoss: null,
+      takeProfit: null,
+      setupKey: opts.systemSignal.setupKey ?? 'setup-1',
+      source: opts.systemSignal.source ?? 'SYSTEM'
+    });
+  }
   app.use(
     createExecutionRouter({
       cfg,
@@ -230,7 +248,7 @@ async function withServer(
       monitor,
       limits: opts.limits,
       flags,
-      scanner: scannerFake as any
+      systemSignals
     })
   );
   const server = app.listen(0);
@@ -738,11 +756,29 @@ test('an automatic user\'s signal is executed on creation through the runner', a
       assert.equal(res.body.auto?.outcome, 'executed', JSON.stringify(res.body));
       assert.equal(broker.buys.length, 1);
     },
+    { automatic: true, systemSignal: { symbol: 'R_100', direction: 'RISE' } }
+  );
+});
+
+test('an automatic user\'s signal is refused when it is not the current best signal', async () => {
+  await withServer(
+    async ({ post, broker }) => {
+      const res = await post('/api/execution/signals', {
+        symbol: 'R_100',
+        direction: 'RISE',
+        contractFamily: 'rise_fall',
+        accountId: 'DEMO',
+        timeframe: '5m'
+      });
+      assert.equal(res.status, 422);
+      assert.equal(res.body.error, 'no_signal');
+      assert.equal(broker.buys.length, 0, 'automatic must not enter without a published best signal');
+    },
     { automatic: true }
   );
 });
 
-test('an automatic user\'s signal is refused when it is not backed by a live setup', async () => {
+test('an automatic user\'s signal is refused when it contradicts the best signal', async () => {
   await withServer(
     async ({ post, broker }) => {
       const res = await post('/api/execution/signals', {
@@ -754,16 +790,16 @@ test('an automatic user\'s signal is refused when it is not backed by a live set
       });
       assert.equal(res.status, 422);
       assert.equal(res.body.error, 'no_valid_signal');
-      assert.equal(broker.buys.length, 0, 'automatic must not enter outside a live setup');
+      assert.equal(broker.buys.length, 0, 'automatic must not enter outside the best signal');
     },
     {
       automatic: true,
-      scanner: { isRunning: true, lastPassTime: 1, recent: [], readings: [] }
+      systemSignal: { symbol: 'R_100', direction: 'FALL' }
     }
   );
 });
 
-test('an automatic user\'s signal executes when it matches a live setup', async () => {
+test('an automatic user\'s signal executes when it matches the current best signal', async () => {
   await withServer(
     async ({ post, broker }) => {
       const res = await post('/api/execution/signals', {
@@ -779,12 +815,7 @@ test('an automatic user\'s signal executes when it matches a live setup', async 
     },
     {
       automatic: true,
-      scanner: {
-        isRunning: true,
-        lastPassTime: 1,
-        recent: [],
-        readings: [{ symbol: 'R_100', direction: 'RISE', confidence: 0.6 }]
-      }
+      systemSignal: { symbol: 'R_100', direction: 'RISE', confidence: 60 }
     }
   );
 });
@@ -826,7 +857,7 @@ test('an automatic user is NOT executed when automatic trading is switched off',
           .some((entry) => entry.action === 'execution.submit' && entry.detail?.reason === 'automatic_disabled')
       );
     },
-    { automatic: true, flags: { allowAutomaticTrading: false } }
+    { automatic: true, flags: { allowAutomaticTrading: false }, systemSignal: { symbol: 'R_100', direction: 'RISE' } }
   );
 });
 
@@ -1087,19 +1118,10 @@ test('GET /scanner reports running with the switches on', async () => {
       assert.equal(res.body.executionEnabled, true);
       assert.equal(res.body.demoEnabled, true);
       assert.equal(res.body.reason, null);
-      assert.deepEqual(res.body.watchedMarkets.map((market: { symbol: string }) => market.symbol), ['R_100', 'R_50']);
+      // The dashboard owns the market universe; the server reports none.
+      assert.deepEqual(res.body.watchedMarkets, []);
     },
-    {
-      scanner: {
-        isRunning: true,
-        lastPassTime: 123,
-        recent: [],
-        activeMarkets: [
-          { symbol: 'R_100', displayName: 'Volatility 100 Index' },
-          { symbol: 'R_50', displayName: 'Volatility 50 Index' }
-        ]
-      }
-    }
+    { systemSignal: { symbol: 'R_100', direction: 'RISE', displayName: 'Volatility 100 Index' } }
   );
 });
 
@@ -1132,24 +1154,21 @@ test('GET /scanner explains the demo switch is off', async () => {
 
 /* ------------------ manual trades are the trader's own call ------------------ */
 
-test('a manual signal is accepted with no live scanner setup at all', async () => {
-  await withServer(
-    async ({ post }) => {
-      const res = await post('/api/execution/signals', {
-        accountId: 'DEMO',
-        symbol: 'R_100',
-        direction: 'RISE',
-        contractFamily: 'rise_fall',
-        source: 'manual'
-      });
-      assert.equal(res.status, 201, JSON.stringify(res.body));
-      assert.ok(res.body.signal?.id);
-    },
-    { scanner: { isRunning: false, lastPassTime: null, recent: [], readings: [] } }
-  );
+test('a manual signal is accepted with no best signal published at all', async () => {
+  await withServer(async ({ post }) => {
+    const res = await post('/api/execution/signals', {
+      accountId: 'DEMO',
+      symbol: 'R_100',
+      direction: 'RISE',
+      contractFamily: 'rise_fall',
+      source: 'manual'
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    assert.ok(res.body.signal?.id);
+  });
 });
 
-test('a manual signal may contradict the scanner\'s live setup', async () => {
+test('a manual signal may contradict the published best signal', async () => {
   await withServer(
     async ({ post }) => {
       const res = await post('/api/execution/signals', {
@@ -1162,18 +1181,11 @@ test('a manual signal may contradict the scanner\'s live setup', async () => {
       assert.equal(res.status, 201, JSON.stringify(res.body));
       assert.ok(res.body.signal?.id);
     },
-    {
-      scanner: {
-        isRunning: true,
-        lastPassTime: 1,
-        recent: [],
-        readings: [{ symbol: 'R_100', direction: 'RISE' }]
-      }
-    }
+    { systemSignal: { symbol: 'R_100', direction: 'RISE' } }
   );
 });
 
-test('a manual signal may target a market the scanner is not watching', async () => {
+test('a manual signal may target a market the best signal is not on', async () => {
   await withServer(
     async ({ post }) => {
       const res = await post('/api/execution/signals', {
@@ -1185,11 +1197,30 @@ test('a manual signal may target a market the scanner is not watching', async ()
       });
       assert.equal(res.status, 201, JSON.stringify(res.body));
     },
-    { scanner: { isRunning: true, lastPassTime: 1, recent: [], readings: [] } }
+    { systemSignal: { symbol: 'R_50', direction: 'RISE' } }
   );
 });
 
-test('a manual place succeeds without a live setup and still buys once', async () => {
+test('a manual place succeeds without a best signal and still buys once', async () => {
+  await withServer(async ({ post, broker }) => {
+    const res = await post('/api/execution/place', {
+      accountId: 'DEMO',
+      symbol: 'R_100',
+      timeframe: '5m',
+      direction: 'FALL',
+      contractFamily: 'rise_fall',
+      stake: 1,
+      currency: 'USD',
+      parameters: { duration: 5, durationUnit: 'm' },
+      idempotencyKey: 'manual-free'
+    });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.intent.state, 'OPEN');
+    assert.equal(broker.buys.length, 1);
+  });
+});
+
+test('a manual place still succeeds while automatic trading is switched off', async () => {
   await withServer(
     async ({ post, broker }) => {
       const res = await post('/api/execution/place', {
@@ -1201,17 +1232,20 @@ test('a manual place succeeds without a live setup and still buys once', async (
         stake: 1,
         currency: 'USD',
         parameters: { duration: 5, durationUnit: 'm' },
-        idempotencyKey: 'manual-free'
+        idempotencyKey: 'manual-while-auto-off'
       });
+      // The automatic switch must not touch the manual path: the customer's own
+      // trade carries an approval, so it is never `approvedBy === null`.
       assert.equal(res.status, 200, JSON.stringify(res.body));
       assert.equal(res.body.intent.state, 'OPEN');
+      assert.equal(res.body.intent.approvedBy, 'customer');
       assert.equal(broker.buys.length, 1);
     },
-    { scanner: { isRunning: false, lastPassTime: null, recent: [], readings: [] } }
+    { flags: { allowAutomaticTrading: false } }
   );
 });
 
-test('GET /scanner exposes the live setups the Trade panel may show', async () => {
+test('GET /scanner exposes the current best signal the Trade panel may show', async () => {
   await withServer(
     async ({ get }) => {
       const res = await get('/api/execution/scanner');
@@ -1221,13 +1255,160 @@ test('GET /scanner exposes the live setups the Trade panel may show', async () =
       assert.equal(res.body.setups[0].direction, 'RISE');
     },
     {
-      scanner: {
-        isRunning: true,
-        lastPassTime: 1,
-        recent: [],
-        activeMarkets: [{ symbol: 'R_100', displayName: 'Volatility 100 Index' }],
-        readings: [{ symbol: 'R_100', direction: 'RISE', confidence: 0.6 }]
+      systemSignal: {
+        symbol: 'R_100',
+        direction: 'RISE',
+        displayName: 'Volatility 100 Index',
+        confidence: 60
       }
     }
   );
+});
+
+test('GET /scanner exposes no setup when nothing has been published', async () => {
+  await withServer(async ({ get }) => {
+    const res = await get('/api/execution/scanner');
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.setups, []);
+    assert.equal(res.body.lastPassAt, null);
+  });
+});
+
+/* ------------------- the dashboard publishes, the server trades ------------------- */
+
+test('a published strong signal is auto-traded for an automatic user', async () => {
+  await withServer(
+    async ({ post, broker }) => {
+      const res = await post('/api/execution/system-signal', {
+        symbol: 'R_100',
+        displayName: 'Volatility 100 Index',
+        direction: 'RISE',
+        timeframe: '5m',
+        confidence: 88,
+        entryPrice: 100,
+        stopLoss: 99,
+        takeProfit: 103,
+        setupKey: 'R_100|5m|RISE|boschoch',
+        source: 'AI:boschoch'
+      });
+      assert.equal(res.status, 201, JSON.stringify(res.body));
+      assert.equal(res.body.auto?.outcome, 'executed', JSON.stringify(res.body));
+      assert.equal(broker.buys.length, 1);
+    },
+    { automatic: true }
+  );
+});
+
+test('a published weak signal is recorded but never auto-traded', async () => {
+  await withServer(
+    async ({ post, broker }) => {
+      const res = await post('/api/execution/system-signal', {
+        symbol: 'R_100',
+        direction: 'RISE',
+        timeframe: '5m',
+        confidence: 40,
+        setupKey: 'R_100|5m|RISE|weak',
+        source: 'AI:technical'
+      });
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.equal(res.body.auto, null);
+      assert.equal(res.body.reason, 'weak_signal');
+      assert.equal(broker.buys.length, 0);
+    },
+    { automatic: true }
+  );
+});
+
+test('the auto-trade bar is strictly above 80: 80 is refused, 81 is entered', async () => {
+  await withServer(
+    async ({ post, broker }) => {
+      const publish = (confidence: number, setupKey: string) =>
+        post('/api/execution/system-signal', {
+          symbol: 'R_100',
+          direction: 'RISE',
+          timeframe: '5m',
+          confidence,
+          setupKey,
+          source: 'AI:boschoch'
+        });
+      const atBar = await publish(80, 'at-80');
+      assert.equal(atBar.body.auto, null, JSON.stringify(atBar.body));
+      assert.equal(atBar.body.reason, 'weak_signal');
+      assert.equal(broker.buys.length, 0, '80/100 must not be traded');
+      const aboveBar = await publish(81, 'above-80');
+      assert.equal(aboveBar.body.auto?.outcome, 'executed', JSON.stringify(aboveBar.body));
+      assert.equal(broker.buys.length, 1, '81/100 must be traded');
+    },
+    { automatic: true }
+  );
+});
+
+test('each distinct published setup is traded once and never twice', async () => {
+  await withServer(
+    async ({ post, broker }) => {
+      const publish = (symbol: string, setupKey: string, direction: 'RISE' | 'FALL') =>
+        post('/api/execution/system-signal', {
+          symbol,
+          direction,
+          timeframe: '5m',
+          confidence: 90,
+          setupKey,
+          source: 'AI:smc'
+        });
+      const first = await publish('R_75', 'setup-a', 'RISE');
+      const second = await publish('R_50', 'setup-b', 'FALL');
+      assert.equal(first.body.auto?.outcome, 'executed', JSON.stringify(first.body));
+      assert.equal(second.body.auto?.outcome, 'executed', JSON.stringify(second.body));
+      assert.equal(broker.buys.length, 2);
+      // Re-publishing a setup already traded is refused, so it never doubles up.
+      const repeat = await publish('R_75', 'setup-a', 'RISE');
+      assert.equal(repeat.body.reason, 'already_traded');
+      assert.equal(broker.buys.length, 2);
+    },
+    { automatic: true }
+  );
+});
+
+test('correlated signals on one symbol collapse to a single open contract', async () => {
+  // Two different modules confirm the same market. Both are strong, but the
+  // per-symbol guard means only the first opens a position; the second is
+  // refused by the risk engine rather than stacking a correlated trade.
+  await withServer(
+    async ({ post, broker, store }) => {
+      const publish = (setupKey: string, direction: 'RISE' | 'FALL') =>
+        post('/api/execution/system-signal', {
+          symbol: 'R_100',
+          direction,
+          timeframe: '5m',
+          confidence: 92,
+          setupKey,
+          source: 'AI:module'
+        });
+      const first = await publish('module-a|R_100', 'RISE');
+      assert.equal(first.body.auto?.outcome, 'executed', JSON.stringify(first.body));
+      const second = await publish('module-b|R_100', 'FALL');
+      assert.equal(second.body.auto?.outcome, 'rejected', JSON.stringify(second.body));
+      assert.equal(broker.buys.length, 1, 'one symbol must hold at most one contract');
+      // The second attempt was refused by the per-symbol rule, not some other one.
+      const rejected = store.listTradeIntents('u_a').find((i) => i.reason?.includes('symbol_in_use'));
+      assert.ok(rejected, 'the second intent must be rejected for symbol_in_use');
+    },
+    { automatic: true, realRisk: { profile: { maxExecutionFrequencySeconds: 0 } } }
+  );
+});
+
+test('a published signal is inert for a manual user', async () => {
+  await withServer(async ({ post, broker }) => {
+    const res = await post('/api/execution/system-signal', {
+      symbol: 'R_100',
+      direction: 'RISE',
+      timeframe: '5m',
+      confidence: 90,
+      setupKey: 'setup-manual',
+      source: 'AI:live'
+    });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    assert.equal(res.body.auto, null);
+    assert.equal(broker.buys.length, 0);
+  });
 });

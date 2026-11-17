@@ -171,5 +171,4 @@ test('ResilientCache demotes to memory on failure and recovers', async () => {
 test('CacheKeys are namespaced and symbol-scoped', () => {
   assert.equal(CacheKeys.activeSymbols(), 'market:active-symbols');
   assert.equal(CacheKeys.snapshot('R_100'), 'market:snapshot:R_100');
-  assert.equal(CacheKeys.scannerReading('R_100'), 'scanner:reading:R_100');
 });

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Radar } from 'lucide-react';
 import { reconcileEngines } from './analysis/coAnalysis';
+import { weakModulesForAutoTrading } from './analysis/aiPerformance';
 import { createModelPerformanceRecord } from './analysis/modelPerformance';
 import { ChartAnalyserView } from './components/ChartAnalyserView';
 import { ChartAnalysisView } from './components/ChartAnalysisView';
@@ -62,6 +63,7 @@ import { useStrategyLab } from './hooks/useStrategyLab';
 import { useSystemHealth } from './hooks/useSystemHealth';
 import { onReconnect, refreshBalances, resetBalances } from './lib/balances';
 import { useAuth } from './lib/auth';
+import { publishSystemSignal } from './lib/trade';
 import { useVolatilityScanner } from './hooks/useVolatilityScanner';
 import { useSignalRanking } from './hooks/useSignalRanking';
 import type { CentralCandidateIntelligence } from './analysis/centralRanking';
@@ -809,6 +811,32 @@ export default function App() {
     }
   }, [liveFeed, notificationsEnabled, voiceEnabled]);
 
+  // Publish each confirmed signal to the server, so the automatic trader can act
+  // on it. This is best-effort and never blocks the UI. The key is stable per
+  // setup, so a signal that keeps re-deriving is published once; the server also
+  // dedupes and only trades it for users who chose automatic mode.
+  const publishedSystemKeysRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (auth.status !== 'authenticated') return;
+    for (const item of liveFeed) {
+      const setupKey = `${item.symbol}|${item.timeframe}|${item.direction}|${item.source}`;
+      if (publishedSystemKeysRef.current.has(setupKey)) continue;
+      publishedSystemKeysRef.current.add(setupKey);
+      void publishSystemSignal({
+        symbol: item.symbol,
+        displayName: item.displayName,
+        direction: item.direction,
+        timeframe: item.timeframe,
+        confidence: item.confidence,
+        entryPrice: item.entryPrice,
+        stopLoss: item.stopLoss,
+        takeProfit: item.takeProfit1 ?? item.takeProfit2 ?? null,
+        setupKey,
+        source: item.source
+      });
+    }
+  }, [liveFeed, auth.status]);
+
   // Trade Performance & Learning AI — journal every module's published signals and re-verify
   // outcomes against fresh candles (id-keyed, so re-scans never duplicate records).
   const aiJournalRef = useRef(aiJournal);
@@ -833,6 +861,41 @@ export default function App() {
     if (entries.length > 0) aiJournalRef.current.ingest(entries);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [publishedSignature]);
+
+  // Publish every AI module's confirmed signal to the server too — these are the
+  // setups the performance table scores. Deduped by a stable per-setup key, so a
+  // module that keeps re-publishing the same setup is sent once.
+  const publishedAiKeysRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (auth.status !== 'authenticated') return;
+    // Concentrate automatic trading on modules with a healthy settled record: a
+    // module proven weak over a meaningful sample is not auto-entered, while one
+    // without enough settled evidence yet is still allowed through.
+    const weakModules = weakModulesForAutoTrading(aiJournal.records);
+    for (const [id, scanner] of Object.entries(aiModules)) {
+      if (weakModules.has(id)) continue;
+      for (const analysis of scanner.analyses) {
+        const sig = analysis.signal;
+        if (!sig) continue;
+        const setupKey = `${sig.symbol}|${sig.timeframes[0]?.timeframe ?? ''}|${sig.direction}|${id}`;
+        if (publishedAiKeysRef.current.has(setupKey)) continue;
+        publishedAiKeysRef.current.add(setupKey);
+        void publishSystemSignal({
+          symbol: sig.symbol,
+          displayName: sig.displayName,
+          direction: sig.direction,
+          timeframe: sig.timeframes[0]?.timeframe ?? '',
+          confidence: sig.score,
+          entryPrice: sig.entryPrice,
+          stopLoss: sig.stopLoss,
+          takeProfit: sig.takeProfit1,
+          setupKey,
+          source: `AI:${id}`
+        });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [publishedSignature, auth.status, aiJournal.records]);
 
   useEffect(() => {
     if (candles.length === 0) return;

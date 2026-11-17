@@ -6,7 +6,7 @@ import {
   mergeJournalSignals,
   type AiJournalRecord,
 } from './aiJournal';
-import { segmentPerformance, summarizePerformance } from './aiPerformance';
+import { segmentPerformance, summarizePerformance, weakModulesForAutoTrading } from './aiPerformance';
 import { buildAiSignal } from './aiCommon';
 import type { Candle } from '../types/market';
 
@@ -126,4 +126,29 @@ test('segmentPerformance labels small samples instead of overstating reliability
   assert.equal(segments.length, 1);
   assert.equal(segments[0].rating, 'DEVELOPING');
   assert.match(segments[0].note, /insufficient|small/i);
+});
+
+function settled(module: string, wins: number, losses: number): AiJournalRecord[] {
+  return [
+    ...Array.from({ length: wins }, (_, i) => ({
+      ...createAiJournalRecord(mkSignal(`${module}-w${i}`), module),
+      outcome: 'WIN' as const,
+    })),
+    ...Array.from({ length: losses }, (_, i) => ({
+      ...createAiJournalRecord(mkSignal(`${module}-l${i}`), module),
+      outcome: 'LOSS' as const,
+    })),
+  ];
+}
+
+test('weakModulesForAutoTrading withholds a module only once its record is proven weak', () => {
+  const records = [
+    ...settled('weak', 3, 7), // 30% over n=10 → held back
+    ...settled('strong', 8, 2), // 80% over n=10 → allowed
+    ...settled('unproven', 0, 3), // 0% but only n=3 → left in play
+  ];
+  const weak = weakModulesForAutoTrading(records);
+  assert.ok(weak.has('weak'), 'a proven-weak module is held back');
+  assert.ok(!weak.has('strong'), 'a proven-strong module is allowed');
+  assert.ok(!weak.has('unproven'), 'an unproven module is not judged on a tiny sample');
 });

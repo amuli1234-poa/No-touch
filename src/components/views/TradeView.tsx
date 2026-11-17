@@ -20,6 +20,7 @@ import {
   DEFAULT_DURATION_BOUNDS,
   fetchExecutionPreferences,
   fetchScannerStatus,
+  MULTIPLIERS_ENABLED,
   placeTrade,
   previewTrade,
   resetDemoRiskSession,
@@ -575,14 +576,16 @@ export function TradeView() {
                 onClick={() => onFamilyChange('rise_fall')}
                 disabled={!authenticated || saving}
               />
-              <ModeButton
-                active={family === 'multipliers'}
-                icon={<ArrowDownRight className="w-3.5 h-3.5" />}
-                label="Multipliers"
-                hint="Higher risk"
-                onClick={() => onFamilyChange('multipliers')}
-                disabled={!authenticated || saving}
-              />
+              {MULTIPLIERS_ENABLED && (
+                <ModeButton
+                  active={family === 'multipliers'}
+                  icon={<ArrowDownRight className="w-3.5 h-3.5" />}
+                  label="Multipliers"
+                  hint="Higher risk"
+                  onClick={() => onFamilyChange('multipliers')}
+                  disabled={!authenticated || saving}
+                />
+              )}
             </div>
             <div className="mt-2.5 text-[11.5px] text-muted">
               Trading on{' '}
@@ -618,7 +621,7 @@ export function TradeView() {
 
           {/* ----------------------------- duration --------------------------- */}
           <Card className="p-3">
-            {family === 'multipliers' ? (
+            {MULTIPLIERS_ENABLED && family === 'multipliers' ? (
               <>
                 <label htmlFor="trade-multiplier" className="text-[11px] font-bold uppercase tracking-wider text-faint">
                   Multiplier

@@ -127,7 +127,8 @@ export interface GatewayDeps {
     signal: SignalRecord,
     balance: number | null,
     now: number,
-    intentId: string
+    intentId: string,
+    symbol: string
   ) => { approved: boolean; reasons: string[] };
   locks?: ExecutionLocks;
   auditor?: ExecutionAuditor;
@@ -574,7 +575,7 @@ export class ExecutionGateway {
         balance = null;
       }
     }
-    const risk = this.riskEvaluator(user, intent.accountId, intent.stake, signal, balance, now, intent.id);
+    const risk = this.riskEvaluator(user, intent.accountId, intent.stake, signal, balance, now, intent.id, intent.symbol);
     if (!risk.approved) {
       await this.transition(intent, 'REJECTED', `risk:${risk.reasons.join(',')}`);
       await this.auditor.record({

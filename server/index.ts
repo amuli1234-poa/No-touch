@@ -52,7 +52,7 @@ export function createApp(cfg: ServerConfig, store: Store, cache?: Cache): AppBu
   // layer. Kill switches default off, so nothing trades until explicitly enabled.
   const resolvedCache = cache ?? new MemoryCache(cfg.redis?.ttlSeconds ?? 60);
   const market = new MarketDataService(cfg, { cache: resolvedCache });
-  const execution = createExecution(cfg, store, market, resolvedCache, balances);
+  const execution = createExecution(cfg, store, balances);
   const app = express();
   app.disable('x-powered-by');
 
@@ -98,7 +98,7 @@ export function createApp(cfg: ServerConfig, store: Store, cache?: Cache): AppBu
       market,
       runner: execution.runner,
       monitor: execution.monitor,
-      scanner: execution.scanner,
+      systemSignals: execution.systemSignals,
       flags: execution.flags
     })
   );
@@ -215,16 +215,12 @@ async function main(): Promise<void> {
   market.connect().catch((err) => {
     console.warn(`[server] Market data unavailable at boot: ${err instanceof Error ? err.message : err}`);
   });
-  // The automatic scanner only runs when execution is enabled AND automatic
-  // trading is explicitly switched on. It has no authority of its own — it
-  // proposes signals; the gateway still decides. With automatic trading off
-  // (the default) the scanner never starts, so nothing trades itself.
-  if (execution.flags.allowExecution && execution.flags.allowDemoExecution && execution.flags.allowAutomaticTrading) {
-    execution.scanner.start().catch((err) => {
-      console.warn(`[server] Scanner could not start: ${err instanceof Error ? err.message : err}`);
-    });
-  } else if (execution.flags.allowExecution && !execution.flags.allowAutomaticTrading) {
-    console.log('[server] Automatic trading is OFF (set ALLOW_AUTOMATIC_TRADING=true to enable the scanner).');
+  // Automatic trading is now driven by the dashboard's own best signal: the
+  // client publishes the confirmed setup it is showing and the server trades it
+  // for users in automatic mode. There is no headless scanner to start. With
+  // automatic trading off (the default) a published signal is never executed.
+  if (execution.flags.allowExecution && !execution.flags.allowAutomaticTrading) {
+    console.log('[server] Automatic trading is OFF (set ALLOW_AUTOMATIC_TRADING=true to enable it).');
   }
   if (execution.flags.allowExecution) {
     console.log(
@@ -242,7 +238,6 @@ async function main(): Promise<void> {
   // command) is not blocked by a lock this process no longer needs.
   const shutdown = (signal: string) => {
     console.log(`[server] ${signal} received, shutting down.`);
-    execution.scanner.stop();
     market.close();
     execution.monitor.close();
     server.close(() => {

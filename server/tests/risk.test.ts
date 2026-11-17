@@ -298,6 +298,35 @@ test('min_balance fails closed when no balance is available', async () => {
   }
 });
 
+test('symbol_in_use allows one open position per symbol and no more', async () => {
+  const store = await storeWith();
+  try {
+    await store.putRiskProfile(profile());
+    // An open contract on R_100 blocks a second R_100 entry...
+    await store.putContract(contract({ id: '1', status: 'open', symbol: 'R_100' }));
+    const blocked = evaluateRisk(store, { ...baseInput, symbol: 'R_100' });
+    assert.equal(blocked.approved, false);
+    assert.ok(blocked.reasons.includes('symbol_in_use'));
+    // ...but a different symbol is unaffected.
+    const allowed = evaluateRisk(store, { ...baseInput, symbol: 'R_75' });
+    assert.equal(allowed.approved, true, allowed.reasons.join(','));
+  } finally {
+    await store.close();
+  }
+});
+
+test('symbol_in_use ignores a settled contract on the same symbol', async () => {
+  const store = await storeWith();
+  try {
+    await store.putRiskProfile(profile());
+    await store.putContract(contract({ id: '1', status: 'won', symbol: 'R_100' }));
+    const decision = evaluateRisk(store, { ...baseInput, symbol: 'R_100' });
+    assert.equal(decision.approved, true, decision.reasons.join(','));
+  } finally {
+    await store.close();
+  }
+});
+
 test('min_balance rejects a stake that would breach the floor', async () => {
   const store = await storeWith();
   try {

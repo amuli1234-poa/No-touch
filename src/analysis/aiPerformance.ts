@@ -190,6 +190,26 @@ export function segmentPerformance(
     .sort((a, b) => b.sampleSize - a.sampleSize);
 }
 
+/**
+ * Modules whose settled record is proven weak enough that the automatic trader
+ * should hold back, rather than keep entering them. A module is only withheld
+ * once its settled sample is meaningful; below that threshold every module is
+ * left in play, so a cold start is never crippled by a handful of early losses.
+ */
+export function weakModulesForAutoTrading(
+  records: readonly AiJournalRecord[],
+  minSample = MIN_MEANINGFUL_SAMPLE,
+  minWinRatePercent = 40
+): Set<string> {
+  const weak = new Set<string>();
+  for (const seg of segmentPerformance(records, 'module')) {
+    if (seg.sampleSize >= minSample && (seg.winRatePercent ?? 100) < minWinRatePercent) {
+      weak.add(seg.key);
+    }
+  }
+  return weak;
+}
+
 /** Alerts derived only from verified evidence (never speculation). */
 export function performanceAlerts(records: readonly AiJournalRecord[]): PerformanceAlert[] {
   const alerts: PerformanceAlert[] = [];

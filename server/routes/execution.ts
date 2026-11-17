@@ -1,6 +1,6 @@
 import express, { Router, type Response } from 'express';
 
-import type { Store } from '../store/store.js';
+import type { Store, UserRecord } from '../store/store.js';
 import type { ServerConfig } from '../config.js';
 import { requireSession, type AuthedRequest } from '../lib/session.js';
 import { RateLimiter } from '../services/admin/rateLimit.js';
@@ -10,19 +10,19 @@ import { ExecutionError } from '../execution/gateway.js';
 import { ExecutionAuditor } from '../execution/audit.js';
 import type { AutoExecutionRunner } from '../execution/autoRunner.js';
 import type { ContractMonitor } from '../execution/contractMonitor.js';
-import type { MarketScanner, ScanCandidate } from '../services/marketScanner.js';
+import type { SystemSignalService } from '../services/systemSignals.js';
 import type { MarketDataService } from '../services/marketData.js';
 import type { ExecutionFlags } from '../config/flags.js';
 import { createSignal, SignalError } from '../services/signals.js';
 import { consecutiveLosses } from '../services/risk.js';
 import { adapterFor, AdapterError } from '../execution/adapters/index.js';
-import { normalisePreferences, MIN_DURATION_MINUTES, MAX_DURATION_MINUTES } from '../execution/preferences.js';
+import { normalisePreferences, MIN_DURATION_MINUTES, MAX_DURATION_MINUTES, MULTIPLIERS_ENABLED } from '../execution/preferences.js';
 import {
   AccountAccessError,
   resolveAccountForUser,
   resolveTradableAccountForUser
 } from '../execution/accountGuard.js';
-import type { SignalDirection, ContractFamily, DerivContractType, ContractRecord } from '../execution/types.js';
+import type { SignalDirection, ContractFamily, DerivContractType, ContractRecord, ExecutionPreferencesRecord } from '../execution/types.js';
 import { CONTRACT_FAMILY_TYPES } from '../execution/types.js';
 
 /**
@@ -46,8 +46,8 @@ import { CONTRACT_FAMILY_TYPES } from '../execution/types.js';
  *
  * Manual trading is the customer's own call: any market, any direction, any
  * time, bounded only by the risk engine and the kill switches. The live-setup
- * requirement is a property of AUTOMATIC mode alone — the scanner only ever
- * offers candidates it has itself validated — and is never imposed on a
+ * requirement is a property of AUTOMATIC mode alone — automatic entries must be
+ * the current best signal the dashboard published — and is never imposed on a
  * hand-placed trade.
  */
 
@@ -60,8 +60,11 @@ export interface ExecutionRouterDeps {
   runner?: AutoExecutionRunner;
   /** Optional: when present, a stuck intent can be reconciled on demand. */
   monitor?: ContractMonitor;
-  /** Optional: the automatic scanner, for the status surface. */
-  scanner?: MarketScanner;
+  /**
+   * Optional: the bridge the dashboard's best signal is published to. When
+   * present, a published best signal is executed for users in automatic mode.
+   */
+  systemSignals?: SystemSignalService;
   /**
    * Optional: the resolved kill switches. When present, the scanner status
    * explains WHY the scanner is off (master switch vs demo switch) instead of a
@@ -71,6 +74,14 @@ export interface ExecutionRouterDeps {
   /** Optional per-minute limits, for tests. Defaults are conservative. */
   limits?: { signalsPerMinute?: number; submitsPerMinute?: number };
 }
+
+/**
+ * The strength a published signal must EXCEED before the server will auto-trade
+ * it. The dashboard publishes every confirmed signal, but only the strong ones —
+ * a score above 80/100 — are entered automatically; the rest are recorded for
+ * the performance table without opening a position.
+ */
+const SYSTEM_SIGNAL_MIN_CONFIDENCE = 0.8;
 
 /** Unseals the session's Deriv token, or null when absent/expired. */
 function tokenFor(deps: ExecutionRouterDeps, req: AuthedRequest): string | null {
@@ -88,11 +99,14 @@ function parseDirection(value: unknown): SignalDirection | null {
 }
 
 function parseFamily(value: unknown): ContractFamily | null {
-  return value === 'rise_fall' || value === 'multipliers' ? value : null;
+  if (value !== 'rise_fall' && value !== 'multipliers') return null;
+  // Multipliers are disabled; a crafted request cannot select them either.
+  if (value === 'multipliers' && !MULTIPLIERS_ENABLED) return null;
+  return value;
 }
 
 export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
-  const { store, gateway, market, runner, monitor, scanner } = deps;
+  const { store, gateway, market, runner, monitor, systemSignals } = deps;
   const ctx = { cfg: deps.cfg, store };
   const auditor = new ExecutionAuditor(store);
   // Per-user limits. These blunt a runaway client or a stuck loop; the risk
@@ -111,11 +125,12 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
   const json = express.json({ limit: '32kb' });
 
   /**
-   * The automatic-trade gate: an automatic entry must be backed by a live scanner
-   * setup for the same market and direction. Automatic mode is the scanner's own
-   * domain — the customer has delegated the decision — so a signal that did not
-   * come from a live setup must never auto-execute. Manual trading is exempt:
-   * that is the trader's own call and is bounded only by the risk engine.
+   * The automatic-trade gate: an automatic entry must be backed by the current
+   * best signal the dashboard published for the same market and direction.
+   * Automatic mode is the system scanner's own domain — the customer has
+   * delegated the decision — so an entry that is not the live best signal must
+   * never auto-execute. Manual trading is exempt: that is the trader's own call
+   * and is bounded only by the risk engine.
    * Returns the rejection to send, or null when the entry may proceed.
    */
   const automaticSignalRejection = (
@@ -123,33 +138,130 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
     symbol: string,
     direction: SignalDirection
   ): { status: number; body: { error: string; message: string } } | null => {
-    if (!scanner) return null;
+    if (!systemSignals) return null;
     if (store.getExecutionPreferences(userId)?.mode !== 'automatic') return null;
-    if (!scanner.isRunning) {
+    const current = systemSignals.current(userId);
+    if (!current) {
       return {
         status: 422,
         body: {
           error: 'no_signal',
-          message: 'The scanner is not running, so there is no valid setup to enter on.'
+          message: 'The dashboard has not published a confirmed best signal yet.'
         }
       };
     }
-    if (!scanner.hasLiveSignal(symbol, direction)) {
-      const reading = scanner.liveReading(symbol);
+    if (current.symbol !== symbol || current.direction !== direction) {
       return {
         status: 422,
         body: {
           error: 'no_valid_signal',
-          message: reading
-            ? reading.stale
-              ? `The last ${reading.candidate.direction} setup on ${symbol} has passed. Wait for a fresh signal.`
-              : `The scanner is not signalling ${direction} on ${symbol} right now.`
-            : `The scanner has no active setup for ${symbol}. Wait for a valid signal.`
+          message: `The current best signal is ${current.direction} ${current.displayName}, not ${direction} ${symbol}.`
+        }
+      };
+    }
+    if (systemSignals.isTraded(userId, current.setupKey)) {
+      return {
+        status: 422,
+        body: {
+          error: 'already_traded',
+          message: 'This best signal has already been traded. Wait for a fresh one.'
         }
       };
     }
     return null;
   };
+
+  /**
+   * The dashboard's best signal, published by the client. It is recorded for the
+   * signed-in user and, when that user is in automatic mode, entered through the
+   * same runner a manual trade uses — kill switches, risk, single-use and one
+   * purchase path all still apply. The entry, stop-loss and take-profit are chart
+   * markers: they are stored for display and never sent to Deriv.
+   */
+  router.post('/api/execution/system-signal', requireSession(ctx), json, async (req: AuthedRequest, res: Response) => {
+    if (!systemSignals) {
+      res.status(503).json({ error: 'system_signals_unavailable' });
+      return;
+    }
+    if (!limit(signalLimiter, req, res)) return;
+    const body = req.body ?? {};
+    const direction = parseDirection(body.direction);
+    const symbol = String(body.symbol ?? '');
+    const setupKey = String(body.setupKey ?? '');
+    if (!direction || direction === 'NONE' || !symbol || !setupKey) {
+      res.status(400).json({ error: 'invalid_signal' });
+      return;
+    }
+    const user = req.user!;
+    const published = systemSignals!.publish({
+      userId: user.id,
+      symbol,
+      displayName: String(body.displayName ?? symbol),
+      direction,
+      timeframe: String(body.timeframe ?? '5m'),
+      confidence: typeof body.confidence === 'number' ? body.confidence : 0,
+      entryPrice: typeof body.entryPrice === 'number' ? body.entryPrice : null,
+      stopLoss: typeof body.stopLoss === 'number' ? body.stopLoss : null,
+      takeProfit: typeof body.takeProfit === 'number' ? body.takeProfit : null,
+      setupKey,
+      source: String(body.source ?? 'SYSTEM')
+    });
+
+    const prefs = store.getExecutionPreferences(user.id);
+    if (!runner || prefs?.mode !== 'automatic' || prefs.autoStopped) {
+      res.status(200).json({ published, auto: null });
+      return;
+    }
+    if (systemSignals!.isTraded(user.id, setupKey)) {
+      res.status(200).json({ published, auto: null, reason: 'already_traded' });
+      return;
+    }
+    const account = demoAccountFor(user, prefs);
+    if (!account) {
+      res.status(200).json({ published, auto: null, reason: 'no_demo_account' });
+      return;
+    }
+    // Only strong setups are auto-traded: a signal must score above 80/100, so
+    // 80 itself is not enough and the entry is gated strictly above the floor.
+    const confidence = typeof body.confidence === 'number' ? body.confidence : 0;
+    const normalisedConfidence = confidence > 1 ? confidence / 100 : confidence;
+    if (normalisedConfidence <= SYSTEM_SIGNAL_MIN_CONFIDENCE) {
+      res.status(200).json({ published, auto: null, reason: 'weak_signal' });
+      return;
+    }
+    const token = tokenFor(deps, req);
+    const snapshot = await market.freshSnapshot(symbol);
+    if (!snapshot) {
+      res.status(422).json({ published, auto: null, error: 'no_price' });
+      return;
+    }
+    try {
+      const signal = await createSignal(store, market, {
+        userId: user.id,
+        accountId: account.accountId,
+        accountMode: 'demo',
+        symbol,
+        timeframe: String(body.timeframe ?? '5m'),
+        direction,
+        // Multipliers are disabled; the system trader only uses Rise/Fall.
+        contractFamily: 'rise_fall',
+        analysisId: `system:${setupKey}`,
+        confidence: normalisedConfidence,
+        reason: String(body.source ?? 'system') + ' best signal'
+      });
+      const auto = await runner.runForUser(user, signal, token);
+      if (auto.outcome === 'executed') {
+        systemSignals!.markExecuted(user.id, setupKey, signal.id, 'executed');
+      }
+      res.status(201).json({ published, auto });
+    } catch (err) {
+      if (err instanceof SignalError) {
+        res.status(422).json({ published, auto: null, error: err.code });
+        return;
+      }
+      res.status(500).json({ error: 'signal_failed' });
+    }
+  });
 
   router.post('/api/execution/signals', requireSession(ctx), json, async (req: AuthedRequest, res: Response) => {
     if (!limit(signalLimiter, req, res)) return;
@@ -168,9 +280,9 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
       return;
     }
     const symbol = String(body.symbol ?? '');
-    // An automatic entry may only run on a live scanner setup. Check before the
-    // signal is recorded, so a refused auto-entry leaves nothing behind. Manual
-    // users skip this entirely — the trader places their own trade.
+    // An automatic entry may only run on the current best signal. Check before
+    // the signal is recorded, so a refused auto-entry leaves nothing behind.
+    // Manual users skip this entirely — the trader places their own trade.
     const automaticEntry = !!runner && store.getExecutionPreferences(user.id)?.mode === 'automatic';
     if (automaticEntry) {
       const gate = automaticSignalRejection(user.id, symbol, direction);
@@ -511,17 +623,18 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
   });
 
   /**
-   * The automatic scanner's status, scoped to the caller. It reports whether the
-   * scanner is running and what it recently decided, but only for markets the
-   * caller's own signals touched — a customer cannot see another's activity.
+   * The automatic-trading status, scoped to the caller. It reports whether the
+   * server permits automatic trading at all, and the last best signal the
+   * dashboard published for this user. The markets themselves are scanned in the
+   * dashboard, so there is no server-side watch list to report.
    */
   router.get('/api/execution/scanner', requireSession(ctx), (req: AuthedRequest, res: Response) => {
     const flags = deps.flags;
     const executionEnabled = flags ? flags.allowExecution : true;
     const demoEnabled = flags ? flags.allowDemoExecution : true;
     const automaticEnabled = flags ? flags.allowAutomaticTrading : true;
-    // Why the scanner is (not) running, so a client can tell the user what to do
-    // rather than showing a bare "not running". The scanner needs both switches.
+    // Why automatic trading is (not) available, so a client can tell the user
+    // what to do rather than showing a bare "off". It needs every switch.
     const reason = !executionEnabled
       ? 'execution_disabled'
       : !demoEnabled
@@ -529,58 +642,39 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
         : !automaticEnabled
           ? 'automatic_disabled'
           : null;
-    if (!scanner) {
-      res.json({
-        running: false,
-        executionEnabled,
-        demoEnabled,
-        automaticEnabled,
-        reason,
-        lastPassAt: null,
-        recent: [],
-        watchedMarkets: []
-      });
-      return;
-    }
     const userId = req.user!.id;
-    const signalSymbols = new Set(
-      store
-        .listTradeIntents(userId)
-        .map((i) => store.getSignal(userId, i.signalId)?.symbol)
-        .filter((s): s is string => typeof s === 'string')
-    );
-    const recent = scanner.recent
-      .filter((o) => signalSymbols.has(o.symbol))
-      .slice(-20)
-      .map((o) => ({
-        symbol: o.symbol,
-        outcome: o.outcome,
-        direction: o.candidate?.direction ?? null,
-        confidence: o.candidate?.confidence ?? null,
-        executed: o.auto?.outcome === 'executed'
-      }));
+    const current = systemSignals?.current(userId) ?? null;
+    const recent = (systemSignals?.recent(userId) ?? []).slice(-20).map((s) => ({
+      symbol: s.symbol,
+      outcome: s.executedAt !== null ? 'executed' : 'proposed',
+      direction: s.direction,
+      confidence: s.confidence,
+      executed: s.executedAt !== null
+    }));
     res.json({
-      running: scanner.isRunning,
+      // Automatic trading is "running" only when every switch permits it.
+      running: executionEnabled && demoEnabled && automaticEnabled,
       executionEnabled,
       demoEnabled,
       automaticEnabled,
       reason,
-      lastPassAt: scanner.lastPassTime,
+      lastPassAt: current?.publishedAt ?? null,
       recent,
-      watchedMarkets: scanner.activeMarkets,
-      // The live directional readings, so the Trade panel can offer exactly the
-      // setups the scanner is willing to trade right now (and nothing else).
-      setups: scanner.activeMarkets
-        .map((m) => scanner.liveReading(m.symbol))
-        .filter((r): r is { candidate: ScanCandidate; stale: boolean } => r !== null)
-        .filter((r) => !r.stale)
-        .map((r) => ({
-          symbol: r.candidate.symbol,
-          displayName: r.candidate.displayName,
-          direction: r.candidate.direction,
-          confidence: r.candidate.confidence,
-          reason: r.candidate.reason
-        }))
+      // The dashboard owns the market universe; the server has none.
+      watchedMarkets: [],
+      // The current best signal, so the Trade panel can show exactly the setup
+      // the system trader would act on right now (and nothing else).
+      setups: current
+        ? [
+            {
+              symbol: current.symbol,
+              displayName: current.displayName,
+              direction: current.direction,
+              confidence: current.confidence,
+              reason: current.source
+            }
+          ]
+        : []
     });
   });
 
@@ -803,6 +897,20 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
   );
 
   return router;
+}
+
+/**
+ * The user's demo account for system trading, preferring the one they selected.
+ * Returns null when the user has no demo account, so the caller skips rather
+ * than substituting a real one.
+ */
+function demoAccountFor(
+  user: UserRecord,
+  prefs: ExecutionPreferencesRecord | null
+): UserRecord['accounts'][number] | null {
+  const preferred = prefs?.preferredAccountId?.demo;
+  const demos = user.accounts.filter((a) => a.type === 'demo');
+  return demos.find((a) => a.accountId === preferred) ?? demos[0] ?? null;
 }
 
 function hasPendingClose(store: Store, userId: string, contract: ContractRecord): boolean {

@@ -278,6 +278,5 @@ export async function createCache(opts: CreateCacheOptions): Promise<Cache> {
 /** Namespaced cache keys, kept in one place so they cannot drift apart. */
 export const CacheKeys = {
   activeSymbols: () => 'market:active-symbols',
-  snapshot: (symbol: string) => `market:snapshot:${symbol}`,
-  scannerReading: (symbol: string) => `scanner:reading:${symbol}`
+  snapshot: (symbol: string) => `market:snapshot:${symbol}`
 } as const;

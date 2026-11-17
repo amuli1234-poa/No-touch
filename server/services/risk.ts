@@ -30,6 +30,7 @@ export type RiskRuleId =
   | 'execution_frequency'
   | 'trades_per_session'
   | 'signal_freshness'
+  | 'symbol_in_use'
   | 'auto_stopped';
 
 export interface RiskRuleResult {
@@ -56,6 +57,12 @@ export interface RiskEvaluationInput {
   signalAgeSeconds: number | null;
   /** Current time. */
   now: number;
+  /**
+   * The symbol about to be traded. When set, an account may hold only one open
+   * contract per symbol, so a burst of correlated signals on the same market
+   * collapses to a single trade instead of stacking several at once.
+   */
+  symbol?: string | null;
   /**
    * The intent currently being submitted. It is excluded from the
    * "time since the last trade" and "trades today" counts, because it is the
@@ -163,6 +170,15 @@ export function evaluateRisk(
     openContracts.length < profile.maxOpenContracts,
     `${openContracts.length} open < ${profile.maxOpenContracts}`
   );
+
+  // One open position per symbol. Several AI modules can confirm the same market
+  // in the same direction, so without this the correlated signals would each open
+  // their own contract. The account lock serialises evaluations, so the check is
+  // race-free; a settled contract no longer counts.
+  if (input.symbol) {
+    const held = openContracts.filter((c) => c.symbol === input.symbol).length;
+    push('symbol_in_use', held === 0, `${held} open on ${input.symbol} = 0`);
+  }
 
   const exposure = currentExposure(openContracts);
   push(

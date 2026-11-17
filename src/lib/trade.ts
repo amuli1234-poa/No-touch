@@ -14,6 +14,13 @@ export type ExecutionMode = 'manual' | 'automatic';
 export type ContractFamily = 'rise_fall' | 'multipliers';
 export type AccountMode = 'demo' | 'real';
 
+/**
+ * Multipliers are temporarily disabled, matching the server's own switch. The
+ * Trade panel hides the option and coerces any stored Multipliers preference
+ * back to Rise/Fall so the UI can never request a disabled family.
+ */
+export const MULTIPLIERS_ENABLED = false;
+
 export interface ExecutionParameters {
   duration: number;
   durationUnit: 's' | 'm' | 'h' | 'd' | 't';
@@ -63,6 +70,47 @@ export function toMinutes(duration: number, unit: ExecutionParameters['durationU
   }
 }
 
+/**
+ * The dashboard's confirmed signal, published to the server so the automatic
+ * trader can act on it. Entry/stop-loss/take-profit are chart markers only: they
+ * are carried for display and never become Deriv limit orders.
+ */
+export interface SystemSignalPublication {
+  symbol: string;
+  displayName: string;
+  direction: SignalDirection;
+  timeframe: string;
+  confidence: number;
+  entryPrice: number | null;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  /** Stable identity of the setup, so a re-publication is never traded twice. */
+  setupKey: string;
+  source: string;
+}
+
+/**
+ * Publishes one confirmed signal to the server. Returns null on any failure —
+ * the caller treats publishing as best-effort and never blocks the UI on it.
+ */
+export async function publishSystemSignal(
+  signal: SystemSignalPublication
+): Promise<{ published: unknown; auto: any } | null> {
+  try {
+    const res = await fetch('/api/execution/system-signal', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(signal)
+    });
+    if (res.status === 401) expireAuth();
+    if (!res.ok) return null;
+    return await res.json().catch(() => null);
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchExecutionPreferences(): Promise<PreferencesResponse | null> {
   try {
     const res = await fetch('/api/execution/preferences', {
@@ -73,8 +121,12 @@ export async function fetchExecutionPreferences(): Promise<PreferencesResponse |
     if (!res.ok) return null;
     const data = await res.json();
     if (!data?.preferences) return null;
+    const preferences = data.preferences as ExecutionPreferences;
+    if (!MULTIPLIERS_ENABLED && preferences.contractFamily === 'multipliers') {
+      preferences.contractFamily = 'rise_fall';
+    }
     return {
-      preferences: data.preferences as ExecutionPreferences,
+      preferences,
       durationBounds: data.durationBounds ?? DEFAULT_DURATION_BOUNDS
     };
   } catch {
