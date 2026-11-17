@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { FullAnalysisReport } from '../types/analysis';
-import { deriveSignalLifecycle } from './signalStatus';
+import { deriveSignalLifecycle, minQualityScore, passesQualityFilter } from './signalStatus';
 
 function report(partial: Partial<FullAnalysisReport>): FullAnalysisReport {
   return {
@@ -85,4 +85,26 @@ test('waiting for confirmation maps to DEVELOPING', () => {
   );
   assert.equal(lifecycle?.status, 'DEVELOPING');
   assert.equal(lifecycle?.isActionable, false);
+});
+
+test('minQualityScore maps each filter tier to its score floor', () => {
+  assert.equal(minQualityScore('ANY'), 0);
+  assert.equal(minQualityScore('MODERATE'), 75);
+  assert.equal(minQualityScore('HIGH'), 85);
+});
+
+test('passesQualityFilter admits a score at or above the floor and refuses below it', () => {
+  assert.equal(passesQualityFilter(85, 'HIGH'), true);
+  assert.equal(passesQualityFilter(84, 'HIGH'), false);
+  assert.equal(passesQualityFilter(75, 'MODERATE'), true);
+  assert.equal(passesQualityFilter(70, 'MODERATE'), false);
+  // ANY admits every finite score, including zero.
+  assert.equal(passesQualityFilter(0, 'ANY'), true);
+});
+
+test('passesQualityFilter never treats a missing or non-finite score as passing', () => {
+  assert.equal(passesQualityFilter(null, 'ANY'), false);
+  assert.equal(passesQualityFilter(undefined, 'ANY'), false);
+  assert.equal(passesQualityFilter(Number.NaN, 'ANY'), false);
+  assert.equal(passesQualityFilter(Number.POSITIVE_INFINITY, 'HIGH'), false);
 });

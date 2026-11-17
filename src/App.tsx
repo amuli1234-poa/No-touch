@@ -62,6 +62,10 @@ import { useAlertManager } from './hooks/useAlertManager';
 import { useStrategyLab } from './hooks/useStrategyLab';
 import { useSystemHealth } from './hooks/useSystemHealth';
 import { onReconnect, refreshBalances, resetBalances } from './lib/balances';
+import {
+  resetExecutionControl,
+  useExecutionControlPolling,
+} from './lib/execution';
 import { useAuth } from './lib/auth';
 import { publishSystemSignal } from './lib/trade';
 import { useVolatilityScanner } from './hooks/useVolatilityScanner';
@@ -83,7 +87,7 @@ import {
   speakSignal,
 } from './utils/notify';
 import { analyserSignalItem, buildSignalFeed, scannerSignalItem, trendlineSignalItem } from './utils/signalFeed';
-import { deriveSignalLifecycle } from './utils/signalStatus';
+import { deriveSignalLifecycle, passesQualityFilter } from './utils/signalStatus';
 import { playSignalChime, primeAudio, setSoundEnabled, setSoundVolume } from './utils/sound';
 import { SignalToastStack, type SignalToast } from './components/SignalToasts';
 
@@ -436,6 +440,9 @@ export default function App() {
   // connection is a natural point to confirm the Deriv authorization still
   // holds), and cleared on sign-out so one user's figures never linger.
   const auth = useAuth();
+  // Automatic-trading control: one shared store the header switch and the Trade
+  // panel both read, refreshed while signed in and cleared on sign-out.
+  useExecutionControlPolling(auth.status === 'authenticated');
   const balancesLoadedRef = useRef(false);
   useEffect(() => {
     if (auth.status === 'authenticated') {
@@ -446,6 +453,7 @@ export default function App() {
     } else if (auth.status === 'anonymous') {
       balancesLoadedRef.current = false;
       resetBalances();
+      resetExecutionControl();
     }
   }, [auth.status]);
 
@@ -815,10 +823,15 @@ export default function App() {
   // on it. This is best-effort and never blocks the UI. The key is stable per
   // setup, so a signal that keeps re-deriving is published once; the server also
   // dedupes and only trades it for users who chose automatic mode.
+  //
+  // Only signals that clear the customer's Signal Quality Filter are published,
+  // so the set the automatic trader acts on is exactly the set the customer is
+  // shown (feed, notifications, dashboard, live trade management).
   const publishedSystemKeysRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (auth.status !== 'authenticated') return;
     for (const item of liveFeed) {
+      if (!passesQualityFilter(item.confidence, settings.minQuality)) continue;
       const setupKey = `${item.symbol}|${item.timeframe}|${item.direction}|${item.source}`;
       if (publishedSystemKeysRef.current.has(setupKey)) continue;
       publishedSystemKeysRef.current.add(setupKey);
@@ -832,10 +845,11 @@ export default function App() {
         stopLoss: item.stopLoss,
         takeProfit: item.takeProfit1 ?? item.takeProfit2 ?? null,
         setupKey,
-        source: item.source
+        source: item.source,
+        minQuality: settings.minQuality
       });
     }
-  }, [liveFeed, auth.status]);
+  }, [liveFeed, auth.status, settings.minQuality]);
 
   // Trade Performance & Learning AI — journal every module's published signals and re-verify
   // outcomes against fresh candles (id-keyed, so re-scans never duplicate records).
@@ -864,7 +878,9 @@ export default function App() {
 
   // Publish every AI module's confirmed signal to the server too — these are the
   // setups the performance table scores. Deduped by a stable per-setup key, so a
-  // module that keeps re-publishing the same setup is sent once.
+  // module that keeps re-publishing the same setup is sent once. Only setups that
+  // clear the customer's Signal Quality Filter are published, so the automatic
+  // trader never acts on a weaker setup than the customer is shown.
   const publishedAiKeysRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (auth.status !== 'authenticated') return;
@@ -877,6 +893,7 @@ export default function App() {
       for (const analysis of scanner.analyses) {
         const sig = analysis.signal;
         if (!sig) continue;
+        if (!passesQualityFilter(sig.score, settings.minQuality)) continue;
         const setupKey = `${sig.symbol}|${sig.timeframes[0]?.timeframe ?? ''}|${sig.direction}|${id}`;
         if (publishedAiKeysRef.current.has(setupKey)) continue;
         publishedAiKeysRef.current.add(setupKey);
@@ -890,12 +907,13 @@ export default function App() {
           stopLoss: sig.stopLoss,
           takeProfit: sig.takeProfit1,
           setupKey,
-          source: `AI:${id}`
+          source: `AI:${id}`,
+          minQuality: settings.minQuality
         });
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [publishedSignature, auth.status, aiJournal.records]);
+  }, [publishedSignature, auth.status, aiJournal.records, settings.minQuality]);
 
   useEffect(() => {
     if (candles.length === 0) return;

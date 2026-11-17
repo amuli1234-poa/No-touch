@@ -30,6 +30,27 @@ const QUALITY_RANK: Record<QualityTier, number> = {
   EXCEPTIONAL: 3,
 };
 
+/** Minimum 0–100 score implied by the Signal Quality Filter setting. */
+export function minQualityScore(minQuality: 'ANY' | 'MODERATE' | 'HIGH'): number {
+  if (minQuality === 'HIGH') return 85; // HIGH_QUALITY and above
+  if (minQuality === 'MODERATE') return 75; // DEVELOPING and above
+  return 0;
+}
+
+/**
+ * Whether a confirmed setup's score clears the customer's Signal Quality Filter.
+ * This is the single gate the UI uses to decide what is surfaced as actionable —
+ * and, because the automatic trader should act on exactly the signals the
+ * customer is shown, the same gate governs which signals are published for
+ * automatic entry.
+ */
+export function passesQualityFilter(
+  score: number | null | undefined,
+  minQuality: 'ANY' | 'MODERATE' | 'HIGH'
+): boolean {
+  return typeof score === 'number' && Number.isFinite(score) && score >= minQualityScore(minQuality);
+}
+
 /**
  * Derives the four-state signal lifecycle from the existing engine report.
  * CONFIRMED / INVALIDATED come straight from the engine decision; DEVELOPING and

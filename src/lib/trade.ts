@@ -87,6 +87,11 @@ export interface SystemSignalPublication {
   /** Stable identity of the setup, so a re-publication is never traded twice. */
   setupKey: string;
   source: string;
+  /**
+   * The customer's Signal Quality Filter, so the server gates automatic entry on
+   * the same threshold the customer sees. Absent falls back to the strictest tier.
+   */
+  minQuality?: 'ANY' | 'MODERATE' | 'HIGH';
 }
 
 /**

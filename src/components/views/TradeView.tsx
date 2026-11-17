@@ -19,7 +19,6 @@ import { useBalances, formatMoney, pickAccount, refreshBalances } from '../../li
 import {
   DEFAULT_DURATION_BOUNDS,
   fetchExecutionPreferences,
-  fetchScannerStatus,
   MULTIPLIERS_ENABLED,
   placeTrade,
   previewTrade,
@@ -31,10 +30,10 @@ import {
   type ExecutionMode,
   type ExecutionParameters,
   type ExecutionPreferences,
-  type ScannerStatus,
   type SignalDirection,
   type TradePreview
 } from '../../lib/trade';
+import { refreshExecutionControl, useExecutionControl } from '../../lib/execution';
 import { Card, StatTile } from '../ui/primitives';
 import { ExecutionPositions } from './ExecutionPositions';
 
@@ -80,7 +79,6 @@ export function TradeView() {
   const [previewing, setPreviewing] = useState(false);
   const [placing, setPlacing] = useState(false);
   const [placed, setPlaced] = useState<{ contractId: number | null; payout: number | null } | null>(null);
-  const [scanner, setScanner] = useState<ScannerStatus | null>(null);
   const [riskResetConfirm, setRiskResetConfirm] = useState(false);
   const [riskResetting, setRiskResetting] = useState(false);
 
@@ -112,26 +110,11 @@ export function TradeView() {
   const authenticated = auth.status === 'authenticated';
   const accounts = balances.accounts;
 
-  // Poll the scanner's status while signed in. In automatic mode this shows the
-  // loop working; in manual mode it reports whether the server even permits
-  // automatic trading, so the panel can disable the Automatic option.
-  useEffect(() => {
-    if (!authenticated) {
-      setScanner(null);
-      return;
-    }
-    let cancelled = false;
-    const poll = async () => {
-      const status = await fetchScannerStatus();
-      if (!cancelled) setScanner(status);
-    };
-    void poll();
-    const id = setInterval(() => void poll(), 10_000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, [authenticated]);
+  // The scanner's live status and the customer's stored intent come from the one
+  // shared execution store (also read by the header switch), so the panel and the
+  // header never disagree about whether automatic trading is on.
+  const execution = useExecutionControl();
+  const scanner = execution.status;
 
   // Keep the server's balance cache warm while the ticket is open. The risk
   // engine reads the balance at submit time; without this the read can fall
@@ -308,6 +291,8 @@ export function TradeView() {
     if (result.ok) {
       setPrefs(result.preferences);
       setNotice({ tone: 'ok', text: 'Trade settings saved.' });
+      // Keep the header switch in step with a mode change made here.
+      if (patch.mode !== undefined) void refreshExecutionControl();
     } else {
       setNotice({ tone: 'error', text: result.message });
     }
@@ -517,6 +502,16 @@ export function TradeView() {
                   <p className="text-[11.5px] text-muted leading-snug">
                     Automatic execution runs on your <strong className="text-ink">demo</strong> account in this
                     build. Real-money automation stays switched off until it is explicitly released.
+                  </p>
+                  <p className="text-[11.5px] text-muted leading-snug mt-1.5">
+                    It enters only the signals that pass your{' '}
+                    <strong className="text-ink">Signal Quality Filter</strong> (
+                    {ws.settings.minQuality === 'HIGH'
+                      ? 'High only'
+                      : ws.settings.minQuality === 'MODERATE'
+                        ? 'Moderate+'
+                        : 'Any'}
+                    ), so it acts on exactly the setups you are shown.
                   </p>
                   {authenticated && (
                     <p className="text-[11.5px] text-muted leading-snug mt-1.5 flex items-center gap-1.5">

@@ -132,7 +132,10 @@ export function SettingsView() {
         </div>
       </SectionCard>
 
-      <SectionCard title="Signal Quality Filter" subtitle="Minimum setup quality required to present a signal">
+      <SectionCard
+        title="Signal Quality Filter"
+        subtitle="Minimum setup quality required to present a signal — and to trade it automatically"
+      >
         <div className="inline-flex items-center gap-0.5 p-1 bg-elevated rounded-lg border border-line">
           {(
             [
@@ -159,7 +162,9 @@ export function SettingsView() {
         </div>
         <p className="text-[12px] text-faint mt-2">
           The engine still computes every setup; this filter only affects which confirmed setups
-          are surfaced as actionable. It never fabricates or downgrades a signal.
+          are surfaced as actionable — and, because the automatic trader acts on exactly the
+          signals you are shown, which ones it may enter on your behalf. It never fabricates or
+          downgrades a signal.
         </p>
       </SectionCard>
 

@@ -76,12 +76,26 @@ export interface ExecutionRouterDeps {
 }
 
 /**
- * The strength a published signal must EXCEED before the server will auto-trade
- * it. The dashboard publishes every confirmed signal, but only the strong ones —
- * a score above 80/100 — are entered automatically; the rest are recorded for
- * the performance table without opening a position.
+ * Minimum normalised (0–1) strength a published signal must reach before the
+ * server will auto-trade it, per the customer's Signal Quality Filter.
+ *
+ * The dashboard publishes every confirmed signal, but it only marks a signal
+ * for automatic entry when it clears the customer's own quality filter, and the
+ * gate here follows the same setting. So the setups the automatic trader acts on
+ * are exactly the setups the customer is shown — nothing weaker slips through.
+ * An absent or unrecognised filter falls back to the strictest tier.
  */
-const SYSTEM_SIGNAL_MIN_CONFIDENCE = 0.8;
+const MIN_QUALITY_THRESHOLD: Record<string, number> = {
+  ANY: 0,
+  MODERATE: 0.75, // DEVELOPING and above
+  HIGH: 0.85 // HIGH_QUALITY and above
+};
+
+function thresholdForMinQuality(value: unknown): number {
+  return typeof value === 'string' && value in MIN_QUALITY_THRESHOLD
+    ? MIN_QUALITY_THRESHOLD[value]
+    : MIN_QUALITY_THRESHOLD.HIGH;
+}
 
 /** Unseals the session's Deriv token, or null when absent/expired. */
 function tokenFor(deps: ExecutionRouterDeps, req: AuthedRequest): string | null {
@@ -221,11 +235,14 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
       res.status(200).json({ published, auto: null, reason: 'no_demo_account' });
       return;
     }
-    // Only strong setups are auto-traded: a signal must score above 80/100, so
-    // 80 itself is not enough and the entry is gated strictly above the floor.
+    // Only setups that clear the customer's Signal Quality Filter are auto-traded.
+    // The dashboard already withholds weaker signals, but the server re-checks
+    // here so the gate holds even if a client sends one. The filter travels with
+    // the publication; an absent one falls back to the strictest tier.
     const confidence = typeof body.confidence === 'number' ? body.confidence : 0;
     const normalisedConfidence = confidence > 1 ? confidence / 100 : confidence;
-    if (normalisedConfidence <= SYSTEM_SIGNAL_MIN_CONFIDENCE) {
+    const threshold = thresholdForMinQuality(body.minQuality);
+    if (normalisedConfidence < threshold) {
       res.status(200).json({ published, auto: null, reason: 'weak_signal' });
       return;
     }

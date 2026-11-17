@@ -1319,7 +1319,7 @@ test('a published weak signal is recorded but never auto-traded', async () => {
   );
 });
 
-test('the auto-trade bar is strictly above 80: 80 is refused, 81 is entered', async () => {
+test('the auto-trade bar follows the Signal Quality Filter: High admits 85, refuses 84', async () => {
   await withServer(
     async ({ post, broker }) => {
       const publish = (confidence: number, setupKey: string) =>
@@ -1329,15 +1329,41 @@ test('the auto-trade bar is strictly above 80: 80 is refused, 81 is entered', as
           timeframe: '5m',
           confidence,
           setupKey,
-          source: 'AI:boschoch'
+          source: 'AI:boschoch',
+          minQuality: 'HIGH'
         });
-      const atBar = await publish(80, 'at-80');
-      assert.equal(atBar.body.auto, null, JSON.stringify(atBar.body));
-      assert.equal(atBar.body.reason, 'weak_signal');
-      assert.equal(broker.buys.length, 0, '80/100 must not be traded');
-      const aboveBar = await publish(81, 'above-80');
-      assert.equal(aboveBar.body.auto?.outcome, 'executed', JSON.stringify(aboveBar.body));
-      assert.equal(broker.buys.length, 1, '81/100 must be traded');
+      const belowBar = await publish(84, 'below-high');
+      assert.equal(belowBar.body.auto, null, JSON.stringify(belowBar.body));
+      assert.equal(belowBar.body.reason, 'weak_signal');
+      assert.equal(broker.buys.length, 0, '84/100 must not clear the High filter');
+      const atBar = await publish(85, 'at-high');
+      assert.equal(atBar.body.auto?.outcome, 'executed', JSON.stringify(atBar.body));
+      assert.equal(broker.buys.length, 1, '85/100 must clear the High filter');
+    },
+    { automatic: true }
+  );
+});
+
+test('a permissive Signal Quality Filter lets a lower-scoring setup auto-trade', async () => {
+  await withServer(
+    async ({ post, broker }) => {
+      // The same 70/100 setup is refused under High but entered under ANY, so the
+      // gate genuinely follows the customer's filter rather than a fixed bar.
+      const publish = (minQuality: 'ANY' | 'HIGH', setupKey: string) =>
+        post('/api/execution/system-signal', {
+          symbol: 'R_100',
+          direction: 'RISE',
+          timeframe: '5m',
+          confidence: 70,
+          setupKey,
+          source: 'AI:technical',
+          minQuality
+        });
+      const underHigh = await publish('HIGH', 'any-vs-high-a');
+      assert.equal(underHigh.body.reason, 'weak_signal', JSON.stringify(underHigh.body));
+      const underAny = await publish('ANY', 'any-vs-high-b');
+      assert.equal(underAny.body.auto?.outcome, 'executed', JSON.stringify(underAny.body));
+      assert.equal(broker.buys.length, 1);
     },
     { automatic: true }
   );
