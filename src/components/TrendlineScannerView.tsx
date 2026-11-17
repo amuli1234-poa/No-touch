@@ -447,7 +447,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
 
       {/* Status banner */}
       <Card
-        className={`px-4 py-3 flex items-center gap-3 ${
+        className={`px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-1 ${
           winner ? 'border-emerald-500/40' : 'border-line'
         }`}
       >
@@ -465,7 +465,7 @@ export function TrendlineScannerView({ scanner }: TrendlineScannerViewProps) {
           <div className="text-xs font-semibold text-ink truncate">
             {scanner.progressMessage}
           </div>
-          <div className="text-[11px] text-faint">
+          <div className="text-[11px] text-faint truncate">
             {scanner.targetMarketCount} markets · M30 → M15 → M10 → M7 → M6 → M5 → M4 → M3 → M2 → M1
             {scanner.lastScannedAt
               ? ` · last scan ${new Date(scanner.lastScannedAt).toLocaleTimeString()}`

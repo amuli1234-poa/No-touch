@@ -140,14 +140,14 @@ export function LiveScannerView({ scanner }: LiveScannerViewProps) {
       </div>
 
       {/* Progress */}
-      <Card className="px-4 py-2.5 flex items-center gap-2.5">
+      <Card className="px-4 py-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
         {scanner.isScanning ? (
           <Loader2 className="w-3.5 h-3.5 text-accent animate-spin shrink-0" aria-hidden="true" />
         ) : (
           <Radar className="w-3.5 h-3.5 text-faint shrink-0" aria-hidden="true" />
         )}
-        <span className="text-[12px] text-muted truncate flex-1">{scanner.progressMessage}</span>
-        <span className="text-[11px] font-mono text-faint shrink-0">
+        <span className="text-[12px] text-muted truncate flex-1 min-w-0">{scanner.progressMessage}</span>
+        <span className="text-[11px] font-mono text-faint min-w-0 max-w-full truncate">
           {scanner.targetMarketCount} markets · {rows.length} ranked
           {scanner.lastScannedAt ? ` · ${new Date(scanner.lastScannedAt).toLocaleTimeString()}` : ''}
         </span>

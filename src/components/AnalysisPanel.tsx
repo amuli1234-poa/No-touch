@@ -111,7 +111,7 @@ export function AnalysisPanel({
     <aside
       aria-label="AI Analysis Panel"
       data-testid="ai-analysis-panel"
-      className="w-full lg:w-[400px] xl:w-[430px] shrink-0 border-t lg:border-t-0 lg:border-l border-line bg-surface flex flex-col min-h-0 lg:h-full overflow-y-auto"
+      className="w-full min-w-0 shrink-0 border-t lg:border-t-0 lg:border-l border-line bg-surface flex flex-col min-h-0 lg:h-full overflow-y-auto"
     >
       <div className="px-4 py-3 border-b border-line flex items-center justify-between gap-2 bg-panel sticky top-0 z-10">
         <div className="min-w-0">

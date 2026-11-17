@@ -114,7 +114,7 @@ export function ChartAnalysisView() {
             </button>
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1">
             {AI_TIMEFRAME_KEYS.map((tf) => (
               <button
                 key={tf}
@@ -131,9 +131,9 @@ export function ChartAnalysisView() {
                 {tf}
               </button>
             ))}
-            <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-faint">
-              <Activity className="w-3 h-3" aria-hidden="true" />
-              {ws.selectedMarket ? ws.marketName : ws.selectedSymbol}
+            <span className="ml-auto inline-flex min-w-0 max-w-full items-center gap-1 text-[11px] text-faint">
+              <Activity className="w-3 h-3 shrink-0" aria-hidden="true" />
+              <span className="truncate">{ws.selectedMarket ? ws.marketName : ws.selectedSymbol}</span>
             </span>
           </div>
         </div>

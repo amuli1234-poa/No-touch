@@ -692,9 +692,18 @@ has Markdown at `https://developers.deriv.com/llms/<endpoint>.md` (e.g. `buy.md`
 - Wired in `composition.ts` (bundled as `runner`) and invoked from
   `POST /api/execution/signals` when the user is automatic. `test:auto` covers it.
 
-## Automatic scanning (Phase 10)
+## Automatic scanning (Phase 10) — superseded
 
-- `server/services/marketScanner.ts` (`MarketScanner`) is the loop that *feeds*
+> **Note (verified 2026-11-17):** `server/services/marketScanner.ts` and its
+> `MarketScanner` loop do **not** exist in this tree. The `scanner` bundle in
+> `composition.ts` is the status-only `SystemSignalStore`, and the markets are
+> scanned **in the dashboard** (client), which publishes the best signal via
+> `POST /api/execution/signals`. `GET /api/execution/scanner` returns
+> `watchedMarkets: []` because "the server has none". The `market_scanner`
+> signal in `data/wicksentinel.json` was written by an older build. The
+> description below is kept for history only.
+
+- `server/services/marketScanner.ts` (`MarketScanner`) was the loop that *feeds*
   the automatic runner: it watches every eligible Volatility Index, scores each
   one, and creates a signal when a market is directional enough to act on.
 - It has no authority of its own. It cannot buy or skip a check; it can only

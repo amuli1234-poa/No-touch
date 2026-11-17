@@ -487,14 +487,14 @@ export function DemandSupplyAIView({ scanner }: DemandSupplyAIViewProps) {
       </div>
 
       {/* Progress banner */}
-      <Card className="px-4 py-2.5 flex items-center gap-2.5">
+      <Card className="px-4 py-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
         {scanner.isScanning ? (
           <Loader2 className="w-3.5 h-3.5 text-accent animate-spin shrink-0" aria-hidden="true" />
         ) : (
           <Gauge className="w-3.5 h-3.5 text-faint shrink-0" aria-hidden="true" />
         )}
-        <span className="text-[12px] text-muted truncate flex-1">{scanner.progressMessage}</span>
-        <span className="text-[11px] font-mono text-faint shrink-0">
+        <span className="text-[12px] text-muted truncate flex-1 min-w-0">{scanner.progressMessage}</span>
+        <span className="text-[11px] font-mono text-faint min-w-0 max-w-full truncate">
           {scanner.targetMarketCount} markets · M30 → M15 → M10 → M7 → M6 → M5 → M4 → M3 → M2 → M1
           {scanner.lastScannedAt ? ` · last scan ${new Date(scanner.lastScannedAt).toLocaleTimeString()}` : ''}
         </span>
