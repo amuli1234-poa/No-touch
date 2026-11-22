@@ -1033,3 +1033,22 @@ Contract families:
 
 `JsonBackend.close()` now drains its write queue before releasing the lock;
 without that a shutdown could lose the last record.
+
+## Two compatibility vocabularies — do not conflate them
+
+`CompatibilityLevel` (`src/lib/bots.ts`) and `CompatibilityState`
+(`server/bots/compatibility.ts`) answer different questions and must not share
+a copy map:
+
+- `CompatibilityLevel` — `full | partial | unsupported | invalid`. How much of
+  an imported DBot file this build understands. Stored on the bot record.
+- `CompatibilityState` — `compatible | incompatible | unsupported |
+  unavailable | invalid`. Whether a *saved* strategy can trade a *specific*
+  symbol right now. Returned by `GET /api/bots/:id/compatibility`.
+
+The availability panel once keyed its copy map by `full`/`partial`, so a
+`compatible` verdict had no entry and rendered as a bare "Checked" — a silent
+wrong answer rather than a visible error. `STATE_COPY` now lives in
+`compatibilityCopy.ts`, is typed `Record<BotCompatibilityState, …>` so a missing
+state fails to compile, and is checked against the server's
+`COMPATIBILITY_STATES` array by `compatibilityCopy.test.ts`.
