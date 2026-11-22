@@ -10,7 +10,7 @@ import {
 
 /**
  * ARCHITECTURE GUARD — the master spec organises the workspace into six modules:
- * Dashboard, Bot Builder, Pro Scanner, My Bots, Market Analysis and AI Intelligence.
+ * Dashboard, Bot Importer, Pro Scanner, My Bots, Market Analysis and AI Intelligence.
  * Trade History and AI Training live inside Market Analysis; Risk Management lives inside
  * AI Intelligence; Settings is reachable from the TopBar rather than the primary nav.
  * These tests fail the moment a tab is added, renamed, reordered or orphaned.
@@ -18,7 +18,7 @@ import {
 
 const EXPECTED_TAB_LABELS = [
   'Dashboard',
-  'Bot Builder',
+  'Bot Importer',
   'Pro Scanner',
   'My Bots',
   'Market Analysis',

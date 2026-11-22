@@ -28,6 +28,7 @@ import type {
   NotificationRecord,
   ExecutionAuditRecord
 } from '../execution/types.js';
+import type { ImportedBotRecord } from '../bots/types.js';
 import { JsonBackend } from './json_backend.js';
 import { SqliteBackend, sqliteFileExists } from './sqlite_backend.js';
 import type { StorageBackend, StoredRecord } from './backend.js';
@@ -143,6 +144,8 @@ interface Database {
   ledgerEntries: Record<string, LedgerEntryRecord>;
   notifications: Record<string, NotificationRecord>;
   executionAudit: ExecutionAuditRecord[];
+  /* ------------------------ imported bots (Phase 2) --------------------- */
+  importedBots: Record<string, ImportedBotRecord>;
 }
 
 const EMPTY: Database = {
@@ -170,7 +173,8 @@ const EMPTY: Database = {
   contracts: {},
   ledgerEntries: {},
   notifications: {},
-  executionAudit: []
+  executionAudit: [],
+  importedBots: {}
 };
 
 /**
@@ -233,7 +237,8 @@ export class Store {
         contracts: (await this.backend.loadKeyed('contracts')) as unknown as Database['contracts'],
         ledgerEntries: (await this.backend.loadKeyed('ledgerEntries')) as unknown as Database['ledgerEntries'],
         notifications: (await this.backend.loadKeyed('notifications')) as unknown as Database['notifications'],
-        executionAudit: (await this.backend.loadAppend('executionAudit')) as unknown as Database['executionAudit']
+        executionAudit: (await this.backend.loadAppend('executionAudit')) as unknown as Database['executionAudit'],
+        importedBots: (await this.backend.loadKeyed('importedBots')) as unknown as Database['importedBots']
       };
       const platformConfig = await this.backend.loadSingleton('platformConfig');
       this.db.platformConfig = { ...EMPTY.platformConfig, ...((platformConfig ?? {}) as Partial<PlatformConfigRecord>) };
@@ -927,5 +932,57 @@ export class Store {
   listExecutionAudit(): ExecutionAuditRecord[] {
     this.ensureLoaded();
     return this.db.executionAudit;
+  }
+
+  /* ====================================================================== */
+  /*  Imported bots (Phase 2, additive).                                    */
+  /*                                                                        */
+  /*  Same isolation rule as the trading domain: every read takes the owning */
+  /*  userId and returns null on a mismatch, so a caller cannot read or      */
+  /*  mutate another tenant's bot by guessing an id. Importing a bot is      */
+  /*  never an execution grant — these are inert strategy records.           */
+  /* ====================================================================== */
+
+  async putImportedBot(bot: ImportedBotRecord): Promise<void> {
+    this.ensureLoaded();
+    this.db.importedBots[bot.id] = bot;
+    await this.backend.putKeyed('importedBots', bot.id, bot as unknown as StoredRecord);
+  }
+
+  /** Returns the bot only when it belongs to `userId`. */
+  getImportedBot(userId: string, id: string): ImportedBotRecord | null {
+    this.ensureLoaded();
+    const bot = this.db.importedBots[id];
+    return bot && bot.userId === userId ? bot : null;
+  }
+
+  /** Every bot owned by `userId`, newest first. */
+  listImportedBots(userId: string): ImportedBotRecord[] {
+    this.ensureLoaded();
+    return Object.values(this.db.importedBots)
+      .filter((b) => b.userId === userId)
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  /**
+   * Finds an existing bot for this user with the same source hash, so a
+   * duplicate upload can be detected before it is stored again.
+   */
+  findImportedBotByHash(userId: string, sourceHash: string): ImportedBotRecord | null {
+    this.ensureLoaded();
+    return (
+      Object.values(this.db.importedBots).find(
+        (b) => b.userId === userId && b.sourceHash === sourceHash
+      ) ?? null
+    );
+  }
+
+  async deleteImportedBot(userId: string, id: string): Promise<boolean> {
+    this.ensureLoaded();
+    const bot = this.db.importedBots[id];
+    if (!bot || bot.userId !== userId) return false;
+    delete this.db.importedBots[id];
+    await this.backend.deleteKeyed('importedBots', id);
+    return true;
   }
 }

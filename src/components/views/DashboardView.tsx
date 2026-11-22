@@ -26,6 +26,7 @@ import { LiveFeedDiagnostics } from '../dashboard/LiveFeedDiagnostics';
 import { MarketCard } from '../dashboard/MarketCard';
 import { PerformanceStats } from '../dashboard/PerformanceStats';
 import { splitByMode, useBalances, useSelectedBalance } from '../../lib/balances';
+import { useBots } from '../../lib/bots';
 import { formatCandleTime, formatPrice } from '../../utils/derivParser';
 import { SIGNAL_STATUS_STYLE } from '../../utils/signalStatus';
 import { eligibleMarkets } from '../../utils/eligibleMarkets';
@@ -98,13 +99,29 @@ function PlatformStatusStrip() {
  * running. Feed health and market breadth stay in `PlatformStatusStrip` below, so this
  * strip does not repeat them.
  *
- * Bot counts are deliberately not invented: there is no bot store yet, so the tiles read
- * "—" with an explicit hint instead of a fabricated zero.
+ * Bot counts come from the imported-bot store. While the list is loading the tiles
+ * read "—" rather than a fabricated zero.
  */
 function AccountModeStrip() {
   const { accounts } = useBalances();
   const selected = useSelectedBalance();
+  const { bots, status: botsStatus } = useBots();
   const { demo, real } = splitByMode(accounts);
+
+  const counts =
+    botsStatus === 'ready'
+      ? {
+          active: bots.filter((b) => b.status === 'imported').length,
+          paused: bots.filter((b) => b.status === 'paused').length,
+        }
+      : null;
+  const activeHint =
+    botsStatus === 'error'
+      ? 'Bot list unavailable'
+      : counts
+        ? `${counts.active} ready to review`
+        : 'Loading bots…';
+  const pausedHint = counts ? `${counts.paused} paused by you` : 'Loading bots…';
 
   const mode = selected?.mode ?? (demo.length > 0 ? 'demo' : null);
 
@@ -131,15 +148,19 @@ function AccountModeStrip() {
         <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">
           Active bots
         </div>
-        <div className="text-sm font-bold font-mono text-ink mt-0.5">—</div>
-        <div className="text-[11px] text-faint mt-0.5">Builder pending</div>
+        <div className="text-sm font-bold font-mono text-ink mt-0.5">
+          {counts ? counts.active : '—'}
+        </div>
+        <div className="text-[11px] text-faint mt-0.5">{activeHint}</div>
       </div>
       <div className="bg-surface border border-line rounded-xl px-3 py-2.5">
         <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">
           Paused bots
         </div>
-        <div className="text-sm font-bold font-mono text-ink mt-0.5">—</div>
-        <div className="text-[11px] text-faint mt-0.5">Builder pending</div>
+        <div className="text-sm font-bold font-mono text-ink mt-0.5">
+          {counts ? counts.paused : '—'}
+        </div>
+        <div className="text-[11px] text-faint mt-0.5">{pausedHint}</div>
       </div>
     </div>
   );
@@ -160,8 +181,8 @@ function QuickAccess() {
   }[] = [
     {
       section: 'botbuilder',
-      title: 'Bot Builder',
-      detail: 'Compose a strategy from blocks — the visual canvas opens in a later phase.',
+      title: 'Bot Importer',
+      detail: 'Bring a Deriv DBot strategy in, validate it and review exactly what No-touch understands.',
       icon: Blocks,
       primary: true,
     },

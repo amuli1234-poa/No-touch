@@ -38,7 +38,9 @@ export const COLLECTIONS = [
   'contracts',
   'ledgerEntries',
   'notifications',
-  'executionAudit'
+  'executionAudit',
+  /* ------------------------ imported bots (Phase 2) --------------------- */
+  'importedBots'
 ] as const;
 
 export type CollectionName = (typeof COLLECTIONS)[number];
@@ -94,7 +96,10 @@ export const COLLECTION_SPECS: readonly CollectionSpec[] = [
   { name: 'ledgerEntries', kind: 'keyed', keyField: 'id', indexFields: ['userId', 'dedupeKey'] },
   { name: 'notifications', kind: 'keyed', keyField: 'id', indexFields: ['userId'] },
   // Append-only audit trail; never pruned.
-  { name: 'executionAudit', kind: 'append' }
+  { name: 'executionAudit', kind: 'append' },
+  // Imported bot strategies. Keyed by id, indexed by the owning user so a
+  // tenant-scoped listing never scans another customer's rows.
+  { name: 'importedBots', kind: 'keyed', keyField: 'id', indexFields: ['userId', 'sourceHash'] }
 ];
 
 export interface StorageBackend {
