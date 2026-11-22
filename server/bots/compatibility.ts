@@ -26,12 +26,15 @@ import type { StrategyPlan } from './evaluator.js';
  * - `unavailable`  Deriv does not currently offer it
  * - `invalid`      the strategy configuration is malformed
  */
-export type CompatibilityState =
-  | 'compatible'
-  | 'incompatible'
-  | 'unsupported'
-  | 'unavailable'
-  | 'invalid';
+export const COMPATIBILITY_STATES = [
+  'compatible',
+  'incompatible',
+  'unsupported',
+  'unavailable',
+  'invalid'
+] as const;
+
+export type CompatibilityState = (typeof COMPATIBILITY_STATES)[number];
 
 export interface CompatibilityVerdict {
   state: CompatibilityState;

@@ -203,6 +203,83 @@ export function exportUrl(id: string): string {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Markets and compatibility                                                  */
+/* -------------------------------------------------------------------------- */
+
+export interface BotMarketCategory {
+  key: string;
+  label: string;
+}
+
+export interface BotMarketSymbol {
+  symbol: string;
+  displayName: string;
+  category: string;
+  categoryLabel: string;
+  submarket: string;
+  pipSize: number;
+  available: boolean;
+  unavailableReason: string | null;
+}
+
+export interface BotMarketCatalog {
+  categories: BotMarketCategory[];
+  symbols: BotMarketSymbol[];
+  fetchedAt: number;
+}
+
+/**
+ * Verdict vocabulary of the live availability check.
+ *
+ * Distinct from `CompatibilityLevel`, which describes how much of an imported
+ * file this build understands. This one answers a narrower question: can this
+ * strategy trade this symbol right now.
+ */
+export type BotCompatibilityState =
+  | 'compatible'
+  | 'incompatible'
+  | 'unsupported'
+  | 'unavailable'
+  | 'invalid';
+
+export interface BotCompatibility {
+  botId: string;
+  symbol: string;
+  contractType?: string;
+  contractFamily?: string;
+  digit?: number | null;
+  barrier?: string | null;
+  state?: BotCompatibilityState;
+  reason?: string;
+  details?: string[];
+  availableContracts?: string[];
+  [key: string]: unknown;
+}
+
+/** The Synthetic catalogue Deriv currently publishes, discovered live. */
+export async function fetchBotMarkets(): Promise<BotMarketCatalog> {
+  const res = await fetch('/api/bots/markets', { credentials: 'same-origin' });
+  if (!res.ok) throw await parseError(res);
+  return (await res.json()) as BotMarketCatalog;
+}
+
+/**
+ * Whether a stored bot can run on a symbol. Omitting `symbol` asks about the
+ * symbol the strategy itself names.
+ */
+export async function fetchBotCompatibility(
+  id: string,
+  symbol?: string
+): Promise<BotCompatibility> {
+  const query = symbol ? `?symbol=${encodeURIComponent(symbol)}` : '';
+  const res = await fetch(`/api/bots/${encodeURIComponent(id)}/compatibility${query}`, {
+    credentials: 'same-origin'
+  });
+  if (!res.ok) throw await parseError(res);
+  return (await res.json()) as BotCompatibility;
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Block editor                                                               */
 /* -------------------------------------------------------------------------- */
 

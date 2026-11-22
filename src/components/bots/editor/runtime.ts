@@ -29,7 +29,25 @@ export interface MountOptions {
   onChange: (xml: string) => void;
 }
 
+/**
+ * Imperative handles the toolbar drives. They only move the viewport or the
+ * undo stack — never the stored strategy — so a control cannot mutate XML
+ * behind the caller's back.
+ */
+export interface EditorControls {
+  undo: () => void;
+  redo: () => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  zoomToFit: () => void;
+  /** Empties the canvas. The caller decides whether that is confirmed. */
+  clear: () => void;
+  canUndo: () => boolean;
+  canRedo: () => boolean;
+}
+
 export interface MountedEditor {
+  controls: EditorControls;
   dispose: () => void;
 }
 
@@ -92,7 +110,25 @@ export function mountEditor(host: Element, options: MountOptions): MountedEditor
   };
   ws.addChangeListener(listener);
 
+  const controls: EditorControls = {
+    undo: () => ws.undo(false),
+    redo: () => ws.undo(true),
+    zoomIn: () => ws.zoomCenter(1),
+    zoomOut: () => ws.zoomCenter(-1),
+    zoomToFit: () => ws.zoomToFit(),
+    clear: () => {
+      // Cleared through the same event path as a manual delete, so the caller's
+      // change handler observes the emptied workspace and can mark it dirty.
+      Blockly.Events.setGroup('ws-reset');
+      ws.clear();
+      Blockly.Events.setGroup(false);
+    },
+    canUndo: () => ws.getUndoStack().length > 0,
+    canRedo: () => ws.getRedoStack().length > 0
+  };
+
   return {
+    controls,
     dispose: () => {
       ws.removeChangeListener(listener);
       try {

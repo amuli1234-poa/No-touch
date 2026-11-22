@@ -4,12 +4,8 @@ import {
   ArrowLeft,
   Blocks,
   CheckCircle2,
-  Download,
   FileWarning,
-  Loader2,
-  RotateCcw,
-  Save,
-  Trash2
+  Loader2
 } from 'lucide-react';
 
 import {
@@ -24,8 +20,11 @@ import {
 } from '../../lib/bots';
 import { Card, EmptyState, StatusPill } from '../ui/primitives';
 import { BotImporter } from '../bots/BotImporter';
-import { BotRunPanel } from '../bots/BotRunPanel';
-import { StrategyWorkspace } from '../bots/editor/StrategyWorkspace';
+import { ExecutionRail } from '../bots/ExecutionRail';
+import { TradingConfigPanel } from '../bots/TradingConfigPanel';
+import { WorkspaceToolbar } from '../bots/WorkspaceToolbar';
+import { StrategyWorkspace, type EditorControls } from '../bots/editor/StrategyWorkspace';
+import { readStrategyConfig } from '../bots/strategyConfig';
 
 /**
  * BOT BUILDER — the block strategy workspace.
@@ -52,7 +51,14 @@ export function BotBuilderView() {
   const [openBotId, setOpenBotId] = useState<string | null>(null);
 
   if (openBotId) {
-    return <StrategyEditor botId={openBotId} onClose={() => setOpenBotId(null)} />;
+    return (
+      <StrategyEditor
+        key={openBotId}
+        botId={openBotId}
+        onClose={() => setOpenBotId(null)}
+        onOpenBot={setOpenBotId}
+      />
+    );
   }
   return <BotLibrary onOpen={setOpenBotId} />;
 }
@@ -150,8 +156,15 @@ function BotLibrary({ onOpen }: { onOpen: (id: string) => void }) {
 /* -------------------------------------------------------------------------- */
 /*  Editor                                                                     */
 /* -------------------------------------------------------------------------- */
-
-function StrategyEditor({ botId, onClose }: { botId: string; onClose: () => void }) {
+function StrategyEditor({
+  botId,
+  onClose,
+  onOpenBot
+}: {
+  botId: string;
+  onClose: () => void;
+  onOpenBot: (id: string) => void;
+}) {
   const [payload, setPayload] = useState<BotEditorPayload | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [xml, setXml] = useState('');
@@ -159,7 +172,13 @@ function StrategyEditor({ botId, onClose }: { botId: string; onClose: () => void
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [controls, setControls] = useState<EditorControls | null>(null);
+  // The rail is a side panel on desktop and an overlay on small screens, where
+  // it would otherwise cover the canvas the moment the bot opens.
+  const [railOpen, setRailOpen] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth >= 1024
+  );
+  const [importing, setImporting] = useState(false);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -217,12 +236,19 @@ function StrategyEditor({ botId, onClose }: { botId: string; onClose: () => void
       onClose();
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'The bot could not be deleted.');
-      setConfirmDelete(false);
     }
   }, [botId, onClose]);
 
   const unknownTypes = payload?.unknownBlocks.length ?? 0;
   const unknownNodes = useMemo(() => (payload ? countUnknownNodes(payload) : 0), [payload]);
+
+  // The configuration readout is derived from the strategy tree, so it only
+  // reflects saved state. While the canvas is dirty the rail says so rather
+  // than showing values that no longer match the blocks on screen.
+  const config = useMemo(
+    () => (payload ? readStrategyConfig(payload.tree) : null),
+    [payload]
+  );
 
   if (loadError) {
     return (
@@ -248,97 +274,43 @@ function StrategyEditor({ botId, onClose }: { botId: string; onClose: () => void
     );
   }
 
+  const subtitle = payload
+    ? [
+        `Revision ${revision}`,
+        payload.edited ? 'edited' : 'original file',
+        unknownTypes > 0
+          ? `${unknownTypes} unsupported block type${unknownTypes === 1 ? '' : 's'}`
+          : null
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : 'Opening…';
+
   return (
     <div className="flex flex-col h-[calc(100dvh-8rem)] min-h-0">
-      <header className="flex flex-wrap items-center gap-2 px-3 sm:px-4 py-2.5 border-b border-line bg-surface shrink-0">
-        <button
-          type="button"
-          onClick={onClose}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-line text-xs font-semibold text-muted hover:text-ink hover:border-accent/50 transition-colors cursor-pointer"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
-          Library
-        </button>
-
-        <div className="min-w-0 flex-1">
-          <p className="text-xs font-bold text-ink truncate">{payload?.name ?? 'Loading…'}</p>
-          <p className="text-[11px] text-muted truncate">
-            {payload
-              ? [
-                  `Revision ${revision}`,
-                  dirty ? 'unsaved changes' : 'saved',
-                  unknownTypes > 0 ? `${unknownTypes} unsupported block type${unknownTypes === 1 ? '' : 's'}` : null
-                ]
-                  .filter(Boolean)
-                  .join(' · ')
-              : 'Opening…'}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          {payload?.edited && (
-            <button
-              type="button"
-              onClick={handleRevert}
-              title="Discard saved edits and restore the imported file"
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-line text-xs font-semibold text-muted hover:text-ink transition-colors cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
-              Revert
-            </button>
-          )}
-          <a
-            href={exportUrl(botId)}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-line text-xs font-semibold text-muted hover:text-ink transition-colors"
-          >
-            <Download className="w-3.5 h-3.5" aria-hidden="true" />
-            Export
-          </a>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={!dirty || saving}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent-strong transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-          >
-            {saving ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-            ) : (
-              <Save className="w-3.5 h-3.5" aria-hidden="true" />
-            )}
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-          {confirmDelete ? (
-            <span className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={handleDelete}
-                className="px-2.5 py-1.5 rounded-lg bg-danger text-white text-xs font-semibold cursor-pointer"
-              >
-                Confirm delete
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(false)}
-                className="px-2 py-1.5 rounded-lg border border-line text-xs font-semibold text-muted hover:text-ink cursor-pointer"
-              >
-                Cancel
-              </button>
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(true)}
-              title="Delete this bot"
-              aria-label="Delete this bot"
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-line text-xs font-semibold text-muted hover:text-danger hover:border-danger/50 transition-colors cursor-pointer"
-            >
-              <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-            </button>
-          )}
-        </div>
-      </header>
-
-      <BotRunPanel botId={botId} dirty={dirty} />
+      <WorkspaceToolbar
+        name={payload?.name ?? 'Loading…'}
+        subtitle={subtitle}
+        dirty={dirty}
+        saving={saving}
+        canSave={dirty}
+        canRevert={Boolean(payload?.edited)}
+        editorReady={controls !== null}
+        onBack={onClose}
+        onImport={() => setImporting(true)}
+        onSave={() => void handleSave()}
+        onExport={exportUrl(botId)}
+        onRevert={() => void handleRevert()}
+        onDelete={() => void handleDelete()}
+        onUndo={() => controls?.undo()}
+        onRedo={() => controls?.redo()}
+        onZoomIn={() => controls?.zoomIn()}
+        onZoomOut={() => controls?.zoomOut()}
+        onZoomFit={() => controls?.zoomToFit()}
+        onResetWorkspace={() => controls?.clear()}
+        railOpen={railOpen}
+        onToggleRail={() => setRailOpen((v) => !v)}
+      />
 
       {saveError && (
         <div className="flex items-start gap-2 px-4 py-2 bg-danger/10 border-b border-danger/30 text-[11px] text-danger shrink-0">
@@ -358,29 +330,92 @@ function StrategyEditor({ botId, onClose }: { botId: string; onClose: () => void
         </div>
       )}
 
-      <div className="flex-1 min-h-0 relative">
-        {payload ? (
-          <StrategyWorkspace
-            key={`${botId}:${revision}`}
-            xml={xml}
-            unknownBlocks={payload.unknownBlocks}
-            onChange={handleChange}
+      <div className="flex flex-1 min-h-0 relative">
+        {/* Workspace — the centre of the experience ---------------------- */}
+        <div className="flex-1 min-w-0 relative">
+          {payload ? (
+            <StrategyWorkspace
+              key={`${botId}:${revision}`}
+              xml={xml}
+              unknownBlocks={payload.unknownBlocks}
+              onChange={handleChange}
+              onReady={setControls}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <Loader2 className="w-5 h-5 animate-spin text-accent" aria-hidden="true" />
+            </div>
+          )}
+
+          {payload && payload.compatibility !== 'full' && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10">
+              <div className="pointer-events-auto flex items-start gap-2 px-3 py-1.5 border-t border-line bg-surface/95 backdrop-blur-sm text-[10.5px] text-muted">
+                <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 shrink-0 text-warning" aria-hidden="true" />
+                <span className="truncate">
+                  <strong className="text-ink capitalize">{payload.compatibility}</strong> —{' '}
+                  {payload.compatibilityReason}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Configuration + execution rail --------------------------------- */}
+        {payload && (
+          <aside
+            aria-label="Bot configuration and execution"
+            className={`${
+              railOpen ? 'lg:flex' : 'lg:hidden'
+            } absolute lg:static inset-y-0 right-0 z-30 w-[330px] max-w-[85vw] shrink-0 flex-col border-l border-line bg-canvas overflow-y-auto`}
+          >
+            <TradingConfigPanel botId={botId} payload={payload} dirty={dirty} />
+            <div className="border-t border-line" />
+            <ExecutionRail
+              botId={botId}
+              dirty={dirty}
+              symbol={config?.symbol ?? null}
+              contractType={config?.contractType ?? null}
+            />
+          </aside>
+        )}
+
+        {/* Rail scrim on small screens ------------------------------------ */}
+        {payload && railOpen && (
+          <button
+            type="button"
+            aria-label="Close the configuration rail"
+            onClick={() => setRailOpen(false)}
+            className="lg:hidden absolute inset-0 z-20 bg-app/60 cursor-pointer"
           />
-        ) : (
-          <div className="flex h-full items-center justify-center">
-            <Loader2 className="w-5 h-5 animate-spin text-accent" aria-hidden="true" />
-          </div>
         )}
       </div>
 
-      {payload && payload.compatibility !== 'full' && (
-        <footer className="flex items-start gap-2 px-4 py-2 border-t border-line bg-surface text-[11px] text-muted shrink-0">
-          <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 shrink-0 text-warning" aria-hidden="true" />
-          <span>
-            <strong className="text-ink">{payload.compatibility}</strong> —{' '}
-            {payload.compatibilityReason}
-          </span>
-        </footer>
+      {importing && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-app/70 p-4 sm:p-8"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Import a bot"
+        >
+          <div className="w-full max-w-2xl">
+            <div className="flex items-center justify-between px-1 pb-2">
+              <h2 className="text-sm font-bold text-ink">Import a strategy</h2>
+              <button
+                type="button"
+                onClick={() => setImporting(false)}
+                className="px-2.5 py-1.5 rounded-lg border border-line text-[11px] font-semibold text-muted hover:text-ink transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+            <BotImporter
+              onImported={(bot) => {
+                setImporting(false);
+                if (bot?.id) onOpenBot(bot.id);
+              }}
+            />
+          </div>
+        </div>
       )}
     </div>
   );

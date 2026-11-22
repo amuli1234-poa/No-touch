@@ -51,10 +51,12 @@ export const strategyTheme = Blockly.Theme.defineTheme('wicksentinel-strategy', 
     trade_category: { colour: '#2878d0' },
     market_category: { colour: '#2c8fb8' },
     contract_category: { colour: '#2aa39b' },
+    stake_category: { colour: '#25b887' },
     entry_category: { colour: '#2f9e6e' },
     exit_category: { colour: '#d9a441' },
     indicator_category: { colour: '#a78bfa' },
     logic_category: { colour: '#6d8ee0' },
+    math_category: { colour: '#5c9bd6' },
     variable_category: { colour: '#b57fe0' }
   },
   componentStyles: {

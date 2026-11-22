@@ -19,6 +19,8 @@ import {
 } from './definitions';
 import { strategyTheme } from './theme';
 
+export { EXECUTABLE_BLOCKS, strategyToolbox } from './toolbox';
+
 export {
   DBOT_DECLS,
   UNKNOWN_BLOCK_PREFIX,
@@ -67,39 +69,6 @@ export function registerUnknownBlocks(
       )
     ]);
   }
-}
-
-/** The toolbox definition, grouped by role. */
-export function strategyToolbox(): Record<string, unknown> {
-  const category = (name: string, style: string, types: string[]) => ({
-    kind: 'category',
-    name,
-    categorystyle: style,
-    contents: types.map((type) => ({ kind: 'block', type }))
-  });
-  const pick = (...roles: string[]) =>
-    DBOT_DECLS.filter((decl) => roles.includes(decl.role)).map((decl) => decl.type);
-
-  return {
-    kind: 'categoryToolbox',
-    contents: [
-      category('Trade', 'trade_category', pick('trade-definition')),
-      category('Market', 'market_category', [...pick('market'), ...pick('contract')]),
-      category('Entry', 'entry_category', [...pick('entry'), ...pick('purchase')]),
-      category('Exit', 'exit_category', pick('exit')),
-      category('Indicators', 'indicator_category', pick('indicator')),
-      category('Logic', 'logic_category', [
-        'controls_if',
-        'logic_compare',
-        'logic_operation',
-        'logic_negate',
-        'logic_boolean',
-        'math_number',
-        'math_arithmetic'
-      ]),
-      category('Variables', 'variable_category', ['variables_get', 'variables_set'])
-    ]
-  };
 }
 
 export { strategyTheme };

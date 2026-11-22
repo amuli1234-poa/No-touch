@@ -100,7 +100,7 @@ export interface PlanResult {
  * evaluator does not model, so a strategy using them is refused rather than
  * approximated.
  */
-const EXECUTABLE = new Set([
+export const EXECUTABLE = new Set([
   'trade_definition',
   'trade_definition_market',
   'trade_definition_tradetype',

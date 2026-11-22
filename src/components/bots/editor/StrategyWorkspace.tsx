@@ -16,10 +16,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-import type { MountedEditor } from './runtime';
+import type { EditorControls, MountedEditor } from './runtime';
 import type { UnknownBlockSeed } from './types';
 
 export type { UnknownBlockSeed } from './types';
+export type { EditorControls } from './runtime';
 
 export interface StrategyWorkspaceProps {
   /** DBot XML to render. The parent remounts to load a different strategy. */
@@ -34,20 +35,25 @@ export interface StrategyWorkspaceProps {
   onChange: (xml: string) => void;
   /** Read-only mode, for a bot that cannot be edited. */
   readOnly?: boolean;
+  /** Receives the imperative handles so the toolbar can drive the canvas. */
+  onReady?: (controls: EditorControls | null) => void;
 }
 
 export function StrategyWorkspace({
   xml,
   unknownBlocks,
   onChange,
-  readOnly
+  readOnly,
+  onReady
 }: StrategyWorkspaceProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const onChangeRef = useRef(onChange);
+  const onReadyRef = useRef(onReady);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
   onChangeRef.current = onChange;
+  onReadyRef.current = onReady;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -71,6 +77,7 @@ export function StrategyWorkspace({
           return;
         }
         setReady(true);
+        onReadyRef.current?.(mounted.controls);
       } catch (err) {
         if (!disposed) {
           setError(err instanceof Error ? err.message : 'The editor could not be loaded.');
@@ -80,6 +87,7 @@ export function StrategyWorkspace({
 
     return () => {
       disposed = true;
+      onReadyRef.current?.(null);
       mounted?.dispose();
       mounted = null;
     };
