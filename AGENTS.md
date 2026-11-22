@@ -948,3 +948,88 @@ the Trade panel shows a "Reconnect Deriv" banner and disables placing while it
 is in the past. Do not treat a `min_balance` rejection as a real balance problem
 until you have checked the token expiry.
 
+
+## Imported bot execution (real Deriv DEMO runs)
+
+Bots imported into the Bot Builder can be **run for real on a Deriv DEMO
+account**. This is execution, not backtesting: a satisfied strategy creates a
+signal, an intent and a purchase through the same `gateway.submit` path a
+hand-placed trade uses. Backtesting is a separate concern and must never be
+presented as "running the bot".
+
+Files:
+
+- `server/bots/runTypes.ts` — `BotRunRecord`. **Deliberately separate from
+  `ImportedBotRecord.status`.** The import lifecycle (`imported` | `paused` |
+  `archived`) describes the document; a run describes the session. Do not fold
+  run state into bot status, and do not relax `TRANSITIONS` in `bots/service.ts`.
+- `server/bots/evaluator.ts` — `planStrategy` / `evaluateStrategy`. A *pure*
+  function of the supplied ticks. Only a narrow block set is executable; a
+  strategy containing anything else is **refused at start** rather than
+  partially executed. Insufficient history yields `insufficient`, never an
+  entry. `check_sell` is refused on purpose: this build holds contracts to
+  expiry, so honouring an early sale would change the strategy's outcome.
+- `server/bots/runService.ts` — `startBotRun` / `tickBotRun` / `stopBotRun`.
+- `server/bots/routes.ts` — `POST /api/bots/:id/run`,
+  `POST /api/bots/runs/:runId/tick`, `POST /api/bots/runs/:runId/stop`,
+  `GET /api/bots/runs`, `GET /api/bots/:id/run`, `GET /api/bots/markets`,
+  `GET /api/bots/markets/:symbol/contracts`, `GET /api/bots/:id/compatibility`.
+  The `GET /api/bots/runs` and `GET /api/bots/markets` routes must stay
+  registered **before** `GET /api/bots/:id`, or `runs`/`markets` is read as an id.
+- `AutoExecutionRunner.runForBot` shares `submitSignal` with the scanner loop, so
+  there is exactly one purchase path. Bot intents carry no manual approval, so
+  the gateway classifies them as automatic and `allowAutomaticTrading` must be on.
+- `server/bots/markets.ts` — Synthetic-only market discovery. This is **not**
+  `src/utils/eligibleMarkets.ts`; that file decides what the *scanner* may
+  analyse and excludes Boom/Crash, Range Break and others. A customer's imported
+  bot is a different product, so the Bots catalogue lists every Synthetic family
+  Deriv publishes and only excludes non-synthetic markets. No symbol list is
+  hardcoded: `active_symbols` is the source of truth. Discovery is bounded by
+  `DISCOVERY_TIMEOUT_MS`, because `getActiveSymbols()` never settles on a dead
+  connection and a route must not hang.
+- `server/bots/compatibility.ts` — `evaluateCompatibility`. Answers a different
+  question from `parser.ts`'s `classify()`: not "can this XML be interpreted" but
+  "can it run on this symbol, with this contract, right now". States are
+  `compatible` | `incompatible` | `unsupported` | `unavailable` | `invalid`, and
+  only `compatible` may execute. Keep them distinct — collapsing "we have not
+  implemented it" into "Deriv does not offer it" tells the customer the wrong
+  thing. An empty contract catalogue is `unavailable`, never `compatible`.
+- `src/components/bots/BotRunPanel.tsx` + `useBotRun` in `src/lib/bots.ts`.
+
+Invariants worth keeping:
+
+- DEMO only. A REAL account is refused, never downgraded to a demo run.
+- One active run per bot; a second start is refused, not queued.
+- The strategy is snapshotted by revision at start. An edit mid-run **fails** the
+  run rather than silently trading the new version.
+- Ticking is browser-driven, so closing the tab stops the bot. This is disclosed
+  in the UI. An abandoned run (no tick for `RUN_IDLE_TIMEOUT_MS`) is settled on
+  the next start so a customer can always restart; settling goes through
+  `stopBotRun` so an uncertain submission is reconciled, never retried.
+- Every tick re-checks the kill switches, so flipping `ALLOW_DEMO_EXECUTION` off
+  stops a live run at its next tick.
+- Tenant isolation is enforced by the store accessors (`getBotRun`,
+  `listBotRuns`, `findActiveBotRun` all take `userId`); another tenant's run is a
+  404, not a 403.
+- `test:bot-run` covers the lifecycle, the refusals, isolation and the routes.
+- `test:bot-markets` covers Synthetic discovery, contract discovery, the
+  compatibility states and the digit/barrier adapters.
+
+Contract families:
+
+- `ContractFamily` is shared with the scanner, so the union covers every family
+  the gateway may be asked to price. The scanner still only ever *selects*
+  `rise_fall` (`MULTIPLIERS_ENABLED` is false); the extra members exist for bots.
+- `DIGIT_PREDICTION_TYPES` is the single authority on which digit contracts need
+  a prediction. `DIGITEVEN`/`DIGITODD` do **not**; `DIGITMATCH`/`DIGITDIFF`/
+  `DIGITOVER`/`DIGITUNDER` do. Do not re-derive this with `startsWith('DIGIT')`.
+- A CALL/PUT strategy that configures a barrier is Higher/Lower, not Rise/Fall.
+  DBot writes the same contract types for both and distinguishes them only by the
+  barrier, so the plan's family follows the barrier rather than assuming Rise/Fall.
+- `runService` must take `contractFamily`/`contractType` from the plan. It once
+  hardcoded `'rise_fall'`, which silently turned a digit bot into a Rise/Fall bot.
+- Multipliers and Accumulators are visible but unimplemented; compatibility
+  reports `unsupported` with a reason rather than pretending they are unavailable.
+
+`JsonBackend.close()` now drains its write queue before releasing the lock;
+without that a shutdown could lose the last record.

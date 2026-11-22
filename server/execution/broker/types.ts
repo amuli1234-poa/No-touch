@@ -30,6 +30,14 @@ export interface ProposalPayload {
   duration_unit?: string;
   multiplier?: number;
   cancellation?: string;
+  /**
+   * Barrier. For `DIGIT*` contracts this is the predicted digit (a number); for
+   * `higher_lower` and `touch_no_touch` it is a price offset (a string, as
+   * Deriv expects, e.g. `+0.1234`).
+   */
+  barrier?: number | string;
+  /** Growth rate for `ACCU`. */
+  growth_rate?: number;
   limit_order?: { stop_loss?: number; take_profit?: number };
 }
 

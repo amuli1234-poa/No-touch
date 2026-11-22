@@ -40,7 +40,9 @@ export const COLLECTIONS = [
   'notifications',
   'executionAudit',
   /* ------------------------ imported bots (Phase 2) --------------------- */
-  'importedBots'
+  'importedBots',
+  /* ---------------------- bot runtimes (Phase 3) ------------------------ */
+  'botRuns'
 ] as const;
 
 export type CollectionName = (typeof COLLECTIONS)[number];
@@ -99,7 +101,11 @@ export const COLLECTION_SPECS: readonly CollectionSpec[] = [
   { name: 'executionAudit', kind: 'append' },
   // Imported bot strategies. Keyed by id, indexed by the owning user so a
   // tenant-scoped listing never scans another customer's rows.
-  { name: 'importedBots', kind: 'keyed', keyField: 'id', indexFields: ['userId', 'sourceHash'] }
+  { name: 'importedBots', kind: 'keyed', keyField: 'id', indexFields: ['userId', 'sourceHash'] },
+  // Bot runtime sessions. Separate from the imported document so a run can
+  // start and stop without touching the import lifecycle. Indexed by the
+  // owning user and by bot, so tenant-scoped lookups never scan other rows.
+  { name: 'botRuns', kind: 'keyed', keyField: 'runId', indexFields: ['userId', 'botId'] }
 ];
 
 export interface StorageBackend {

@@ -450,7 +450,7 @@ export function findTopLevel(tree: BlockTree, type: string): TreeNode | null {
 }
 
 /** Reads a field value from a node, or null when absent. */
-export function fieldValue(node: TreeNode | null, name: string): string | null {
+export function fieldValue(node: TreeNode | null | undefined, name: string): string | null {
   if (!node) return null;
   const field = node.fields.find((f) => f.name === name);
   return field ? field.value : null;

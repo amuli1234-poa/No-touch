@@ -108,6 +108,14 @@ export class JsonBackend implements StorageBackend {
   }
 
   async close(): Promise<void> {
+    // Drain pending writes before releasing the lock: otherwise a shutdown can
+    // lose the last record and leave a temp file behind.
+    try {
+      await this.queue;
+    } catch {
+      // A failed write already poisoned the backend and was reported to its
+      // caller; closing must still release the lock.
+    }
     if (this.ownsLock) await this.lock.release();
   }
 

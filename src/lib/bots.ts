@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * Frontend bot-importer client.
@@ -291,6 +291,214 @@ export async function revertBot(id: string): Promise<BotRecord> {
   });
   if (!res.ok) throw await parseError(res);
   return (await res.json()).bot as BotRecord;
+}
+
+/* ------------------------------- execution -------------------------------- */
+
+export type BotRunStatus = 'idle' | 'running' | 'stopping' | 'stopped' | 'failed';
+
+export interface BotRunEvent {
+  at: number;
+  kind: string;
+  detail: string;
+  signalId?: string;
+  intentId?: string;
+  contractId?: number;
+}
+
+export interface BotRunCounters {
+  ticks: number;
+  signals: number;
+  entries: number;
+  rejected: number;
+  skipped: number;
+}
+
+export interface BotRun {
+  runId: string;
+  botId: string;
+  userId: string;
+  accountId: string;
+  accountMode: 'demo';
+  runtimeStatus: BotRunStatus;
+  startedAt: number;
+  stoppedAt: number | null;
+  lastEvaluationAt: number | null;
+  lastExecutionId: string | null;
+  lastContractId: number | null;
+  error: string | null;
+  counters: BotRunCounters;
+  events: BotRunEvent[];
+  maxEntries: number;
+  strategyRevision: number;
+  symbol: string;
+  timeframe: string;
+}
+
+export type BotRunVerdict = 'entry' | 'no_entry' | 'insufficient' | 'ineligible' | 'skipped' | 'stopped';
+
+export interface StartRunResult {
+  run: BotRun;
+  /** True while ticking is driven by this browser tab. */
+  sessionDependent: boolean;
+  idleTimeoutMs: number;
+}
+
+export async function startBotRun(
+  botId: string,
+  accountId: string,
+  maxEntries?: number
+): Promise<StartRunResult> {
+  const res = await fetch(`/api/bots/${encodeURIComponent(botId)}/run`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ accountId, maxEntries })
+  });
+  if (!res.ok) throw await parseError(res);
+  return (await res.json()) as StartRunResult;
+}
+
+export async function tickBotRun(
+  runId: string,
+  tickKey: string
+): Promise<{ run: BotRun; verdict: BotRunVerdict; reason: string | null; contractId: number | null }> {
+  const res = await fetch(`/api/bots/runs/${encodeURIComponent(runId)}/tick`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tickKey })
+  });
+  if (!res.ok) throw await parseError(res);
+  return await res.json();
+}
+
+export async function stopBotRun(runId: string): Promise<BotRun> {
+  const res = await fetch(`/api/bots/runs/${encodeURIComponent(runId)}/stop`, {
+    method: 'POST',
+    credentials: 'same-origin'
+  });
+  if (!res.ok) throw await parseError(res);
+  return (await res.json()).run as BotRun;
+}
+
+export async function fetchActiveRun(botId: string): Promise<BotRun | null> {
+  const res = await fetch(`/api/bots/${encodeURIComponent(botId)}/run`, {
+    credentials: 'same-origin'
+  });
+  if (!res.ok) throw await parseError(res);
+  return (await res.json()).run as BotRun | null;
+}
+
+/**
+ * Drives a bot run from the browser.
+ *
+ * Ticking is browser-driven on purpose — it is a disclosed limitation, not an
+ * accident. Each tick is a separate authenticated request that re-proves
+ * ownership server-side, so the loop is a convenience rather than a source of
+ * authority. Closing the tab stops the bot, which is the honest behaviour for a
+ * demo tool; the UI says so.
+ *
+ * The hook never retries a failed tick automatically: a rejected tick usually
+ * means the run ended (stopped, failed, kill switch), and retrying would spin.
+ */
+export function useBotRun(botId: string | null, intervalMs = 4000) {
+  const [run, setRun] = useState<BotRun | null>(null);
+  const [error, setError] = useState<BotApiError | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [lastVerdict, setLastVerdict] = useState<BotRunVerdict | null>(null);
+  const timer = useRef<number | null>(null);
+  const tickCounter = useRef(0);
+
+  const clear = useCallback(() => {
+    if (timer.current !== null) {
+      window.clearInterval(timer.current);
+      timer.current = null;
+    }
+  }, []);
+
+  const tick = useCallback(
+    async (runId: string) => {
+      tickCounter.current += 1;
+      try {
+        const result = await tickBotRun(runId, `${runId}:${tickCounter.current}`);
+        setRun(result.run);
+        setLastVerdict(result.verdict);
+        // The server settles the run itself on failure or on reaching its entry
+        // ceiling; stop the loop rather than polling a dead run.
+        if (result.run.runtimeStatus !== 'running') clear();
+      } catch (e) {
+        clear();
+        setError(e instanceof BotApiError ? e : new BotApiError('tick_failed', 'The bot could not tick.', 0));
+      }
+    },
+    [clear]
+  );
+
+  const start = useCallback(
+    async (accountId: string, maxEntries?: number) => {
+      if (!botId) return;
+      setBusy(true);
+      setError(null);
+      try {
+        const started = await startBotRun(botId, accountId, maxEntries);
+        setRun(started.run);
+        setLastVerdict(null);
+        clear();
+        tickCounter.current = 0;
+        timer.current = window.setInterval(() => {
+          void tick(started.run.runId);
+        }, intervalMs);
+      } catch (e) {
+        setError(e instanceof BotApiError ? e : new BotApiError('start_failed', 'The bot could not start.', 0));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [botId, clear, intervalMs, tick]
+  );
+
+  const stop = useCallback(async () => {
+    if (!run) return;
+    setBusy(true);
+    // Stop the local loop first: a tick must not race the stop request.
+    clear();
+    try {
+      const stopped = await stopBotRun(run.runId);
+      setRun(stopped);
+    } catch (e) {
+      setError(e instanceof BotApiError ? e : new BotApiError('stop_failed', 'The bot could not stop.', 0));
+    } finally {
+      setBusy(false);
+    }
+  }, [clear, run]);
+
+  // Restore an in-flight run when the editor mounts, so a refresh does not
+  // silently abandon a run the customer started.
+  useEffect(() => {
+    if (!botId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const active = await fetchActiveRun(botId);
+        if (cancelled || !active) return;
+        setRun(active);
+        if (active.runtimeStatus === 'running') {
+          timer.current = window.setInterval(() => {
+            void tick(active.runId);
+          }, intervalMs);
+        }
+      } catch {
+        // A missing runtime (import-only build) is not an error worth showing.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      clear();
+    };
+  }, [botId, clear, intervalMs, tick]);
+
+  return { run, error, busy, lastVerdict, start, stop };
 }
 
 /**

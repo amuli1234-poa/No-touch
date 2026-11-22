@@ -34,6 +34,8 @@
     "test:real-gate": "tsx server/tests/real_release_gate.test.ts",
     "test:bots": "tsx server/tests/bot_parser.test.ts",
     "test:bot-import": "tsx server/tests/bot_import.test.ts",
+    "test:bot-run": "tsx server/tests/bot_run.test.ts",
+    "test:bot-markets": "tsx server/tests/bot_markets.test.ts",
     "db:migrate": "tsx server/store/migrate.ts",
     "admin:bootstrap": "tsx server/admin/bootstrap.ts",
     "dev:admin": "vite --config admin/vite.config.ts --port=3001 --host=0.0.0.0",

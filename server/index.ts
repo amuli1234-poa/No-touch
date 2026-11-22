@@ -11,6 +11,7 @@ import { createTelemetryRouter } from './routes/telemetry.js';
 import { createBalancesRouter } from './routes/balances.js';
 import { createExecutionRouter } from './routes/execution.js';
 import { createBotsRouter } from './bots/routes.js';
+import { ExecutionAuditor } from './execution/audit.js';
 import { BalanceService } from './services/balance.js';
 import { MarketDataService } from './services/marketData.js';
 import { createExecution, type ExecutionBundle } from './execution/composition.js';
@@ -93,7 +94,16 @@ export function createApp(cfg: ServerConfig, store: Store, cache?: Cache): AppBu
   app.use(createBalancesRouter(ctx, balances));
   // Bot importer. Session-guarded and tenant-scoped; imports are inert records
   // and are never wired to the execution gateway.
-  app.use(createBotsRouter(ctx, store));
+  app.use(
+    createBotsRouter(ctx, store, {
+      gateway: execution.gateway,
+      runner: execution.runner,
+      monitor: execution.monitor,
+      auditor: new ExecutionAuditor(store),
+      market,
+      flags: execution.flags
+    })
+  );
   app.use(
     createExecutionRouter({
       cfg,

@@ -13,20 +13,80 @@
 
 export type AccountMode = 'demo' | 'real';
 
-/** Contract families the platform supports. */
-export type ContractFamily = 'rise_fall' | 'multipliers';
+/**
+ * Contract families the platform supports.
+ *
+ * `rise_fall` and `multipliers` are the WickSentinel scanner's families. The
+ * rest exist for the Bots module, which must run whatever contract an imported
+ * strategy actually configures. They are declared here because the execution
+ * gateway is shared infrastructure and must know every family it can be asked
+ * to price.
+ *
+ * `higher_lower` and `touch_no_touch` both require a barrier; `digits` requires
+ * a digit prediction; `accumulators` requires a growth rate.
+ */
+export type ContractFamily =
+  | 'rise_fall'
+  | 'multipliers'
+  | 'higher_lower'
+  | 'digits'
+  | 'touch_no_touch'
+  | 'accumulators';
 
 /**
  * Deriv contract types, verified against the live `contracts_for` catalogue.
- * Rise/Fall is CALL/PUT; Multipliers is MULTUP/MULTDOWN. The brief's
- * "RISE"/"FALL"/"MULT" names do not exist in the API.
+ * Rise/Fall and Higher/Lower are CALL/PUT (differing only by barrier); Multipliers
+ * is MULTUP/MULTDOWN; digits are the DIGIT* family; Touch/No Touch is
+ * ONETOUCH/NOTOUCH. The brief's "RISE"/"FALL"/"MULT" names do not exist in the API.
  */
-export type DerivContractType = 'CALL' | 'PUT' | 'MULTUP' | 'MULTDOWN';
+export type DerivContractType =
+  | 'CALL'
+  | 'PUT'
+  | 'MULTUP'
+  | 'MULTDOWN'
+  | 'DIGITEVEN'
+  | 'DIGITODD'
+  | 'DIGITMATCH'
+  | 'DIGITDIFF'
+  | 'DIGITOVER'
+  | 'DIGITUNDER'
+  | 'ONETOUCH'
+  | 'NOTOUCH'
+  | 'ACCU';
 
 export const CONTRACT_FAMILY_TYPES: Record<ContractFamily, readonly DerivContractType[]> = {
   rise_fall: ['CALL', 'PUT'],
-  multipliers: ['MULTUP', 'MULTDOWN']
+  multipliers: ['MULTUP', 'MULTDOWN'],
+  higher_lower: ['CALL', 'PUT'],
+  digits: ['DIGITEVEN', 'DIGITODD', 'DIGITMATCH', 'DIGITDIFF', 'DIGITOVER', 'DIGITUNDER'],
+  touch_no_touch: ['ONETOUCH', 'NOTOUCH'],
+  accumulators: ['ACCU']
 };
+
+/**
+ * Digit contracts that need a predicted digit.
+ *
+ * `DIGITEVEN` and `DIGITODD` are complete predictions on their own; only
+ * Match/Diff/Over/Under name a digit. Treating Even/Odd as needing one would
+ * reject perfectly valid strategies, so this set is the single authority.
+ */
+export const DIGIT_PREDICTION_TYPES: ReadonlySet<DerivContractType> = new Set<DerivContractType>([
+  'DIGITMATCH',
+  'DIGITDIFF',
+  'DIGITOVER',
+  'DIGITUNDER'
+]);
+
+/**
+ * Families whose contract type is chosen by a *prediction* rather than a
+ * direction. A digit strategy does not say "rise" or "fall", it says "even",
+ * so `contractTypeFor` cannot serve them and the caller must name the type.
+ */
+export const PREDICTION_FAMILIES: ReadonlySet<ContractFamily> = new Set<ContractFamily>([
+  'digits',
+  'touch_no_touch',
+  'accumulators'
+]);
 
 /* --------------------------- execution preferences ------------------------ */
 
@@ -60,6 +120,12 @@ export interface ExecutionPreferencesRecord {
     cancellation: string | null;
     stopLoss: number | null;
     takeProfit: number | null;
+    /** Digit prediction for `digits` contracts. */
+    digit?: number | null;
+    /** Barrier price for `higher_lower` and `touch_no_touch`. */
+    barrier?: string | null;
+    /** Growth rate for `accumulators`. */
+    growthRate?: number | null;
   };
   /**
    * The customer's explicit authorisation to trade their REAL account. Defaults
@@ -141,6 +207,12 @@ export interface SignalRecord {
   timeframe: string;
   direction: SignalDirection;
   contractFamily: ContractFamily;
+  /**
+   * The exact contract to place, when the family is chosen by prediction rather
+   * than direction. Absent for `rise_fall`/`multipliers`, where the direction
+   * determines it.
+   */
+  contractType?: DerivContractType;
   /** The engine analysis this signal derives from. */
   analysisId: string;
   /** Zone/entry the strategy validated, when one exists. */
@@ -210,6 +282,9 @@ export interface TradeIntentRecord {
     cancellation: string | null;
     stopLoss: number | null;
     takeProfit: number | null;
+    digit?: number | null;
+    barrier?: string | null;
+    growthRate?: number | null;
   };
   state: IntentState;
   /** Deriv contract id, once the purchase succeeded. */

@@ -26,6 +26,16 @@ import express from 'express';
 import type { SessionContext, AuthedRequest } from '../lib/session.js';
 import { requireSession } from '../lib/session.js';
 import type { Store } from '../store/store.js';
+import { open } from '../lib/crypto.js';
+import { loadBotMarkets, loadSymbolContracts, BotMarketError } from './markets.js';
+import { evaluateCompatibility } from './compatibility.js';
+import { planStrategy } from './evaluator.js';
+import type { ExecutionGateway } from '../execution/gateway.js';
+import type { AutoExecutionRunner } from '../execution/autoRunner.js';
+import type { ContractMonitor } from '../execution/contractMonitor.js';
+import type { ExecutionAuditor } from '../execution/audit.js';
+import type { MarketDataService } from '../services/marketData.js';
+import type { ExecutionFlags } from '../config/flags.js';
 import {
   ImportError,
   archiveBot,
@@ -38,9 +48,28 @@ import {
   setBotStatus,
   toView
 } from './service.js';
+import {
+  BotRunError,
+  RUN_IDLE_TIMEOUT_MS,
+  startBotRun,
+  stopBotRun,
+  tickBotRun,
+  toRunView,
+  type BotRunDeps
+} from './runService.js';
 import { collectUnknownBlocks } from './tree.js';
 import { MAX_BOT_FILE_BYTES } from './parser.js';
 import { supportedBlockTypes, unsupportedBlockTypes } from './blocks.js';
+
+/** What the bot runtime needs. Absent in builds that only import strategies. */
+export interface BotRuntimeDeps {
+  gateway: ExecutionGateway;
+  runner: AutoExecutionRunner;
+  monitor: ContractMonitor;
+  auditor: ExecutionAuditor;
+  market: MarketDataService;
+  flags: ExecutionFlags;
+}
 
 /** JSON bodies are the raw XML text, so allow the parser ceiling plus overhead. */
 const BODY_LIMIT = `${Math.ceil((MAX_BOT_FILE_BYTES * 1.4) / 1024)}kb`;
@@ -57,7 +86,7 @@ function fail(res: Response, e: unknown): void {
   res.status(500).json({ error: 'internal_error', message: 'The import could not be completed.' });
 }
 
-export function createBotsRouter(ctx: SessionContext, store: Store): Router {
+export function createBotsRouter(ctx: SessionContext, store: Store, runtime?: BotRuntimeDeps): Router {
   const router = Router();
   router.use(express.json({ limit: BODY_LIMIT }));
 
@@ -75,8 +104,105 @@ export function createBotsRouter(ctx: SessionContext, store: Store): Router {
       ],
       supportedBlocks: supportedBlockTypes(),
       unsupportedBlocks: unsupportedBlockTypes(),
-      executionEnabled: false
+      executionEnabled: runtime !== undefined
     });
+  });
+
+  /**
+   * The Synthetic market catalogue, discovered live from Deriv.
+   *
+   * This is the Bots module's own catalogue, not WickSentinel's. It lists every
+   * Synthetic family Deriv publishes — including Boom/Crash and Range Break,
+   * which the scanner refuses — because an imported bot may legitimately trade
+   * them and hiding them would look like an incompatibility.
+   */
+  router.get('/api/bots/markets', requireSession(ctx), async (_req: AuthedRequest, res: Response) => {
+    if (!runtime) {
+      res.status(503).json({ error: 'market_data_unavailable', message: 'Market data is not enabled in this build.' });
+      return;
+    }
+    try {
+      const catalog = await loadBotMarkets(runtime.market);
+      res.json(catalog);
+    } catch (e) {
+      if (e instanceof BotMarketError) {
+        res.status(e.status).json({ error: e.code, message: e.message });
+        return;
+      }
+      res.status(503).json({ error: 'market_data_unavailable', message: 'Could not load the market catalogue.' });
+    }
+  });
+
+  /** Contract types Deriv currently offers for one Synthetic symbol. */
+  router.get(
+    '/api/bots/markets/:symbol/contracts',
+    requireSession(ctx),
+    async (req: AuthedRequest, res: Response) => {
+      if (!runtime) {
+        res.status(503).json({ error: 'market_data_unavailable', message: 'Market data is not enabled in this build.' });
+        return;
+      }
+      try {
+        const result = await loadSymbolContracts(runtime.market, req.params.symbol);
+        res.json(result);
+      } catch (e) {
+        if (e instanceof BotMarketError) {
+          res.status(e.status).json({ error: e.code, message: e.message });
+          return;
+        }
+        res.status(503).json({ error: 'market_data_unavailable', message: 'Could not load contract availability.' });
+      }
+    }
+  );
+
+  /**
+   * Compatibility of a stored bot against its own symbol and against a caller-
+   * supplied symbol, so the UI can explain both "does this run at all" and
+   * "would it run here".
+   */
+  router.get('/api/bots/:id/compatibility', requireSession(ctx), async (req: AuthedRequest, res: Response) => {
+    if (!runtime) {
+      res.status(503).json({ error: 'market_data_unavailable', message: 'Market data is not enabled in this build.' });
+      return;
+    }
+    const bot = store.getImportedBot(req.user!.id, req.params.id);
+    if (!bot) {
+      res.status(404).json({ error: 'not_found', message: 'Bot not found.' });
+      return;
+    }
+    const { tree } = loadBotTree(bot);
+    const plan = planStrategy(tree);
+    if (!plan.ok || !plan.plan) {
+      res.json({
+        botId: bot.id,
+        plan: null,
+        state: 'invalid' as const,
+        reason: plan.reasons[0] ?? 'The strategy cannot be interpreted.',
+        details: plan.reasons
+      });
+      return;
+    }
+    const symbol = typeof req.query.symbol === 'string' && req.query.symbol ? req.query.symbol : plan.plan.symbol;
+    try {
+      const { contracts } = await loadSymbolContracts(runtime.market, symbol);
+      const verdict = evaluateCompatibility(plan.plan, symbol, contracts);
+      res.json({
+        botId: bot.id,
+        symbol,
+        contractType: plan.plan.contractType,
+        contractFamily: plan.plan.contractFamily,
+        digit: plan.plan.digit,
+        barrier: plan.plan.barrier,
+        ...verdict,
+        availableContracts: contracts.map((c) => c.contractType)
+      });
+    } catch (e) {
+      if (e instanceof BotMarketError) {
+        res.status(e.status).json({ error: e.code, message: e.message });
+        return;
+      }
+      res.status(503).json({ error: 'market_data_unavailable', message: 'Could not check compatibility.' });
+    }
   });
 
   router.post('/api/bots/preview', requireSession(ctx), (req: AuthedRequest, res: Response) => {
@@ -114,6 +240,17 @@ export function createBotsRouter(ctx: SessionContext, store: Store): Router {
   router.get('/api/bots', requireSession(ctx), (req: AuthedRequest, res: Response) => {
     const bots = store.listImportedBots(req.user!.id).map(toView);
     res.json({ bots });
+  });
+
+  // Registered before `/api/bots/:id` so the literal "runs" is not captured as a
+  // bot id. Both are tenant-scoped by the store accessors.
+  router.get('/api/bots/runs', requireSession(ctx), (req: AuthedRequest, res: Response) => {
+    res.json({ runs: store.listBotRuns(req.user!.id).map(toRunView) });
+  });
+
+  router.get('/api/bots/:id/run', requireSession(ctx), (req: AuthedRequest, res: Response) => {
+    const run = store.findActiveBotRun(req.user!.id, req.params.id);
+    res.json({ run: run ? toRunView(run) : null });
   });
 
   router.get('/api/bots/:id', requireSession(ctx), (req: AuthedRequest, res: Response) => {
@@ -254,6 +391,130 @@ export function createBotsRouter(ctx: SessionContext, store: Store): Router {
       res.status(204).end();
     } catch (e) {
       fail(res, e);
+    }
+  });
+
+  /* ======================================================================= */
+  /*  Run / stop. These are the only bot routes that can reach a purchase.   */
+  /*  Every one is session-guarded, tenant-scoped and DEMO-only; the actual   */
+  /*  buy still happens inside ExecutionGateway.submit and nowhere else.     */
+  /* ======================================================================= */
+
+  const runDeps = (): BotRunDeps | null =>
+    runtime
+      ? {
+          store,
+          market: runtime.market,
+          gateway: runtime.gateway,
+          runner: runtime.runner,
+          monitor: runtime.monitor,
+          auditor: runtime.auditor,
+          flags: runtime.flags
+        }
+      : null;
+
+  function runFail(res: Response, e: unknown): void {
+    if (e instanceof BotRunError) {
+      res.status(e.status).json({
+        error: e.code,
+        message: e.message,
+        ...(e.reasons.length > 0 ? { reasons: e.reasons } : {})
+      });
+      return;
+    }
+    res.status(500).json({ error: 'internal_error', message: 'The run could not be completed.' });
+  }
+
+  /** The session's sealed Deriv token, or null when absent or expired. */
+  function tokenFor(req: AuthedRequest): string | null {
+    const session = req.session;
+    if (!session || !session.derivTokenSealed) return null;
+    if (session.derivTokenExpiresAt <= Date.now()) return null;
+    try {
+      return open(session.derivTokenSealed, ctx.cfg.session.secret);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Starts a run. The account must be the caller's own demo account with a live
+   * Deriv authorisation; the strategy must be interpretable and the market must
+   * be fresh. Each refusal names its reason so the UI can say something true.
+   */
+  router.post('/api/bots/:id/run', requireSession(ctx), async (req: AuthedRequest, res: Response) => {
+    const deps = runDeps();
+    if (!deps) {
+      res.status(503).json({ error: 'execution_unavailable', message: 'Bot execution is not enabled.' });
+      return;
+    }
+    try {
+      const body = (req.body ?? {}) as { accountId?: unknown; accountMode?: unknown; maxEntries?: unknown };
+      const run = await startBotRun(
+        deps,
+        req.user!,
+        req.params.id,
+        {
+          accountId: String(body.accountId ?? ''),
+          accountMode: body.accountMode === undefined ? undefined : String(body.accountMode),
+          maxEntries: typeof body.maxEntries === 'number' ? body.maxEntries : undefined
+        },
+        tokenFor(req)
+      );
+      res.status(201).json({
+        run: toRunView(run),
+        // Stated plainly so the client can show it: ticking is browser-driven.
+        sessionDependent: true,
+        idleTimeoutMs: RUN_IDLE_TIMEOUT_MS
+      });
+    } catch (e) {
+      runFail(res, e);
+    }
+  });
+
+  /**
+   * One evaluation tick.
+   *
+   * Re-proves ownership and activity every time, so a stale or stolen run id
+   * cannot act. Returns 200 with the run so the client can render the counters
+   * even when nothing was bought.
+   */
+  router.post('/api/bots/runs/:runId/tick', requireSession(ctx), async (req: AuthedRequest, res: Response) => {
+    const deps = runDeps();
+    if (!deps) {
+      res.status(503).json({ error: 'execution_unavailable', message: 'Bot execution is not enabled.' });
+      return;
+    }
+    try {
+      const body = (req.body ?? {}) as { tickKey?: unknown };
+      const tickKey = typeof body.tickKey === 'string' && body.tickKey ? body.tickKey : undefined;
+      const result = await tickBotRun(deps, req.user!, req.params.runId, tokenFor(req), tickKey);
+      res.json({
+        run: toRunView(result.run),
+        verdict: result.verdict,
+        reason: result.reason,
+        contractId: result.contractId
+      });
+    } catch (e) {
+      runFail(res, e);
+    }
+  });
+
+  /**
+   * Stops a run. Idempotent: stopping an already-stopped run returns it rather
+   * than failing, so a double-click or a retried request is harmless.
+   */
+  router.post('/api/bots/runs/:runId/stop', requireSession(ctx), async (req: AuthedRequest, res: Response) => {
+    const deps = runDeps();
+    if (!deps) {
+      res.status(503).json({ error: 'execution_unavailable', message: 'Bot execution is not enabled.' });
+      return;
+    }
+    try {
+      const run = await stopBotRun(deps, req.user!, req.params.runId, tokenFor(req));
+      res.json({ run: toRunView(run) });
+    } catch (e) {
+      runFail(res, e);
     }
   });
 

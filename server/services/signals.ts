@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import type { Store } from '../store/store.js';
 import type { SignalRecord, SignalDirection, ContractFamily, AccountMode, DerivContractType } from '../execution/types.js';
-import { CONTRACT_FAMILY_TYPES } from '../execution/types.js';
+import { CONTRACT_FAMILY_TYPES, PREDICTION_FAMILIES } from '../execution/types.js';
 import type { MarketDataService } from './marketData.js';
 import { isSnapshotFresh } from './marketData.js';
 
@@ -41,6 +41,33 @@ export class SignalError extends Error {
   }
 }
 
+/**
+ * The Deriv contract type a signal should place.
+ *
+ * Prediction families (digits, touch/no-touch, accumulators) name their contract
+ * outright, because "even" is not a direction. Directional families derive it
+ * from the direction. A signal that names a type the family does not own is
+ * refused rather than silently reinterpreted.
+ */
+export function resolveContractType(signal: Pick<SignalRecord, 'direction' | 'contractFamily' | 'contractType'>): DerivContractType {
+  if (signal.contractType) {
+    if (!CONTRACT_FAMILY_TYPES[signal.contractFamily].includes(signal.contractType)) {
+      throw new SignalError(
+        'invalid_direction',
+        `Contract ${signal.contractType} does not belong to family ${signal.contractFamily}.`
+      );
+    }
+    return signal.contractType;
+  }
+  if (PREDICTION_FAMILIES.has(signal.contractFamily)) {
+    throw new SignalError(
+      'invalid_direction',
+      `Family ${signal.contractFamily} needs an explicit contract type; a direction cannot choose one.`
+    );
+  }
+  return contractTypeFor(signal.direction, signal.contractFamily);
+}
+
 /** Maps a directional opinion to a Deriv contract type within a family. */
 export function contractTypeFor(direction: SignalDirection, family: ContractFamily): DerivContractType {
   if (family === 'rise_fall') {
@@ -62,6 +89,11 @@ export interface SignalInput {
   timeframe: string;
   direction: SignalDirection;
   contractFamily: ContractFamily;
+  /**
+   * The exact contract to place, for families chosen by prediction. Omitted for
+   * directional families, where the direction determines it.
+   */
+  contractType?: DerivContractType;
   /** Id of the engine analysis this derives from. */
   analysisId: string;
   zone?: { low: number; high: number } | null;
@@ -139,6 +171,7 @@ export async function createSignal(
     timeframe: input.timeframe,
     direction: input.direction,
     contractFamily: input.contractFamily,
+    ...(input.contractType ? { contractType: input.contractType } : {}),
     analysisId: input.analysisId,
     zone: input.zone ?? null,
     entryPrice: snapshot.quote,

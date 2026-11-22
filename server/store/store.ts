@@ -29,6 +29,7 @@ import type {
   ExecutionAuditRecord
 } from '../execution/types.js';
 import type { ImportedBotRecord } from '../bots/types.js';
+import type { BotRunRecord } from '../bots/runTypes.js';
 import { JsonBackend } from './json_backend.js';
 import { SqliteBackend, sqliteFileExists } from './sqlite_backend.js';
 import type { StorageBackend, StoredRecord } from './backend.js';
@@ -146,6 +147,8 @@ interface Database {
   executionAudit: ExecutionAuditRecord[];
   /* ------------------------ imported bots (Phase 2) --------------------- */
   importedBots: Record<string, ImportedBotRecord>;
+  /* ---------------------- bot runtimes (Phase 3) ------------------------ */
+  botRuns: Record<string, BotRunRecord>;
 }
 
 const EMPTY: Database = {
@@ -174,7 +177,8 @@ const EMPTY: Database = {
   ledgerEntries: {},
   notifications: {},
   executionAudit: [],
-  importedBots: {}
+  importedBots: {},
+  botRuns: {}
 };
 
 /**
@@ -238,7 +242,8 @@ export class Store {
         ledgerEntries: (await this.backend.loadKeyed('ledgerEntries')) as unknown as Database['ledgerEntries'],
         notifications: (await this.backend.loadKeyed('notifications')) as unknown as Database['notifications'],
         executionAudit: (await this.backend.loadAppend('executionAudit')) as unknown as Database['executionAudit'],
-        importedBots: (await this.backend.loadKeyed('importedBots')) as unknown as Database['importedBots']
+        importedBots: (await this.backend.loadKeyed('importedBots')) as unknown as Database['importedBots'],
+        botRuns: (await this.backend.loadKeyed('botRuns')) as unknown as Database['botRuns']
       };
       const platformConfig = await this.backend.loadSingleton('platformConfig');
       this.db.platformConfig = { ...EMPTY.platformConfig, ...((platformConfig ?? {}) as Partial<PlatformConfigRecord>) };
@@ -984,5 +989,42 @@ export class Store {
     delete this.db.importedBots[id];
     await this.backend.deleteKeyed('importedBots', id);
     return true;
+  }
+
+  /* ====================================================================== */
+  /*  Bot runtimes. Same isolation rule as everything else: every read     */
+  /*  takes the owning userId and returns null on a mismatch, so a caller   */
+  /*  cannot inspect or stop another tenant's run by guessing its id.       */
+  /* ====================================================================== */
+
+  async putBotRun(run: BotRunRecord): Promise<void> {
+    this.ensureLoaded();
+    this.db.botRuns[run.runId] = run;
+    await this.backend.putKeyed('botRuns', run.runId, run as unknown as StoredRecord);
+  }
+
+  /** Returns the run only when it belongs to `userId`. */
+  getBotRun(userId: string, runId: string): BotRunRecord | null {
+    this.ensureLoaded();
+    const run = this.db.botRuns[runId];
+    return run && run.userId === userId ? run : null;
+  }
+
+  /** Every run owned by `userId`, newest first. */
+  listBotRuns(userId: string): BotRunRecord[] {
+    this.ensureLoaded();
+    return Object.values(this.db.botRuns)
+      .filter((r) => r.userId === userId)
+      .sort((a, b) => b.startedAt - a.startedAt);
+  }
+
+  /** The user's active run for one bot, if any. At most one is ever active. */
+  findActiveBotRun(userId: string, botId: string): BotRunRecord | null {
+    this.ensureLoaded();
+    return (
+      Object.values(this.db.botRuns).find(
+        (r) => r.userId === userId && r.botId === botId && (r.runtimeStatus === 'running' || r.runtimeStatus === 'stopping')
+      ) ?? null
+    );
   }
 }

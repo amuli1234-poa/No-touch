@@ -24,6 +24,7 @@ import {
 } from '../../lib/bots';
 import { Card, EmptyState, StatusPill } from '../ui/primitives';
 import { BotImporter } from '../bots/BotImporter';
+import { BotRunPanel } from '../bots/BotRunPanel';
 import { StrategyWorkspace } from '../bots/editor/StrategyWorkspace';
 
 /**
@@ -336,6 +337,8 @@ function StrategyEditor({ botId, onClose }: { botId: string; onClose: () => void
           )}
         </div>
       </header>
+
+      <BotRunPanel botId={botId} dirty={dirty} />
 
       {saveError && (
         <div className="flex items-start gap-2 px-4 py-2 bg-danger/10 border-b border-danger/30 text-[11px] text-danger shrink-0">

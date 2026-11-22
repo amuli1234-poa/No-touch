@@ -3,7 +3,7 @@ import type { SignalRecord } from './types.js';
 import type { ExecutionGateway, ExecutionResult } from './gateway.js';
 import { ExecutionError } from './gateway.js';
 import type { ExecutionPreferencesRecord } from './types.js';
-import { contractTypeFor } from '../services/signals.js';
+import { resolveContractType } from '../services/signals.js';
 import type { ExecutionAuditor } from './audit.js';
 
 /**
@@ -54,6 +54,26 @@ export interface AutoRunnerDeps {
   now?: () => number;
 }
 
+/**
+ * Sizing and identity for a bot-driven execution.
+ *
+ * The stake and parameters come from the strategy the customer saved, not from
+ * their global scanner preferences, so a bot trades what its own blocks say.
+ */
+export interface BotRunExecutionInput {
+  user: UserRecord;
+  signal: SignalRecord;
+  accessToken: string | null;
+  sizing: {
+    stake: number;
+    basis: 'stake' | 'payout';
+    currency: string;
+    parameters: ExecutionPreferencesRecord['parameters'];
+  };
+  /** Stable per (run, signal) so a retried tick cannot double-submit. */
+  idempotencyKey: string;
+}
+
 export class AutoExecutionRunner {
   private readonly store: Store;
   private readonly gateway: ExecutionGateway;
@@ -71,6 +91,48 @@ export class AutoExecutionRunner {
 
   isInFlight(accountId: string): boolean {
     return this.inFlight.has(accountId);
+  }
+
+  /**
+   * Executes one signal on behalf of a running bot.
+   *
+   * A bot run is the customer's explicit instruction to trade this strategy, so
+   * the `automatic` preference gate that governs the scanner does not apply —
+   * but nothing else is relaxed. The same in-flight guard, the same DEMO-only
+   * rule, the same terminal-risk auto-stop and, above all, the same
+   * `createIntent` → `submit` tail are used. `submit` remains the only purchase
+   * path in the system, so a bot cannot buy anything a hand-placed trade could
+   * not.
+   */
+  async runForBot(input: BotRunExecutionInput): Promise<AutoRunResult> {
+    const { user, signal, accessToken } = input;
+
+    const prefs = this.store.getExecutionPreferences(user.id);
+    if (prefs?.autoStopped) {
+      return this.record(user, signal, 'skipped_stopped', 'auto stop is engaged');
+    }
+
+    const account = user.accounts.find((a) => a.accountId === signal.accountId);
+    if (!account) {
+      return this.record(user, signal, 'rejected', 'account not authorized');
+    }
+    if (account.type !== 'demo') {
+      return this.record(user, signal, 'skipped_real', 'bot execution is DEMO only');
+    }
+
+    if (this.inFlight.has(signal.accountId)) {
+      return this.record(user, signal, 'skipped_in_flight', 'an execution is already in progress');
+    }
+
+    this.inFlight.add(signal.accountId);
+    try {
+      return await this.submitSignal(user, signal, accessToken, {
+        ...input.sizing,
+        idempotencyKey: input.idempotencyKey
+      });
+    } finally {
+      this.inFlight.delete(signal.accountId);
+    }
   }
 
   /**
@@ -107,12 +169,7 @@ export class AutoExecutionRunner {
 
     this.inFlight.add(signal.accountId);
     try {
-      const intent = await this.gateway.createIntent({
-        user,
-        accountId: signal.accountId,
-        signal,
-        contractType: contractTypeFor(signal.direction, signal.contractFamily),
-        contractFamily: signal.contractFamily,
+      return await this.submitSignal(user, signal, accessToken, {
         stake: prefs.stake.amount,
         basis: prefs.stake.basis,
         currency: prefs.stake.currency ?? account.currency ?? 'USD',
@@ -120,6 +177,37 @@ export class AutoExecutionRunner {
         // Automatic execution carries no manual approval window; the customer's
         // standing preference is the approval, and the signal's own expiry caps it.
         idempotencyKey: `auto:${signal.id}`
+      });
+    } finally {
+      this.inFlight.delete(signal.accountId);
+    }
+  }
+
+  /**
+   * The shared submission tail: intent, then the one purchase path.
+   *
+   * Both the scanner loop and a bot run funnel through here, so neither can
+   * diverge from the other's safety behaviour. `gateway.submit` still applies the
+   * kill switches, ownership, risk and idempotency checks.
+   */
+  private async submitSignal(
+    user: UserRecord,
+    signal: SignalRecord,
+    accessToken: string | null,
+    sizing: BotRunExecutionInput['sizing'] & { idempotencyKey: string }
+  ): Promise<AutoRunResult> {
+    try {
+      const intent = await this.gateway.createIntent({
+        user,
+        accountId: signal.accountId,
+        signal,
+        contractType: resolveContractType(signal),
+        contractFamily: signal.contractFamily,
+        stake: sizing.stake,
+        basis: sizing.basis,
+        currency: sizing.currency,
+        parameters: sizing.parameters,
+        idempotencyKey: sizing.idempotencyKey
       });
 
       const result = await this.gateway.submit(user, intent.id, accessToken);
@@ -141,8 +229,6 @@ export class AutoExecutionRunner {
         return this.record(user, signal, err.code === 'execution_disabled' ? 'skipped_disabled' : 'rejected', err.code);
       }
       throw err;
-    } finally {
-      this.inFlight.delete(signal.accountId);
     }
   }
 

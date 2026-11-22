@@ -1,6 +1,7 @@
 import type { ServerConfig } from '../config.js';
 import type { MinimalWebSocket } from '../lib/balance.js';
 import { CacheKeys, type Cache } from './cache.js';
+import { DIGIT_PREDICTION_TYPES, type DerivContractType } from '../execution/types.js';
 
 /**
  * Server-side Deriv market data.
@@ -45,6 +46,29 @@ export interface ActiveSymbol {
   tradingSuspended: boolean;
 }
 
+/**
+ * One contract type Deriv currently offers for a symbol, as returned by
+ * `contracts_for`. Only the fields the Bots compatibility engine needs are
+ * kept; the raw payload is not stored.
+ */
+export interface AvailableContract {
+  /** Deriv contract type, e.g. `CALL`, `DIGITEVEN`, `NOTOUCH`. */
+  contractType: string;
+  /** Deriv contract category, e.g. `callput`, `digits`, `touchnotouch`. */
+  category: string;
+  /** Number of barriers the contract needs. `0` means barrier-free. */
+  barriers: number;
+  /** `daily` | `tick` | `intraday` | `no_expiry`, as Deriv reports it. */
+  expiryType: string;
+  /** Duration bounds Deriv reports, when present. */
+  minDuration: number | null;
+  maxDuration: number | null;
+  /** Per-contract duration unit, e.g. `t` for tick-based digit contracts. */
+  durationUnit: string | null;
+  /** True when Deriv requires the contract to specify a digit prediction. */
+  requiresDigit: boolean;
+}
+
 export type MarketDataErrorCode =
   | 'not_connected'
   | 'unknown_symbol'
@@ -59,6 +83,23 @@ export class MarketDataError extends Error {
     this.name = 'MarketDataError';
     this.code = code;
   }
+}
+
+/**
+ * How long a symbol's `contracts_for` result is reused. Deriv's catalogue
+ * changes on the order of hours, so a few minutes is safe and keeps a ticking
+ * bot from re-requesting it on every evaluation.
+ */
+const CONTRACT_CATALOG_TTL_MS = 5 * 60 * 1000;
+
+/** Parses Deriv's compound duration strings, e.g. `5t`, `1d`, `60s`. */
+function parseDuration(raw: unknown): { value: number; unit: string } | null {
+  if (typeof raw !== 'string') return null;
+  const match = /^(\d+(?:\.\d+)?)\s*([a-z]+)$/i.exec(raw.trim());
+  if (!match) return null;
+  const value = Number(match[1]);
+  if (!Number.isFinite(value)) return null;
+  return { value, unit: match[2].toLowerCase() };
 }
 
 export interface MarketDataOptions {
@@ -144,6 +185,8 @@ export class MarketDataService {
   private readonly pending = new Map<number, Pending>();
 
   private activeSymbols: ActiveSymbol[] | null = null;
+  /** Per-symbol `contracts_for` results, keyed by symbol, with a fetch time. */
+  private readonly contractCatalog = new Map<string, { at: number; contracts: AvailableContract[] }>();
   private activeSymbolsWaiters: Array<(s: ActiveSymbol[]) => void> = [];
   private readonly cache: Cache | null;
 
@@ -424,6 +467,76 @@ export class MarketDataService {
 
   isKnownSymbol(symbol: string): boolean {
     return this.activeSymbols ? this.activeSymbols.some((s) => s.symbol === symbol) : true;
+  }
+
+  /**
+   * The contract types Deriv currently offers for `symbol`, from `contracts_for`.
+   *
+   * This is the authority on symbol-specific availability: Deriv refuses a
+   * proposal for a contract the symbol does not list, so guessing here would
+   * only move the failure later. Results are cached briefly because the
+   * catalogue changes slowly and a bot tick must not pay for it every time.
+   */
+  async contractsFor(symbol: string, options: { maxAgeMs?: number } = {}): Promise<AvailableContract[]> {
+    const maxAge = options.maxAgeMs ?? CONTRACT_CATALOG_TTL_MS;
+    const cached = this.contractCatalog.get(symbol);
+    if (cached && this.opts.now() - cached.at < maxAge) return cached.contracts;
+
+    const msg = await this.request({ contracts_for: symbol });
+    const rows = msg?.contracts_for?.available;
+    if (!Array.isArray(rows)) {
+      throw new MarketDataError('deriv_error', 'Deriv returned no contract catalogue for this symbol.');
+    }
+
+    const contracts: AvailableContract[] = rows.map((row: any) => {
+      const min = parseDuration(row?.min_contract_duration);
+      const max = parseDuration(row?.max_contract_duration);
+      const contractType = String(row?.contract_type ?? '');
+      return {
+        contractType,
+        category: String(row?.contract_category ?? ''),
+        barriers: Number(row?.barriers ?? 0) || 0,
+        expiryType: String(row?.expiry_type ?? ''),
+        minDuration: min?.value ?? null,
+        maxDuration: max?.value ?? null,
+        durationUnit: min?.unit ?? null,
+        // Digit contracts are the `DIGIT*` family; Deriv names the prediction
+        // in the proposal rather than the catalogue, so this is derived.
+        requiresDigit: DIGIT_PREDICTION_TYPES.has(contractType as DerivContractType)
+      };
+    });
+
+    // Deriv lists a contract type once per expiry variant (R_100 lists CALL/PUT
+    // several times). Collapse to one row per type, keeping the most permissive
+    // duration window, so callers see a stable set.
+    const byType = new Map<string, AvailableContract>();
+    for (const c of contracts) {
+      const existing = byType.get(c.contractType);
+      if (!existing) {
+        byType.set(c.contractType, c);
+        continue;
+      }
+      byType.set(c.contractType, {
+        ...existing,
+        barriers: Math.max(existing.barriers, c.barriers),
+        minDuration:
+          existing.minDuration === null
+            ? c.minDuration
+            : c.minDuration === null
+              ? existing.minDuration
+              : Math.min(existing.minDuration, c.minDuration),
+        maxDuration:
+          existing.maxDuration === null
+            ? c.maxDuration
+            : c.maxDuration === null
+              ? existing.maxDuration
+              : Math.max(existing.maxDuration, c.maxDuration)
+      });
+    }
+
+    const collapsed = [...byType.values()].sort((a, b) => a.contractType.localeCompare(b.contractType));
+    this.contractCatalog.set(symbol, { at: this.opts.now(), contracts: collapsed });
+    return collapsed;
   }
 
   /**
