@@ -56,7 +56,11 @@ export type NavSection =
   | 'health'
   | 'training'
   | 'history'
-  | 'settings';
+  | 'settings'
+  /* ------------------- visual strategy workspace (Phase 1) ------------------- */
+  | 'botbuilder'
+  | 'mybots'
+  | 'aiintelligence';
 
 export interface WorkspaceValue {
   // Market / connection

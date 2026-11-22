@@ -1,6 +1,8 @@
 import {
   ArrowDownRight,
   ArrowUpRight,
+  Blocks,
+  Bot,
   Clock,
   Gauge,
   GraduationCap,
@@ -9,6 +11,7 @@ import {
   Radio,
   ScanSearch,
   ShieldCheck,
+  Sparkles,
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
@@ -16,11 +19,13 @@ import { useWorkspace } from '../../context/WorkspaceContext';
 import { ManagedSignalsPanel } from '../ManagedSignalsPanel';
 import { SignalFeedList } from '../SignalFeed';
 import { Card, SectionCard, StatTile, StatusPill } from '../ui/primitives';
+import { AccountsOverview } from '../dashboard/AccountsOverview';
 import { AiLiveStatus } from '../dashboard/AiLiveStatus';
 import { BestSignalPanel } from '../dashboard/BestSignalPanel';
 import { LiveFeedDiagnostics } from '../dashboard/LiveFeedDiagnostics';
 import { MarketCard } from '../dashboard/MarketCard';
 import { PerformanceStats } from '../dashboard/PerformanceStats';
+import { splitByMode, useBalances, useSelectedBalance } from '../../lib/balances';
 import { formatCandleTime, formatPrice } from '../../utils/derivParser';
 import { SIGNAL_STATUS_STYLE } from '../../utils/signalStatus';
 import { eligibleMarkets } from '../../utils/eligibleMarkets';
@@ -84,6 +89,121 @@ function PlatformStatusStrip() {
           {ws.monitorSummary?.activeCount ?? 0}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * ACCOUNT & WORKSPACE STRIP — which Deriv account is active and how many bots are
+ * running. Feed health and market breadth stay in `PlatformStatusStrip` below, so this
+ * strip does not repeat them.
+ *
+ * Bot counts are deliberately not invented: there is no bot store yet, so the tiles read
+ * "—" with an explicit hint instead of a fabricated zero.
+ */
+function AccountModeStrip() {
+  const { accounts } = useBalances();
+  const selected = useSelectedBalance();
+  const { demo, real } = splitByMode(accounts);
+
+  const mode = selected?.mode ?? (demo.length > 0 ? 'demo' : null);
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="bg-surface border border-line rounded-xl px-3 py-2.5">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">
+          Account mode
+        </div>
+        <div className="flex items-baseline gap-1.5 mt-0.5">
+          <span
+            className={`text-sm font-bold uppercase ${
+              mode === 'real' ? 'text-warn' : mode === 'demo' ? 'text-accent' : 'text-muted'
+            }`}
+          >
+            {mode ?? 'none'}
+          </span>
+          <span className="text-[11px] font-mono text-faint">
+            {accounts.length > 0 ? `${demo.length} demo · ${real.length} real` : 'no accounts'}
+          </span>
+        </div>
+      </div>
+      <div className="bg-surface border border-line rounded-xl px-3 py-2.5">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">
+          Active bots
+        </div>
+        <div className="text-sm font-bold font-mono text-ink mt-0.5">—</div>
+        <div className="text-[11px] text-faint mt-0.5">Builder pending</div>
+      </div>
+      <div className="bg-surface border border-line rounded-xl px-3 py-2.5">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">
+          Paused bots
+        </div>
+        <div className="text-sm font-bold font-mono text-ink mt-0.5">—</div>
+        <div className="text-[11px] text-faint mt-0.5">Builder pending</div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * QUICK ACCESS — the two workspace destinations this redesign adds, plus the scanner.
+ * Buttons navigate to real sections; nothing here is decorative.
+ */
+function QuickAccess() {
+  const ws = useWorkspace();
+  const entries: {
+    section: 'botbuilder' | 'scanner' | 'mybots';
+    title: string;
+    detail: string;
+    icon: typeof Blocks;
+    primary?: boolean;
+  }[] = [
+    {
+      section: 'botbuilder',
+      title: 'Bot Builder',
+      detail: 'Compose a strategy from blocks — the visual canvas opens in a later phase.',
+      icon: Blocks,
+      primary: true,
+    },
+    {
+      section: 'scanner',
+      title: 'Pro Scanner',
+      detail: 'Sweep eligible markets with the live engines and review opportunities.',
+      icon: Sparkles,
+    },
+    {
+      section: 'mybots',
+      title: 'My Bots',
+      detail: 'Saved strategies, their lifecycle state and verified performance.',
+      icon: Bot,
+    },
+  ];
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      {entries.map((entry) => {
+        const Icon = entry.icon;
+        return (
+          <button
+            key={entry.section}
+            type="button"
+            onClick={() => ws.navigate(entry.section)}
+            className={`text-left rounded-xl border px-3.5 py-3 transition-colors cursor-pointer ${
+              entry.primary
+                ? 'bg-accent/10 border-accent/30 hover:bg-accent/15'
+                : 'bg-surface border-line hover:border-accent/50'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <span className="w-7 h-7 rounded-lg bg-elevated border border-line text-accent flex items-center justify-center shrink-0">
+                <Icon className="w-4 h-4" aria-hidden="true" />
+              </span>
+              <span className="text-[13px] font-bold text-ink">{entry.title}</span>
+            </div>
+            <p className="text-[11px] text-muted leading-snug mt-1.5">{entry.detail}</p>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -184,11 +304,17 @@ export function DashboardView() {
         </div>
       </Card>
 
+      <AccountModeStrip />
+
+      <QuickAccess />
+
       <PlatformStatusStrip />
 
       <AiLiveStatus />
 
       <LiveFeedDiagnostics />
+
+      <AccountsOverview />
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] gap-4">
         <BestSignalPanel />

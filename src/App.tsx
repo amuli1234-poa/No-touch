@@ -20,6 +20,9 @@ import {
 import { OpeningAnimation } from './components/OpeningAnimation';
 import { TopBar } from './components/TopBar';
 import { DashboardView } from './components/views/DashboardView';
+import { BotBuilderView } from './components/views/BotBuilderView';
+import { MyBotsView } from './components/views/MyBotsView';
+import { AiIntelligenceView } from './components/views/AiIntelligenceView';
 import { SettingsView } from './components/views/SettingsView';
 import { TradeHistoryView } from './components/views/TradeHistoryView';
 import { TradeView } from './components/views/TradeView';
@@ -121,6 +124,9 @@ const VALID_SECTIONS: AppSection[] = [
   'training',
   'history',
   'settings',
+  'botbuilder',
+  'mybots',
+  'aiintelligence',
 ];
 
 const LEGACY_HASH: Record<string, AppSection> = {
@@ -1175,6 +1181,9 @@ export default function App() {
     'alerts',
     'strategylab',
     'entrymodel',
+    'botbuilder',
+    'mybots',
+    'aiintelligence',
   ];
   const isFullWidth = FULL_WIDTH_SECTIONS.includes(section);
   // The dedicated Chart tab is the master spec's "CHART ONLY" workspace: the shared canvas
@@ -1209,6 +1218,9 @@ export default function App() {
                 <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
                   <div key={section} className="animate-view-enter flex flex-col min-h-full">
                     {section === 'dashboard' && <DashboardView />}
+                    {section === 'botbuilder' && <BotBuilderView />}
+                    {section === 'mybots' && <MyBotsView />}
+                    {section === 'aiintelligence' && <AiIntelligenceView />}
                     {section === 'entrymodel' && <EntryModelAIView />}
                     {section === 'health' && <SystemHealthView health={health} />}
                     {section === 'settings' && <SettingsView />}

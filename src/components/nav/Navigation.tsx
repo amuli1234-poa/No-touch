@@ -2,10 +2,13 @@ import type { ReactNode } from 'react';
 import {
   Activity,
   Award,
-  BarChart3,
   BellRing,
+  Blocks,
+  Bot,
   Boxes,
   Braces,
+  BrainCircuit,
+  CandlestickChart,
   Crosshair,
   FlaskConical,
   Gauge,
@@ -13,10 +16,10 @@ import {
   GraduationCap,
   HeartPulse,
   Layers,
+  LayoutDashboard,
   LineChart,
   Radar,
   ScanSearch,
-  Settings as SettingsIcon,
   ShieldCheck,
   Sparkles,
   TrendingUp,
@@ -25,10 +28,10 @@ import {
 } from 'lucide-react';
 
 /**
- * Every reachable section. These are NOT all main tabs — the app exposes exactly SEVEN
- * main tabs (see `MAIN_TABS`); the remaining sections are sub-views inside a hub tab
- * (Strategy AIs, Performance, Settings). Keeping the full union means every existing
- * deep link, hash and `navigate()` call keeps working after the consolidation.
+ * Every reachable section. These are NOT all main tabs — the app exposes exactly SIX
+ * main modules (see `MAIN_TABS`); the remaining sections are sub-views inside a hub
+ * module. Keeping the full union means every existing deep link, hash and `navigate()`
+ * call keeps working after the redesign.
  */
 export type AppSection =
   | 'dashboard'
@@ -59,7 +62,11 @@ export type AppSection =
   | 'health'
   | 'training'
   | 'history'
-  | 'settings';
+  | 'settings'
+  /* ------------------- visual strategy workspace (Phase 1) ------------------- */
+  | 'botbuilder'
+  | 'mybots'
+  | 'aiintelligence';
 
 export interface SectionMeta {
   key: AppSection;
@@ -82,25 +89,36 @@ export interface MainTab {
 const ICON = 'w-[18px] h-[18px]';
 
 /**
- * EXACTLY SEVEN main navigation tabs. Each hub tab (Strategy AIs / Performance / Settings)
- * contains its specialised modules as sub-views so no individual strategy ever becomes a
- * top-level tab of its own.
+ * EXACTLY SIX main navigation modules. Each hub module contains its sub-views so no
+ * individual strategy or tool ever becomes a top-level tab of its own. Trade History,
+ * Risk Management and AI Training keep their components and routes but live inside a
+ * hub module; Settings is reached from the TopBar gear and is deliberately absent here.
  */
 export const MAIN_TABS: readonly MainTab[] = [
   {
-    key: 'overview',
-    label: 'Overview',
-    shortLabel: 'Overview',
-    icon: <BarChart3 className={ICON} />,
+    key: 'dashboard',
+    label: 'Dashboard',
+    shortLabel: 'Dashboard',
+    icon: <LayoutDashboard className={ICON} />,
     defaultSection: 'dashboard',
     sections: [
-      { key: 'dashboard', label: 'Overview', shortLabel: 'Overview', icon: <BarChart3 className={ICON} /> },
+      { key: 'dashboard', label: 'Workspace', shortLabel: 'Workspace', icon: <LayoutDashboard className={ICON} /> },
       { key: 'trade', label: 'Trade', shortLabel: 'Trade', icon: <Wallet className={ICON} /> },
     ],
   },
   {
-    key: 'scanner',
-    label: 'Scanner',
+    key: 'botbuilder',
+    label: 'Bot Builder',
+    shortLabel: 'Build',
+    icon: <Blocks className={ICON} />,
+    defaultSection: 'botbuilder',
+    sections: [
+      { key: 'botbuilder', label: 'Bot Builder', shortLabel: 'Builder', icon: <Blocks className={ICON} /> },
+    ],
+  },
+  {
+    key: 'proscanner',
+    label: 'Pro Scanner',
     shortLabel: 'Scanner',
     icon: <Sparkles className={ICON} />,
     defaultSection: 'scanner',
@@ -123,51 +141,43 @@ export const MAIN_TABS: readonly MainTab[] = [
     ],
   },
   {
-    key: 'signals',
-    label: 'Signals',
-    shortLabel: 'Signals',
-    icon: <Crosshair className={ICON} />,
-    defaultSection: 'entrymodel',
+    key: 'mybots',
+    label: 'My Bots',
+    shortLabel: 'Bots',
+    icon: <Bot className={ICON} />,
+    defaultSection: 'mybots',
     sections: [
-      { key: 'entrymodel', label: 'Entry Model AI', shortLabel: 'Entry Model', icon: <Crosshair className={ICON} /> },
-      { key: 'alerts', label: 'AI Alerts & Notification Manager', shortLabel: 'Alerts', icon: <BellRing className={ICON} /> },
+      { key: 'mybots', label: 'My Bots', shortLabel: 'Bots', icon: <Bot className={ICON} /> },
     ],
   },
   {
-    key: 'chart',
-    label: 'Chart',
-    shortLabel: 'Chart',
-    icon: <ScanSearch className={ICON} />,
+    key: 'marketanalysis',
+    label: 'Market Analysis',
+    shortLabel: 'Analysis',
+    icon: <CandlestickChart className={ICON} />,
     defaultSection: 'chart',
     sections: [
-      { key: 'chart', label: 'Chart Only', shortLabel: 'Chart Only', icon: <ScanSearch className={ICON} /> },
+      { key: 'chart', label: 'Chart Only', shortLabel: 'Chart Only', icon: <CandlestickChart className={ICON} /> },
       { key: 'chartanalysis', label: 'Chart Analysis', shortLabel: 'Analysis', icon: <Crosshair className={ICON} /> },
       { key: 'analyser', label: 'Chart Analyser', shortLabel: 'Analyser', icon: <ScanSearch className={ICON} /> },
-    ],
-  },
-  {
-    key: 'performance',
-    label: 'Performance',
-    shortLabel: 'Performance',
-    icon: <Award className={ICON} />,
-    defaultSection: 'performance',
-    sections: [
       { key: 'performance', label: 'Trade Performance', shortLabel: 'Performance', icon: <Award className={ICON} /> },
       { key: 'history', label: 'Trade History', shortLabel: 'History', icon: <LineChart className={ICON} /> },
-      { key: 'risk', label: 'Risk & Execution AI', shortLabel: 'Risk', icon: <ShieldCheck className={ICON} /> },
-      { key: 'strategylab', label: 'Strategy Optimization AI', shortLabel: 'Strategy Lab', icon: <FlaskConical className={ICON} /> },
+      { key: 'training', label: 'AI Training', shortLabel: 'Training', icon: <GraduationCap className={ICON} /> },
     ],
   },
   {
-    key: 'settings',
-    label: 'Settings',
-    shortLabel: 'Settings',
-    icon: <SettingsIcon className={ICON} />,
-    defaultSection: 'settings',
+    key: 'aiintelligence',
+    label: 'AI Intelligence',
+    shortLabel: 'AI',
+    icon: <BrainCircuit className={ICON} />,
+    defaultSection: 'aiintelligence',
     sections: [
-      { key: 'settings', label: 'Settings', shortLabel: 'Settings', icon: <SettingsIcon className={ICON} /> },
+      { key: 'aiintelligence', label: 'Intelligence Overview', shortLabel: 'Overview', icon: <BrainCircuit className={ICON} /> },
+      { key: 'entrymodel', label: 'Entry Model AI', shortLabel: 'Entry Model', icon: <Crosshair className={ICON} /> },
+      { key: 'alerts', label: 'AI Alerts & Notification Manager', shortLabel: 'Alerts', icon: <BellRing className={ICON} /> },
+      { key: 'risk', label: 'Risk & Execution AI', shortLabel: 'Risk', icon: <ShieldCheck className={ICON} /> },
+      { key: 'strategylab', label: 'Strategy Optimization AI', shortLabel: 'Strategy Lab', icon: <FlaskConical className={ICON} /> },
       { key: 'health', label: 'System Health & Diagnostics', shortLabel: 'Health', icon: <HeartPulse className={ICON} /> },
-      { key: 'training', label: 'AI Training', shortLabel: 'Training', icon: <GraduationCap className={ICON} /> },
     ],
   },
 ] as const;
@@ -175,9 +185,19 @@ export const MAIN_TABS: readonly MainTab[] = [
 /** Every section in display order, for lookups. */
 export const SECTIONS: readonly SectionMeta[] = MAIN_TABS.flatMap((t) => t.sections);
 
-/** The main tab that owns a section. */
-export function mainTabForSection(section: AppSection): MainTab {
-  return MAIN_TABS.find((t) => t.sections.some((s) => s.key === section)) ?? MAIN_TABS[0];
+/**
+ * Sections that intentionally live outside the primary navigation. Settings is opened
+ * from the TopBar gear; it keeps its own component, state and persistence.
+ */
+export const OFF_NAV_SECTIONS: readonly AppSection[] = ['settings'];
+
+/**
+ * The main tab that owns a section, or `null` when the section is deliberately not in
+ * the primary navigation (Settings). Callers must handle `null` — it means "no tab is
+ * active", not "fall back to the first tab".
+ */
+export function mainTabForSection(section: AppSection): MainTab | null {
+  return MAIN_TABS.find((t) => t.sections.some((s) => s.key === section)) ?? null;
 }
 
 export type SectionBadges = Partial<Record<AppSection, number>>;
@@ -205,7 +225,8 @@ interface SidebarProps {
  * every module stays one tap away without becoming a main tab of its own.
  */
 export function Sidebar({ active, onSelect, statusBadge, badges, hidden = false }: SidebarProps) {
-  const activeTab = mainTabForSection(active);
+  // Settings lives outside the primary navigation, so no module is active while it is open.
+  const activeTabKey = mainTabForSection(active)?.key ?? null;
   return (
     <nav
       aria-label="Primary"
@@ -223,7 +244,7 @@ export function Sidebar({ active, onSelect, statusBadge, badges, hidden = false 
 
       <div className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
         {MAIN_TABS.map((tab) => {
-          const isActive = tab.key === activeTab.key;
+          const isActive = tab.key === activeTabKey;
           const tabBadge = tab.sections.reduce((n, s) => Math.max(n, badges?.[s.key] ?? 0), 0);
           return (
             <div key={tab.key}>
@@ -273,8 +294,8 @@ export function Sidebar({ active, onSelect, statusBadge, badges, hidden = false 
   );
 }
 
-/** Mobile bottom bar — the five primary destinations plus a "More" sheet (6 columns). */
-const MOBILE_PRIMARY: AppSection[] = ['dashboard', 'scanner', 'entrymodel', 'chart', 'performance'];
+/** Mobile bottom bar — the six primary modules plus a "More" sheet. */
+const MOBILE_PRIMARY: AppSection[] = ['dashboard', 'botbuilder', 'scanner', 'mybots', 'chart', 'aiintelligence'];
 
 interface MobileNavProps {
   active: AppSection;
@@ -284,14 +305,16 @@ interface MobileNavProps {
 }
 
 export function MobileNav({ active, onSelect, badges, onOpenMenu }: MobileNavProps) {
-  const activeTabKey = mainTabForSection(active).key;
-  const items = MOBILE_PRIMARY.map((k) => mainTabForSection(k));
+  const activeTabKey = mainTabForSection(active)?.key ?? null;
+  const items = MOBILE_PRIMARY.map((k) => mainTabForSection(k)).filter(
+    (t): t is MainTab => t !== null
+  );
   return (
     <nav
       aria-label="Primary mobile"
       className="lg:hidden shrink-0 border-t border-line bg-nav pb-[env(safe-area-inset-bottom)]"
     >
-      <ul className="grid grid-cols-6">
+      <ul className="grid grid-cols-7">
         {items.map((tab) => {
           const isActive = tab.key === activeTabKey;
           const tabBadge = tab.sections.reduce((n, s) => Math.max(n, badges?.[s.key] ?? 0), 0);
