@@ -141,4 +141,16 @@ export interface ImportedBotRecord {
   warnings: BotWarning[];
   /** Provenance note; imported bots are never executed in this phase. */
   executionNote: string;
+  /**
+   * The edited strategy, when the user has saved changes in the block editor.
+   *
+   * `sourceXml` is never overwritten: it is the file the user imported, and it
+   * stays available for download so an edit can always be compared against, or
+   * reverted to, the original. Absent means "never edited".
+   */
+  workingXml?: string;
+  /** Monotonic revision of `workingXml`; 0 or absent for a never-edited bot. */
+  revision?: number;
+  /** When `workingXml` was last saved. */
+  editedAt?: number;
 }

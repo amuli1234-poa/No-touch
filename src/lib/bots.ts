@@ -81,6 +81,11 @@ export interface BotRecord {
   executionNote: string;
   warnings: BotWarning[];
   bot: NormalizedBot;
+  /** True once the user has saved edits in the block editor. */
+  edited: boolean;
+  /** Revision of the edited strategy; 0 for a never-edited bot. */
+  revision: number;
+  editedAt?: number;
 }
 
 export interface BotFormats {
@@ -190,6 +195,102 @@ export async function deleteBot(id: string): Promise<void> {
 /** Downloads the original XML exactly as it was imported. */
 export function sourceUrl(id: string): string {
   return `/api/bots/${encodeURIComponent(id)}/source`;
+}
+
+/** Downloads the saved strategy: the edited XML when present, else the original. */
+export function exportUrl(id: string): string {
+  return `/api/bots/${encodeURIComponent(id)}/export`;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Block editor                                                               */
+/* -------------------------------------------------------------------------- */
+
+export interface BotTreeField {
+  name: string;
+  value: string;
+}
+
+export interface BotTreeInput {
+  name: string;
+  kind: 'value' | 'statement';
+  block: BotTreeNode | null;
+  shadow?: { type: string; fields: BotTreeField[] };
+}
+
+export interface BotTreeNode {
+  type: string;
+  id?: string;
+  shadow?: boolean;
+  unknown?: boolean;
+  attrs?: Record<string, string>;
+  fields: BotTreeField[];
+  inputs: BotTreeInput[];
+  shadows: { name: string; type: string; fields: BotTreeField[] }[];
+  mutation?: Record<string, string>;
+  next: BotTreeNode | null;
+}
+
+export interface BotTree {
+  attrs: Record<string, string>;
+  variables: { id: string; name: string; type?: string }[];
+  blocks: BotTreeNode[];
+}
+
+export interface BotEditorPayload {
+  botId: string;
+  name: string;
+  edited: boolean;
+  revision: number;
+  /** The XML to render. Blockly reads this directly. */
+  xml: string;
+  tree: BotTree;
+  /** Block types this build cannot interpret, for placeholder definitions. */
+  unknownBlocks: {
+    type: string;
+    fields: { name: string }[];
+    inputs: { name: string; kind: 'value' | 'statement' }[];
+  }[];
+  compatibility: CompatibilityLevel;
+  compatibilityReason: string;
+  status: BotRecord['status'];
+}
+
+export async function fetchBotTree(id: string): Promise<BotEditorPayload> {
+  const res = await fetch(`/api/bots/${encodeURIComponent(id)}/tree`, {
+    credentials: 'same-origin'
+  });
+  if (!res.ok) throw await parseError(res);
+  return (await res.json()) as BotEditorPayload;
+}
+
+export async function saveBotTree(
+  id: string,
+  xml: string
+): Promise<{ bot: BotRecord; changed: boolean; revision: number }> {
+  const res = await fetch(`/api/bots/${encodeURIComponent(id)}/tree`, {
+    method: 'PUT',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ xml })
+  });
+  if (!res.ok) throw await parseError(res);
+  const data = await res.json();
+  return {
+    bot: data.bot as BotRecord,
+    changed: Boolean(data.changed),
+    revision: Number(data.revision ?? 0)
+  };
+}
+
+/** Discards saved edits and restores the bot's imported strategy. */
+export async function revertBot(id: string): Promise<BotRecord> {
+  const res = await fetch(`/api/bots/${encodeURIComponent(id)}/revert`, {
+    method: 'POST',
+    credentials: 'same-origin'
+  });
+  if (!res.ok) throw await parseError(res);
+  return (await res.json()).bot as BotRecord;
 }
 
 /**

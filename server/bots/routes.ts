@@ -32,10 +32,13 @@ import {
   deleteBot,
   duplicateBot,
   importBot,
+  loadBotTree,
   previewUpload,
+  saveBotTree,
   setBotStatus,
   toView
 } from './service.js';
+import { collectUnknownBlocks } from './tree.js';
 import { MAX_BOT_FILE_BYTES } from './parser.js';
 import { supportedBlockTypes, unsupportedBlockTypes } from './blocks.js';
 
@@ -134,6 +137,87 @@ export function createBotsRouter(ctx: SessionContext, store: Store): Router {
     res.setHeader('Content-Disposition', `attachment; filename="${bot.originalFilename}"`);
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.send(bot.sourceXml);
+  });
+
+  /**
+   * The bot's editable block tree.
+   *
+   * Parsing happens here so the browser never has to agree with a second XML
+   * implementation. `unknownBlocks` lists the types this build cannot
+   * interpret, so the editor can register read-only placeholders for them
+   * before Blockly reads the XML — otherwise Blockly would skip those blocks
+   * and a save would silently delete them.
+   */
+  router.get('/api/bots/:id/tree', requireSession(ctx), (req: AuthedRequest, res: Response) => {
+    const bot = store.getImportedBot(req.user!.id, req.params.id);
+    if (!bot) {
+      res.status(404).json({ error: 'not_found', message: 'Bot not found.' });
+      return;
+    }
+    try {
+      const loaded = loadBotTree(bot);
+      const unknownBlocks = collectUnknownBlocks(loaded.tree);
+      res.json({
+        botId: bot.id,
+        name: bot.name,
+        edited: loaded.edited,
+        revision: loaded.revision,
+        xml: loaded.xml,
+        tree: loaded.tree,
+        unknownBlocks,
+        compatibility: bot.compatibility,
+        compatibilityReason: bot.compatibilityReason,
+        status: bot.status
+      });
+    } catch (e) {
+      res.status(422).json({
+        error: 'unreadable',
+        message: e instanceof Error ? e.message : 'The strategy could not be read.'
+      });
+    }
+  });
+
+  /** Saves an edited strategy. The server re-parses before storing. */
+  router.put('/api/bots/:id/tree', requireSession(ctx), async (req: AuthedRequest, res: Response) => {
+    try {
+      const { xml } = (req.body ?? {}) as { xml?: unknown };
+      const result = await saveBotTree(store, req.user!.id, req.params.id, xml);
+      res.json({
+        bot: toView(result.record),
+        changed: result.changed,
+        revision: result.revision
+      });
+    } catch (e) {
+      fail(res, e);
+    }
+  });
+
+  /** Discards saved edits and returns the bot to its imported file. */
+  router.post('/api/bots/:id/revert', requireSession(ctx), async (req: AuthedRequest, res: Response) => {
+    const bot = store.getImportedBot(req.user!.id, req.params.id);
+    if (!bot) {
+      res.status(404).json({ error: 'not_found', message: 'Bot not found.' });
+      return;
+    }
+    const { workingXml: _drop, revision: _r, editedAt: _e, ...rest } = bot;
+    const reverted: typeof bot = { ...rest, updatedAt: Date.now() };
+    await store.putImportedBot(reverted);
+    res.json({ bot: toView(reverted) });
+  });
+
+  /** Downloads the saved strategy, which is the original when never edited. */
+  router.get('/api/bots/:id/export', requireSession(ctx), (req: AuthedRequest, res: Response) => {
+    const bot = store.getImportedBot(req.user!.id, req.params.id);
+    if (!bot) {
+      res.status(404).json({ error: 'not_found', message: 'Bot not found.' });
+      return;
+    }
+    const xml = bot.workingXml ?? bot.sourceXml;
+    const base = bot.originalFilename.replace(/\.xml$/i, '');
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${base}.xml"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(xml);
   });
 
   router.patch('/api/bots/:id', requireSession(ctx), async (req: AuthedRequest, res: Response) => {

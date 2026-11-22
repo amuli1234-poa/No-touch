@@ -108,12 +108,12 @@ export const MAIN_TABS: readonly MainTab[] = [
   },
   {
     key: 'botbuilder',
-    label: 'Bot Importer',
+    label: 'Bot Builder',
     shortLabel: 'Import',
     icon: <Blocks className={ICON} />,
     defaultSection: 'botbuilder',
     sections: [
-      { key: 'botbuilder', label: 'Bot Importer', shortLabel: 'Import', icon: <Blocks className={ICON} /> },
+      { key: 'botbuilder', label: 'Bot Builder', shortLabel: 'Build', icon: <Blocks className={ICON} /> },
     ],
   },
   {

@@ -14,6 +14,8 @@ import { randomUUID } from 'node:crypto';
 
 import type { Store } from '../store/store.js';
 import { analyzeDbotXml, MAX_BOT_FILE_BYTES } from './parser.js';
+import { isKnownBlock } from './blocks.js';
+import { annotateUnknown, treeToXml, xmlToTree, type BlockTree } from './tree.js';
 import type { BotAnalysis, BotWarning, ImportedBotRecord } from './types.js';
 
 /** The only extension accepted in this phase. */
@@ -144,6 +146,102 @@ export async function importBot(
   return { record, duplicate: false, analysis };
 }
 
+/**
+ * Loads a bot's editable block tree.
+ *
+ * The tree is built from `workingXml` when the user has saved edits, and from
+ * the imported file otherwise. Parsing lives here, on the server, so the
+ * browser never has to agree with a second XML implementation.
+ */
+export function loadBotTree(record: ImportedBotRecord): {
+  tree: BlockTree;
+  xml: string;
+  edited: boolean;
+  revision: number;
+} {
+  const xml = record.workingXml ?? record.sourceXml;
+  const tree = annotateUnknown(xmlToTree(xml), isKnownBlock);
+  return {
+    tree,
+    xml,
+    edited: typeof record.workingXml === 'string',
+    revision: record.revision ?? 0
+  };
+}
+
+export interface SaveBotTreeResult {
+  record: ImportedBotRecord;
+  changed: boolean;
+  revision: number;
+}
+
+/**
+ * Saves an edited strategy.
+ *
+ * The XML is re-parsed before it is stored: whatever the browser sent, the
+ * record only ever holds XML the server has itself validated. Saving the
+ * strategy the bot already had is a no-op rather than a new revision, so a
+ * stray change event cannot inflate the revision count.
+ */
+export async function saveBotTree(
+  store: Store,
+  userId: string,
+  id: string,
+  xml: unknown
+): Promise<SaveBotTreeResult> {
+  const record = store.getImportedBot(userId, id);
+  if (!record) {
+    throw new ImportError('not_found', 'Bot not found.', 404);
+  }
+  if (typeof xml !== 'string' || xml.trim() === '') {
+    throw new ImportError('empty_body', 'The strategy is empty.', 400);
+  }
+  if (Buffer.byteLength(xml, 'utf8') > MAX_BOT_FILE_BYTES) {
+    throw new ImportError('file_too_large', 'The strategy is too large to save.', 413);
+  }
+
+  // Authoritative validation: the stored XML must parse and must still be a
+  // strategy. An edit that breaks the structure is rejected, not stored.
+  let tree: BlockTree;
+  try {
+    tree = xmlToTree(xml);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'The strategy could not be read.';
+    throw new ImportError('parse_failed', message, 422);
+  }
+  if (tree.blocks.length === 0) {
+    throw new ImportError('parse_failed', 'The strategy contains no blocks.', 422);
+  }
+
+  const canonical = treeToXml(tree);
+  const current = record.workingXml ?? record.sourceXml;
+  if (canonical === treeToXml(xmlToTree(current))) {
+    return { record, changed: false, revision: record.revision ?? 0 };
+  }
+
+  // Re-run the normal analysis so compatibility, warnings and the normalised
+  // summary describe the edited strategy rather than the imported one.
+  const analysis = analyzeDbotXml(canonical, { filename: record.originalFilename });
+  const now = Date.now();
+  const updated: ImportedBotRecord = {
+    ...record,
+    workingXml: canonical,
+    revision: (record.revision ?? 0) + 1,
+    editedAt: now,
+    updatedAt: now,
+    ...(analysis.bot
+      ? {
+          bot: analysis.bot,
+          compatibility: analysis.compatibility,
+          compatibilityReason: analysis.compatibilityReason,
+          warnings: [...analysis.errors, ...analysis.bot.warnings]
+        }
+      : {})
+  };
+  await store.putImportedBot(updated);
+  return { record: updated, changed: true, revision: updated.revision ?? 0 };
+}
+
 /** Allowed manager transitions. Anything else is rejected rather than guessed. */
 const TRANSITIONS: Record<ImportedBotRecord['status'], ImportedBotRecord['status'][]> = {
   imported: ['paused', 'archived'],
@@ -225,6 +323,11 @@ export interface BotView {
   executionNote: string;
   warnings: BotWarning[];
   bot: ImportedBotRecord['bot'];
+  /** True once the user has saved edits in the block editor. */
+  edited: boolean;
+  /** Revision of the edited strategy; 0 for a never-edited bot. */
+  revision: number;
+  editedAt?: number;
 }
 
 export function toView(record: ImportedBotRecord): BotView {
@@ -240,6 +343,9 @@ export function toView(record: ImportedBotRecord): BotView {
     updatedAt: record.updatedAt,
     executionNote: record.executionNote,
     warnings: record.warnings,
-    bot: record.bot
+    bot: record.bot,
+    edited: typeof record.workingXml === 'string',
+    revision: record.revision ?? 0,
+    ...(record.editedAt !== undefined ? { editedAt: record.editedAt } : {})
   };
 }
