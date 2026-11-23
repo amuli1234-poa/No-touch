@@ -1090,3 +1090,34 @@ Consequences worth remembering:
   `lists_create_with`, and indicator blocks. `variableKey()` accepts both.
 - Run variables live on `BotRunRecord.variables` (per run, never module-global),
   so two runs of one bot cannot read each other's state.
+
+## Bot builder routing and UI shape
+
+The app has **two routers**, and this trips up browser testing:
+
+- `Root.tsx` resolves the *pathname*: the public marketing site is `/`, and the
+  scanner workspace mounts at `/app` (guarded by `ProtectedRoute`, which sends
+  anonymous visitors to `/login` only when `/healthz` answers — a static build
+  skips the guard).
+- Inside `/app`, `App.tsx` resolves the *hash*: `sectionFromHash()` parses
+  `#/<section>` against `VALID_SECTIONS` (`botbuilder`, `mybots`, `dashboard`,
+  …).
+
+So the builder is `/app#/botbuilder`. `#/botbuilder` alone renders the landing
+page, and `?section=botbuilder` does nothing — the section is read from the hash.
+
+Session cookies are signed (`sign(value, secret, 'cookie-sign')` over an HKDF
+key). To drive the API from curl, mint one with
+`node --env-file=.env` and pass `-b "ws_session=<value>"`. `data/` is gitignored,
+so bots imported while testing do not pollute the working tree.
+
+The builder mirrors Deriv Bot's layout, which is worth keeping when editing it:
+
+- `RunControl` floats over the canvas and owns run/stop plus the status chip.
+  It is the *only* place a run is started — do not add a second run button.
+- `RunPanel` is the right rail and is a readout: Summary / Transactions /
+  Journal tabs, statistics tiles beneath them, reset in the footer.
+- `useBotExecution` is the single owner of run state. Two `useBotRun` instances
+  would each drive a tick loop and advance the bot twice per interval.
+- Reset moves a *baseline*, not the data: statistics are derived from contracts
+  the server owns and cannot be deleted, so the tiles report "since reset".
