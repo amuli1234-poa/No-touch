@@ -13,6 +13,7 @@ import {
   FlaskConical,
   Gauge,
   GitBranch,
+  ExternalLink,
   GraduationCap,
   HeartPulse,
   Layers,
@@ -287,6 +288,19 @@ export function Sidebar({ active, onSelect, statusBadge, badges, hidden = false 
             </div>
           );
         })}
+
+        {/* The Deriv bot app is a separate build served under /bot with its own
+            router, so it is a plain link rather than a section of this shell. */}
+        <a
+          href="/bot/"
+          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-semibold text-muted border border-transparent hover:bg-elevated hover:text-ink transition-colors duration-150"
+        >
+          <span className="text-faint">
+            <Bot className={ICON} />
+          </span>
+          <span className="truncate">Deriv Bot</span>
+          <ExternalLink className="w-3 h-3 ml-auto text-faint" />
+        </a>
       </div>
 
       {statusBadge && <div className="p-3 border-t border-line">{statusBadge}</div>}
@@ -410,6 +424,16 @@ export function MobileMenuSheet({
             </ul>
           </div>
         ))}
+        <a
+          href="/bot/"
+          className="mt-1 w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-[13px] font-semibold text-muted border border-transparent"
+        >
+          <span className="text-faint">
+            <Bot className="w-[18px] h-[18px]" />
+          </span>
+          <span className="truncate">Deriv Bot</span>
+          <ExternalLink className="w-3 h-3 ml-auto text-faint" />
+        </a>
       </div>
     </div>
   );

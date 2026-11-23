@@ -39,3 +39,32 @@ Then open `http://localhost:3000/login` and click **Login with Deriv**.
 > `npm run dev` starts only Vite. If you use it, start the backend separately
 > with `npm run server`, or the callback fails (connection refused on :3000, or
 > a 502 when the backend on :8787 is down).
+
+### Deriv Bot app (`/bot`)
+
+`bot-app/` is the Deriv bot frontend, vendored from the upstream bot repo and
+served as a **separate React app under `/bot`**. It has its own router, its own
+global styles and its own dependencies, so it is deliberately *not* bundled into
+the WickSentinel SPA — that keeps WickSentinel's hash routing
+(`/#dashboard`, `/#scanner`, …) untouched.
+
+Build it once (the backend serves the result, and the build output is
+git-ignored):
+
+```bash
+npm run build:bot     # installs bot-app deps and builds into bot-app/out/bot
+```
+
+Then `npm run dev:all` (or `npm run server`) serves:
+
+| URL      | Served by                                             |
+| -------- | ----------------------------------------------------- |
+| `/`      | WickSentinel SPA (`dist/`, hash routing)              |
+| `/bot`   | Deriv bot app (`bot-app/out/bot`, own browser router) |
+| `/api/*` | WickSentinel backend                                  |
+
+`bot-app` is built with `assetPrefix: '/bot/'` and a matching router `basename`
+(see `bot-app/rsbuild.bot.config.ts`), so its internal links and assets stay
+inside `/bot` instead of escaping to the WickSentinel shell. The **Deriv Bot**
+entry in the sidebar links there. Until `build:bot` has been run, `/bot` logs a
+warning and the route falls through to the WickSentinel shell.

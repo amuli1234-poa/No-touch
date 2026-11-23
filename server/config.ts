@@ -71,6 +71,8 @@ export interface ServerConfig {
   };
   /** Public origin allowed for same-origin checks on the callback. */
   appOrigin: string;
+  /** Built Deriv bot app served under /bot. Defaults to `bot-app/out/bot`. */
+  botAppDir?: string;
 }
 
 function required(name: string, value: string | undefined): string {

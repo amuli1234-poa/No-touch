@@ -191,3 +191,15 @@ test('navigation: legacy hash aliases still resolve to real sections', () => {
     assert.ok(reachable.has(target), `legacy alias ${alias} must resolve to a reachable section`);
   }
 });
+
+test('navigation: the bot app stays an external link, not a workspace module', () => {
+  // The Deriv bot app is a separate build served under /bot with its own router.
+  // It must never be folded into the tab/section model, which would make the
+  // shell try to route to it and break navigation.
+  const tabKeys = new Set(MAIN_TABS.map((t) => t.key));
+  assert.ok(!tabKeys.has('bot'), 'the bot app must not become a primary module');
+  assert.ok(
+    !SECTIONS.some((s) => s.key === 'bot'),
+    'the bot app must not become a workspace section'
+  );
+});

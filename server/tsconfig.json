@@ -21,6 +21,8 @@
     "**/*.ts"
   ],
   "exclude": [
-    "tests"
+    "tests",
+    "../bot-app",
+    "../admin"
   ]
 }

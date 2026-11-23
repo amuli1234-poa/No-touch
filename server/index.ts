@@ -126,6 +126,25 @@ export function createApp(cfg: ServerConfig, store: Store, cache?: Cache): AppBu
     res.json({ authorized: true, userId: req.user!.id, accounts: req.user!.accounts });
   });
 
+  /* ------------------------- vendored bot app -------------------------- */
+
+  // The Deriv bot app is a separate React build served under /bot with its own
+  // router and global styles. It is mounted ahead of the WickSentinel shell so
+  // its SPA fallback claims only its own subtree.
+  const botAppDir = cfg.botAppDir ?? path.resolve(process.cwd(), 'bot-app/out/bot');
+  const botAppIndex = path.join(botAppDir, 'index.html');
+  const hasBotApp = fs.existsSync(botAppIndex);
+
+  if (hasBotApp) {
+    app.use('/bot', express.static(botAppDir, { index: false, maxAge: '1h' }));
+    app.get(/^\/bot(\/.*)?$/, (req, res, next) => {
+      if (/\.[a-z0-9]+$/i.test(req.path)) return next();
+      res.sendFile(botAppIndex);
+    });
+  } else {
+    console.warn('[server] bot-app/out/bot not found — run `npm run build:bot` to serve /bot.');
+  }
+
   /* --------------------------- static frontend -------------------------- */
 
   const distDir = path.resolve(process.cwd(), 'dist');

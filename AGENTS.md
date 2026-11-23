@@ -1375,3 +1375,22 @@ sleeping.
 
 Before claiming a fix works, delete the fix and confirm the new test fails. A
 test that passes either way proves nothing.
+
+## The `/bot` app is a separate frontend
+
+`bot-app/` is the Deriv bot frontend, vendored from upstream and built
+independently with rsbuild. It is **not** part of the Vite/React SPA: it has its
+own React Router, its own global SCSS resets and a different Blockly version. It
+is mounted by the Express server at `/bot` (see the "vendored bot app" block in
+`server/index.ts`) and reached from the sidebar's "Deriv Bot" link.
+
+Keeping it separate is what preserves WickSentinel's hash routing. Do not import
+`bot-app` source into `src/` or add it to the root `tsconfig` — both tsconfigs
+exclude it for that reason.
+
+`bot-app/rsbuild.bot.config.ts` sets `assetPrefix: '/bot/'` and injects
+`process.env.NEXT_PUBLIC_BASE_PATH='/bot'`, which the router `basename` and the
+logo/home links read. Any new absolute link inside `bot-app` must honour that
+variable, or it will escape into the WickSentinel shell. Build with
+`npm run build:bot`; the output (`bot-app/out/`) is git-ignored and
+`server/tests/bot_app.test.ts` covers the mount with a synthetic build.
