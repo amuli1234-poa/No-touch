@@ -1273,3 +1273,35 @@ is the source of truth. `definitions.test.ts` parses the shipped
 Two legacy DBot types stay as placeholders on purpose: `loader` (fetches blocks
 from a URL at run time) and `market` (pre-`trade_definition_market`; current
 DBot no longer defines it). They are visible and preserved, never executed.
+
+## DBot `timeout` pauses the whole strategy, not just its body
+
+DBot compiles the block to `sleep(n); <TIMEOUTSTACK>; <rest of the chain>`, so
+everything after it waits. The interpreter signals this with a `suspend` flow
+signal that must unwind loops and procedure calls exactly like `halt`; a handler
+that swallows it makes a paused strategy look like a finished one.
+
+Because a run is persisted between ticks, deferred work is stored on the run
+record as XML (`stackToXml`/`xmlToStack`) rather than as a live tree, and each
+deferral carries its `phase`. `before_purchase` and `after_purchase` resume into
+different places, and `settleAfterPurchase` must return `waiting` rather than
+reading "no `trade_again` yet" as a refusal — that bug silently ended strategies
+that only asked to wait between contracts.
+
+`isDbProgram` (in `interpreter.ts`) decides whether a strategy runs on the
+interpreter or the plan engine. It must search nested statement inputs, not just
+the top-level `<next>` chain: a `controls_if` wrapped in `timeout` or a loop is
+still a decision, and judging it by the plan engine's narrow block set refuses a
+program the interpreter can run.
+
+## Verifying a bots fix
+
+`npx tsx --test server/tests/bot_timeout.test.ts` for the deferral suite, and
+`npx tsx --test $(find src server -name '*.test.ts')` for everything. The
+harness in `server/tests/bot_run.test.ts` builds the real store, gateway, risk
+engine and market service over a temp dir with only the broker faked; copy it
+rather than stubbing. `BotRunDeps.now` is injectable — use it instead of
+sleeping.
+
+Before claiming a fix works, delete the fix and confirm the new test fails. A
+test that passes either way proves nothing.
