@@ -1394,3 +1394,21 @@ logo/home links read. Any new absolute link inside `bot-app` must honour that
 variable, or it will escape into the WickSentinel shell. Build with
 `npm run build:bot`; the output (`bot-app/out/`) is git-ignored and
 `server/tests/bot_app.test.ts` covers the mount with a synthetic build.
+
+### The bot app reuses the WickSentinel session
+
+Because `/bot` is served from the same origin, a trader already signed in to the
+scanner must not be asked to authorise Deriv again. `bot-app/src/services/wicksentinel-sso.ts`
+adopts the existing session via two endpoints in `server/routes/auth.ts`:
+`GET /api/bot/session` (the accounts this session owns) and `POST /api/bot/ws-url`
+(a single-use OTP WebSocket URL, behind `requireSession`).
+
+`getSocketURL` in `bot-app/.../config/config.ts` prefers that URL and only falls
+back to the app's own OAuth token when there is no session, so the bot app still
+works standalone. The OTP exchange happens server-side in `fetchOtpWebSocketUrl`
+(`server/lib/deriv.ts`) precisely so the OAuth access token never reaches the
+browser — keep it that way.
+
+The bridge seeds `active_loginid`, `account_type` and `deriv_accounts` and marks
+them with `ws_sso_adopted`, so signing out clears only keys it wrote and never
+disturbs a genuine bot-app OAuth login.
