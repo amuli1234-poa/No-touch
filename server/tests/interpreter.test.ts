@@ -525,3 +525,111 @@ test('resolveDigitPrediction refuses a value that is not a digit', () => {
   // No tick analysis has run, so the variable is unset rather than a number.
   assert.equal(resolveDigitPrediction(tree, ctx), null);
 });
+
+/* ------------------- legacy SUBMARKET -> INITIALIZATION ------------------- */
+
+/**
+ * A legacy export has no `INITIALIZATION` statement: its declarations live in
+ * the `trade` block's `SUBMARKET` chain, before the `market` block. DBot's own
+ * loader moves them to "Run once at start" on import, because `SUBMARKET` runs
+ * before every trade and a martingale counter kept there would reset each time.
+ * The shape below matches `xml-examples/misc/Alternate Even-Odd.xml`.
+ */
+function legacySubmarketProgram(): string {
+  return `<xml xmlns="http://www.w3.org/1999/xhtml" is_dbot="true">
+  <variables>
+    <variable id="stake">stake</variable>
+    <variable id="runs">runs</variable>
+  </variables>
+  <block type="trade">
+    <statement name="SUBMARKET">
+      <block type="variables_set">
+        <field name="VAR" id="stake">stake</field>
+        <value name="VALUE"><block type="math_number"><field name="NUM">1</field></block></value>
+        <next>
+          <block type="variables_set">
+            <field name="VAR" id="runs">runs</field>
+            <value name="VALUE"><block type="math_number"><field name="NUM">0</field></block></value>
+            <next>
+              <block type="market">
+                <field name="MARKET_LIST">volidx</field>
+                <field name="SUBMARKET_LIST">random_index</field>
+                <field name="SYMBOL_LIST">R_100</field>
+                <field name="TRADETYPECAT_LIST">digits</field>
+                <field name="TRADETYPE_LIST">evenodd</field>
+                <field name="TYPE_LIST">both</field>
+                <value name="AMOUNT"><block type="math_number"><field name="NUM">1</field></block></value>
+              </block>
+            </next>
+          </block>
+        </next>
+      </block>
+    </statement>
+  </block>
+</xml>`;
+}
+
+test('legacy SUBMARKET declarations are initialised, as DBot migrates them', () => {
+  const tree = xmlToTree(legacySubmarketProgram());
+  const ctx = context();
+
+  runInitialization(tree, ctx);
+
+  assert.equal(ctx.variables.get('stake'), 1);
+  assert.equal(ctx.variables.get('runs'), 0);
+});
+
+test('the legacy market block is not executed as an initialisation statement', () => {
+  const tree = xmlToTree(legacySubmarketProgram());
+  const ctx = context();
+
+  // `market` configures the trade; running it as a statement would either throw
+  // or invent variables. It must stay behind in SUBMARKET, as DBot leaves it.
+  runInitialization(tree, ctx);
+  assert.equal(ctx.variables.size, 2);
+});
+
+test('an explicit INITIALIZATION stack is never replaced by SUBMARKET contents', () => {
+  const xml = `<xml xmlns="http://www.w3.org/1999/xhtml" is_dbot="true">
+  <variables><variable id="a">a</variable><variable id="b">b</variable></variables>
+  <block type="trade_definition">
+    <statement name="INITIALIZATION">
+      <block type="variables_set">
+        <field name="VAR" id="a">a</field>
+        <value name="VALUE"><block type="math_number"><field name="NUM">7</field></block></value>
+      </block>
+    </statement>
+    <statement name="SUBMARKET">
+      <block type="variables_set">
+        <field name="VAR" id="b">b</field>
+        <value name="VALUE"><block type="math_number"><field name="NUM">9</field></block></value>
+      </block>
+    </statement>
+  </block>
+</xml>`;
+  const ctx = context();
+  runInitialization(xmlToTree(xml), ctx);
+
+  assert.equal(ctx.variables.get('a'), 7);
+  assert.equal(ctx.variables.get('b'), undefined);
+});
+
+test('a trade_definition with no legacy market block keeps SUBMARKET unexecuted', () => {
+  const xml = `<xml xmlns="http://www.w3.org/1999/xhtml" is_dbot="true">
+  <variables><variable id="b">b</variable></variables>
+  <block type="trade_definition">
+    <statement name="SUBMARKET">
+      <block type="variables_set">
+        <field name="VAR" id="b">b</field>
+        <value name="VALUE"><block type="math_number"><field name="NUM">9</field></block></value>
+      </block>
+    </statement>
+  </block>
+</xml>`;
+  const ctx = context();
+  runInitialization(xmlToTree(xml), ctx);
+
+  // Only the oldest generation put declarations in SUBMARKET; migrating a
+  // newer export would execute its trade options as statements.
+  assert.equal(ctx.variables.get('b'), undefined);
+});

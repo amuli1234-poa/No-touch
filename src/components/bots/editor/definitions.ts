@@ -108,6 +108,7 @@ const FIELD_DEFAULTS: Record<string, string[]> = {
   TYPE_LIST: ['CALL', 'PUT', 'MULTUP', 'MULTDOWN'],
   CANDLEINTERVAL_LIST: ['60', '120', '180', '300', '600', '900', '1800', '3600', '7200', '14400', '28800', '86400'],
   DURATIONTYPE_LIST: ['t', 's', 'm', 'h', 'd'],
+  PAYOUTTYPE_LIST: ['stake'],
   CURRENCY_LIST: ['USD', 'EUR', 'GBP', 'AUD', 'JPY'],
   PURCHASE_LIST: ['CALL', 'PUT', 'MULTUP', 'MULTDOWN'],
   CHECK_DIRECTION: ['rise', 'fall'],
@@ -247,6 +248,37 @@ export const DBOT_DECLS: DbotBlockDecl[] = [
       { name: 'DURATION', kind: 'value' },
       { name: 'AMOUNT', kind: 'value' },
       { name: 'PREDICTION', kind: 'value' }
+    ]
+  },
+  {
+    type: 'market',
+    label: 'Legacy market selection',
+    role: 'market',
+    fields: [
+      'MARKET_LIST',
+      'SUBMARKET_LIST',
+      'SYMBOL_LIST',
+      'TRADETYPECAT_LIST',
+      'TRADETYPE_LIST',
+      'TYPE_LIST',
+      'CANDLEINTERVAL_LIST',
+      'DURATIONTYPE_LIST',
+      'PAYOUTTYPE_LIST',
+      'CURRENCY_LIST',
+      'RESTARTONERROR'
+    ],
+    layout: [
+      { label: 'Market', fields: ['MARKET_LIST', 'SUBMARKET_LIST', 'SYMBOL_LIST'] },
+      { label: 'Contract', fields: ['TRADETYPECAT_LIST', 'TRADETYPE_LIST', 'TYPE_LIST'] },
+      { label: 'Candle interval', fields: ['CANDLEINTERVAL_LIST'] },
+      {
+        label: 'Trade options',
+        fields: ['DURATIONTYPE_LIST', 'PAYOUTTYPE_LIST', 'CURRENCY_LIST', 'RESTARTONERROR']
+      }
+    ],
+    inputs: [
+      { name: 'DURATION', kind: 'value' },
+      { name: 'AMOUNT', kind: 'value' }
     ]
   },
   {

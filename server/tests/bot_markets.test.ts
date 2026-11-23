@@ -574,3 +574,73 @@ test('multipliers adapter: still refuses a digit contract type', () => {
     /not a Multipliers contract/
   );
 });
+
+/* --------------------- oldest-generation `market` block ------------------- */
+
+/**
+ * A legacy export keeps market, contract and stake on a `market` block nested
+ * inside `trade`'s SUBMARKET statement. The planner must read that block or it
+ * would report a perfectly configured strategy as naming no symbol and no
+ * contract. Shape copied from `xml-examples/misc/Alternate Even-Odd.xml`.
+ */
+const LEGACY_MARKET_BOT = `<xml xmlns="http://www.w3.org/1999/xhtml" is_dbot="true">
+  <block type="trade">
+    <statement name="SUBMARKET">
+      <block type="market">
+        <field name="MARKET_LIST">volidx</field>
+        <field name="SUBMARKET_LIST">random_index</field>
+        <field name="SYMBOL_LIST">R_100</field>
+        <field name="TRADETYPECAT_LIST">digits</field>
+        <field name="TRADETYPE_LIST">evenodd</field>
+        <field name="TYPE_LIST">both</field>
+        <field name="CANDLEINTERVAL_LIST">60</field>
+        <field name="DURATIONTYPE_LIST">t</field>
+        <field name="CURRENCY_LIST">USD</field>
+        <value name="DURATION"><block type="math_number"><field name="NUM">5</field></block></value>
+        <value name="AMOUNT"><block type="math_number"><field name="NUM">1</field></block></value>
+      </block>
+    </statement>
+  </block>
+  <block type="before_purchase">
+    <statement name="BEFOREPURCHASE_STACK">
+      <block type="controls_if">
+        <value name="IF0"><block type="logic_compare">
+          <field name="OP">EQ</field>
+          <value name="A"><block type="last_digit"/></value>
+          <value name="B"><block type="math_number"><field name="NUM">1</field></block></value>
+        </block></value>
+        <statement name="DO0">
+          <block type="purchase"><field name="PURCHASE_LIST">DIGITEVEN</field></block>
+        </statement>
+      </block>
+    </statement>
+  </block>
+</xml>`;
+
+test('a legacy `market` block supplies the plan symbol, contract and stake', () => {
+  const plan = planOf(LEGACY_MARKET_BOT);
+
+  assert.equal(plan.symbol, 'R_100');
+  assert.equal(plan.timeframe, '60s');
+  assert.equal(plan.contractType, 'DIGITEVEN');
+  assert.equal(plan.contractFamily, 'digits');
+  assert.equal(plan.stake, 1);
+  assert.equal(plan.currency, 'USD');
+  assert.equal(plan.duration, 5);
+  assert.equal(plan.durationUnit, 't');
+  assert.equal(plan.engine, 'interpreter');
+});
+
+test('a legacy `both` contract type resolves to the trade type\'s first contract', () => {
+  // `both` means "either direction"; the interpreter still buys the contract
+  // named by the author's purchase block, so the plan carries a placeable
+  // default rather than the unplaceable literal "both".
+  const plan = planOf(LEGACY_MARKET_BOT);
+  assert.equal(plan.contractType, 'DIGITEVEN');
+});
+
+test('a legacy `market` block alone does not make the plan unsupported', () => {
+  const planned = planStrategy(xmlToTree(LEGACY_MARKET_BOT));
+  assert.ok(planned.ok);
+  assert.ok(!planned.reasons.some((r) => r.includes('market')));
+});

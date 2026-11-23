@@ -454,3 +454,118 @@ test('every unsupported block type carries a reason', () => {
     assert.ok(entry.reason.length > 0, `${entry.type} needs a reason`);
   }
 });
+
+/* ---------------------- oldest-generation `market` block ------------------ */
+
+/**
+ * The oldest DBot generation kept market, contract and stake on one `market`
+ * block nested inside `trade`'s SUBMARKET statement, alongside ordinary
+ * statements that DBot later migrates to "Run once at start". This fixture is
+ * copied in shape from `packages/bot-skeleton/examples/xml-examples/misc/
+ * Alternate Even-Odd.xml`.
+ */
+const LEGACY_MARKET = `<xml xmlns="http://www.w3.org/1999/xhtml" collection="false">
+  <block type="trade" id="trade" x="0" y="0">
+    <statement name="SUBMARKET">
+      <block type="variables_set" id="vs">
+        <field name="VAR">Contract Type</field>
+        <value name="VALUE">
+          <block type="text" id="t"><field name="TEXT">Even</field></block>
+        </value>
+        <next>
+          <block type="market" id="m">
+            <field name="MARKET_LIST">volidx</field>
+            <field name="SUBMARKET_LIST">random_index</field>
+            <field name="SYMBOL_LIST">R_100</field>
+            <field name="TRADETYPECAT_LIST">digits</field>
+            <field name="TRADETYPE_LIST">evenodd</field>
+            <field name="TYPE_LIST">both</field>
+            <field name="CANDLEINTERVAL_LIST">60</field>
+            <field name="DURATIONTYPE_LIST">t</field>
+            <field name="PAYOUTTYPE_LIST">stake</field>
+            <field name="CURRENCY_LIST">USD</field>
+            <value name="DURATION">
+              <block type="math_number" id="d"><field name="NUM">5</field></block>
+            </value>
+            <value name="AMOUNT">
+              <block type="math_number" id="a"><field name="NUM">1</field></block>
+            </value>
+          </block>
+        </next>
+      </block>
+    </statement>
+  </block>
+  <block type="before_purchase" id="bp">
+    <statement name="BEFOREPURCHASE_STACK">
+      <block type="purchase" id="p"><field name="PURCHASE_LIST">DIGITEVEN</field></block>
+    </statement>
+  </block>
+</xml>`;
+
+test('reads market, contract and stake from a legacy `market` block', () => {
+  const result = analyzeDbotXml(LEGACY_MARKET, { filename: 'legacy-market.xml' });
+  assert.ok(result.bot);
+  assert.equal(result.bot.market.symbol, 'R_100');
+  assert.equal(result.bot.market.candleInterval, '60');
+  assert.equal(result.bot.contract.tradeTypeCategory, 'digits');
+  assert.equal(result.bot.contract.tradeType, 'evenodd');
+  assert.equal(result.bot.stake.amount, 1);
+  assert.equal(result.bot.stake.currency, 'USD');
+  assert.equal(result.bot.stake.duration, 5);
+  assert.equal(result.bot.stake.durationUnit, 't');
+});
+
+test('a legacy `market` block does not make the file unsupported', () => {
+  const result = analyzeDbotXml(LEGACY_MARKET, { filename: 'legacy-market.xml' });
+  assert.equal(result.compatibility, 'full');
+  assert.deepEqual(result.bot?.unsupportedBlocks ?? [], []);
+  assert.deepEqual(result.bot?.unknownBlocks ?? [], []);
+});
+
+test('legacy MARKET_LIST "volidx" is read as synthetic_index', () => {
+  const result = analyzeDbotXml(LEGACY_MARKET, { filename: 'legacy-market.xml' });
+  assert.ok(result.bot);
+  assert.equal(result.bot.market.market, 'synthetic_index');
+});
+
+test('legacy TYPE_LIST "both" expands to the trade type\'s contract pair', () => {
+  const result = analyzeDbotXml(LEGACY_MARKET, { filename: 'legacy-market.xml' });
+  assert.ok(result.bot);
+  // `both` means "either direction" in DBot, not a contract named "both".
+  assert.deepEqual(result.bot.contract.contractTypes, ['DIGITEVEN', 'DIGITODD']);
+});
+
+test('a literal legacy TYPE_LIST value is kept as the single contract', () => {
+  const xml = LEGACY_MARKET.replace(
+    '<field name="TYPE_LIST">both</field>',
+    '<field name="TYPE_LIST">DIGITDIFF</field>'
+  );
+  const result = analyzeDbotXml(xml, { filename: 'legacy-literal.xml' });
+  assert.ok(result.bot);
+  assert.deepEqual(result.bot.contract.contractTypes, ['DIGITDIFF']);
+});
+
+test('legacy risefall / callputequal spellings are mapped to current names', () => {
+  const xml = LEGACY_MARKET.replace(
+    '<field name="TRADETYPECAT_LIST">digits</field>',
+    '<field name="TRADETYPECAT_LIST">callputequal</field>'
+  ).replace(
+    '<field name="TRADETYPE_LIST">evenodd</field>',
+    '<field name="TRADETYPE_LIST">risefallequals</field>'
+  );
+  const result = analyzeDbotXml(xml, { filename: 'legacy-renamed.xml' });
+  assert.ok(result.bot);
+  assert.equal(result.bot.contract.tradeTypeCategory, 'callput');
+  assert.equal(result.bot.contract.tradeType, 'callputequal');
+});
+
+test('"both" with an unknown trade type warns instead of inventing a contract', () => {
+  const xml = LEGACY_MARKET.replace(
+    '<field name="TRADETYPE_LIST">evenodd</field>',
+    '<field name="TRADETYPE_LIST">mysterytype</field>'
+  );
+  const result = analyzeDbotXml(xml, { filename: 'legacy-unknown.xml' });
+  assert.ok(result.bot);
+  assert.deepEqual(result.bot.contract.contractTypes, []);
+  assert.ok(result.bot.warnings.some((w) => w.code === 'contract_type_both_unresolved'));
+});

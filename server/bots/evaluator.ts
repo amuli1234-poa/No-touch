@@ -31,6 +31,7 @@ import { INTERPRETED_BLOCKS, isDbProgram, isValueBlock } from './interpreter.js'
 import type { ContractFamily, DerivContractType } from '../execution/types.js';
 import { DIGIT_PREDICTION_TYPES } from '../execution/types.js';
 import { fieldValue, findTopLevel, walkTree } from './tree.js';
+import { OPPOSITE_CONTRACTS } from './blocks.js';
 
 export type EvaluationVerdict =
   /** `NONE` when the strategy's family is chosen by prediction, not direction. */
@@ -129,6 +130,7 @@ export interface PlanResult {
 const PLAN_EXECUTABLE = new Set<string>([
   'trade',
   'tradeOptions',
+  'market',
   'last_digit',
   'trade_definition',
   'trade_definition_market',
@@ -205,6 +207,22 @@ export const CONTRACT_TYPE_FAMILY: Record<DerivContractType, ContractFamily> = {
  * plan keeps `rise_fall` unless a barrier is actually configured.
  */
 const CONTRACT_TYPES = new Set<string>(Object.keys(CONTRACT_TYPE_FAMILY));
+
+/**
+ * The contract type a `TYPE_LIST` value names, with `both` resolved.
+ *
+ * A legacy `both` means "either direction": DBot expands it through
+ * `config.opposites[tradeType]`, and the author's `purchase` block then chooses
+ * one of the pair per entry. `both` itself is not placeable, so leaving it
+ * unresolved would refuse the ordinary legacy configuration. The first contract
+ * of the pair is the default; a program overrides it per entry from `purchase`.
+ */
+function resolveContractType(raw: string, tradeType: string | null): string {
+  if (raw !== 'both') return raw;
+
+  const pair = tradeType === null ? null : OPPOSITE_CONTRACTS[tradeType.toUpperCase()];
+  return pair ? pair[0] : '';
+}
 
 /**
  * The direction a contract type buys in, for the signal it produces.
@@ -440,29 +458,42 @@ export function planStrategy(tree: BlockTree): PlanResult {
 
   // Market and contract configuration come from the trade definition. A program
   // rooted at `trade` carries them as fields on that block instead of in child
-  // definition blocks, so both shapes are read here.
+  // definition blocks, and the oldest generation keeps them on a `market` block
+  // nested inside `trade`'s SUBMARKET statement, so all three shapes are read.
   const definition =
     findTopLevel(tree, legacyDigitPlan ? 'trade' : 'trade_definition') ??
     legacyTrade ??
     findTopLevel(tree, 'trade_definition');
+  const legacyMarket = all.find((n) => n.type === 'market');
   const marketBlock = all.find((n) => n.type === 'trade_definition_market');
   const symbol =
     fieldValue(marketBlock, 'SYMBOL_LIST') ??
     fieldValue(definition, 'SYMBOL_LIST') ??
+    fieldValue(legacyMarket, 'SYMBOL_LIST') ??
     null;
 
   const contractBlock = all.find((n) => n.type === 'trade_definition_contracttype');
-  const contractTypeRaw =
-    fieldValue(contractBlock, 'TYPE_LIST') ??
-    fieldValue(legacyTrade, 'TYPE_LIST') ??
-    fieldValue(definition, 'TYPE_LIST') ??
-    '';
-
   const candleBlock = all.find((n) => n.type === 'trade_definition_candleinterval');
   const candleInterval =
     fieldValue(candleBlock, 'CANDLEINTERVAL_LIST') ??
     fieldValue(legacyTrade, 'CANDLEINTERVAL_LIST') ??
+    fieldValue(legacyMarket, 'CANDLEINTERVAL_LIST') ??
     null;
+
+  // `TYPE_LIST` may name a contract, or `both` — DBot's "either direction",
+  // which `trade_definition.js` expands through `config.opposites`. It is
+  // resolved here for the same reason the parser resolves it: `both` is not a
+  // contract and cannot be placed, so treating it as one would refuse the
+  // ordinary legacy configuration. The author's `purchase` block still names
+  // which of the pair to buy, and the interpreter honours that per entry.
+  const contractTypeRaw = resolveContractType(
+    fieldValue(contractBlock, 'TYPE_LIST') ??
+      fieldValue(legacyTrade, 'TYPE_LIST') ??
+      fieldValue(legacyMarket, 'TYPE_LIST') ??
+      fieldValue(definition, 'TYPE_LIST') ??
+      '',
+    fieldValue(legacyTrade, 'TRADETYPE_LIST') ?? fieldValue(legacyMarket, 'TRADETYPE_LIST')
+  );
 
   if (!symbol) reasons.push('The strategy does not name a trading symbol.');
   if (!contractTypeRaw) {
@@ -473,15 +504,17 @@ export function planStrategy(tree: BlockTree): PlanResult {
     );
   }
 
-  // Trade options: stake, currency, duration. Both shapes are accepted, because
-  // a `trade`-rooted program keeps them in a `tradeOptions` block.
+  // Trade options: stake, currency, duration. A `trade`-rooted program keeps
+  // them in a `tradeOptions` block, and the oldest generation keeps them on the
+  // `market` block itself, so both shapes are read.
   const options = all.find(
     (n) => n.type === 'tradeOptions' || n.type === 'trade_definition_tradeoptions'
   );
-  const stake = options ? inputNumber(options, 'AMOUNT') : null;
-  const duration = options ? inputNumber(options, 'DURATION') : null;
-  const currency = options ? fieldValue(options, 'CURRENCY_LIST') : null;
-  const durationUnit = options ? fieldValue(options, 'DURATIONTYPE_LIST') : null;
+  const stakeSource = options ?? legacyMarket ?? null;
+  const stake = stakeSource ? inputNumber(stakeSource, 'AMOUNT') : null;
+  const duration = stakeSource ? inputNumber(stakeSource, 'DURATION') : null;
+  const currency = stakeSource ? fieldValue(stakeSource, 'CURRENCY_LIST') : null;
+  const durationUnit = stakeSource ? fieldValue(stakeSource, 'DURATIONTYPE_LIST') : null;
 
   // Indicator declarations, so a variables_get in a comparison can be resolved.
   const indicators = new Map<string, IndicatorDecl>();

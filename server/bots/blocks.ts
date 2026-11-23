@@ -126,6 +126,29 @@ const META: Record<string, BlockMeta> = {
     label: 'Trade options (stake, duration, currency)',
     fields: ['DURATIONTYPE_LIST', 'CURRENCY_LIST', 'AMOUNT_LIMITS']
   },
+  /**
+   * The oldest trade-definition generation: market, contract and stake in one
+   * block, nested inside `trade`'s SUBMARKET statement. DBot converts it to a
+   * `trade_definition_tradeoptions` (see `backward-compatibility.js`), so it
+   * carries the trade-options fields as well as the market triple.
+   */
+  market: {
+    role: 'market',
+    label: 'Market selection (legacy)',
+    fields: [
+      'MARKET_LIST',
+      'SUBMARKET_LIST',
+      'SYMBOL_LIST',
+      'TRADETYPECAT_LIST',
+      'TRADETYPE_LIST',
+      'TYPE_LIST',
+      'CANDLEINTERVAL_LIST',
+      'DURATIONTYPE_LIST',
+      'PAYOUTTYPE_LIST',
+      'CURRENCY_LIST',
+      'RESTARTONERROR'
+    ]
+  },
   trade_definition_tradeoptions_payout: {
     role: 'stake',
     label: 'Trade options (payout)',
@@ -332,6 +355,7 @@ const DELIBERATELY_UNEXECUTED: Record<string, string> = {
 const CONTAINER_BLOCKS: ReadonlySet<string> = new Set<string>([
   'trade',
   'tradeOptions',
+  'market',
   'trade_definition',
   'trade_definition_market',
   'trade_definition_tradetype',
@@ -455,3 +479,39 @@ export const EXECUTABLE_TRADE_TYPE_CATEGORIES = [
 ];
 
 export { DBOT_PREFIX };
+
+/**
+ * Field values DBot renamed between generations.
+ *
+ * `backward-compatibility.js` rewrites these before converting a legacy export,
+ * so a strategy authored as `volidx`/`risefall` means the same thing as one
+ * authored as `synthetic_index`/`callput`. Normalising keeps every consumer —
+ * parser, planner, UI — comparing one vocabulary instead of two.
+ */
+export const LEGACY_FIELD_VALUES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  MARKET_LIST: { volidx: 'synthetic_index' },
+  TRADETYPECAT_LIST: { endsinout: 'inout', staysinout: 'inout', callputequal: 'callput' },
+  TRADETYPE_LIST: { risefall: 'callput', risefallequals: 'callputequal' }
+};
+
+/**
+ * DBot's `config.opposites`, restricted to the pairs a legacy export can name.
+ *
+ * A legacy `TYPE_LIST` of `both` resolves to exactly these two contracts, and
+ * the author's `purchase` block then picks one of them per entry.
+ */
+export const OPPOSITE_CONTRACTS: Readonly<Record<string, readonly [string, string]>> = {
+  CALLPUT: ['CALL', 'PUT'],
+  CALLPUTEQUAL: ['CALLE', 'PUTE'],
+  HIGHERLOWER: ['CALL', 'PUT'],
+  TOUCHNOTOUCH: ['ONETOUCH', 'NOTOUCH'],
+  MATCHESDIFFERS: ['DIGITMATCH', 'DIGITDIFF'],
+  EVENODD: ['DIGITEVEN', 'DIGITODD'],
+  OVERUNDER: ['DIGITOVER', 'DIGITUNDER'],
+  HIGHLOWTICKS: ['TICKHIGH', 'TICKLOW']
+};
+
+/** `value` with any legacy spelling of `field` mapped forward. */
+export function normaliseLegacyValue(field: string, value: string): string {
+  return LEGACY_FIELD_VALUES[field]?.[value] ?? value;
+}

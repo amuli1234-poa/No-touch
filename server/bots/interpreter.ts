@@ -693,11 +693,75 @@ export function runBeforePurchase(tree: BlockTree, ctx: TickContext): ExecutionR
  * run that skipped it would evaluate every later comparison against an unset
  * variable. That is not a conservative failure: `undefined < 100` is false, so
  * the strategy's own entry gate would silently never open.
+ *
+ * A legacy export has no `INITIALIZATION`: its declarations sit in the `trade`
+ * block's `SUBMARKET` statement, which DBot's own loader migrates on import
+ * (`naivelyFixLegacyStrategyAfterConversion`). It moves everything in
+ * `SUBMARKET` except the trade-options block into `INITIALIZATION`, because
+ * `SUBMARKET` is re-run before every trade and a martingale counter kept there
+ * would be reset each time. Skipping that migration would run a martingale at a
+ * flat stake, so the same rule is applied here, at the point the stack is read.
  */
 export function runInitialization(tree: BlockTree, ctx: TickContext): ExecutionResult {
   const trade = findTopLevel(tree, 'trade') ?? findTopLevel(tree, 'trade_definition');
-  const stack = trade ? inputBlock(trade, 'INITIALIZATION') : null;
+  const stack = trade ? initializationStack(tree, trade) : null;
   return executeStack(stack, ctx, tree);
+}
+
+/** Trade-options blocks, which stay in `SUBMARKET` when legacy XML is migrated. */
+const TRADE_OPTIONS_BLOCKS = new Set(['market', 'tradeOptions', 'trade_definition_tradeoptions']);
+
+/**
+ * The stack DBot would initialise from, for either trade-definition generation.
+ *
+ * When a strategy already has an `INITIALIZATION` stack that is the whole
+ * answer — DBot only migrates into an empty one. Otherwise a legacy `SUBMARKET`
+ * chain is split: the trade-options block stays behind (it is the trade
+ * definition, not a declaration) and every other block is initialisation.
+ *
+ * The migration is gated on the legacy `market` block, as DBot's is: only that
+ * generation put declarations in `SUBMARKET`. A `trade`-rooted export without
+ * one keeps its trade options there and has nothing to initialise, so reading
+ * `SUBMARKET` as declarations would run the trade definition as if it were a
+ * statement.
+ */
+function initializationStack(tree: BlockTree, trade: TreeNode): TreeNode | null {
+  const explicit = inputBlock(trade, 'INITIALIZATION');
+  if (explicit) return explicit;
+
+  if (!walkTree(tree).some((node) => node.type === 'market')) return null;
+
+  const submarket = inputBlock(trade, 'SUBMARKET');
+  if (!submarket) return null;
+
+  const kept: TreeNode[] = [];
+  for (const node of stackChain(submarket)) {
+    if (!TRADE_OPTIONS_BLOCKS.has(node.type)) kept.push(node);
+  }
+  // The migration is a no-op when `SUBMARKET` holds only the trade definition.
+  if (kept.length === 0) return null;
+  return chain(kept);
+}
+
+/** Every block along a stack, in order. */
+function* stackChain(start: TreeNode): Generator<TreeNode> {
+  let node: TreeNode | null = start;
+  while (node) {
+    yield node;
+    node = node.next;
+  }
+}
+
+/** Links copies of `nodes` into a stack, returning its head. */
+function chain(nodes: TreeNode[]): TreeNode | null {
+  // The nodes are copied so re-linking them does not rewrite the strategy tree:
+  // `SUBMARKET` is read again on every later trade, and a mutated `next` chain
+  // would drop the trade-options block out of it permanently.
+  const copies = nodes.map((node) => ({ ...node, next: null as TreeNode | null }));
+  for (let i = 0; i < copies.length; i += 1) {
+    copies[i].next = copies[i + 1] ?? null;
+  }
+  return copies[0] ?? null;
 }
 
 /**

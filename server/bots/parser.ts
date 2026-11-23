@@ -17,7 +17,7 @@
 
 import { parseXml, childElements, textContent, XmlError } from './xml.js';
 import type { XmlElement } from './xml.js';
-import { blockSpec, isKnownBlock, EXECUTABLE_CONTRACT_TYPES, DBOT_MAIN_BLOCKS } from './blocks.js';
+import { blockSpec, isKnownBlock, EXECUTABLE_CONTRACT_TYPES, DBOT_MAIN_BLOCKS, OPPOSITE_CONTRACTS, normaliseLegacyValue } from './blocks.js';
 import type {
   BotAnalysis,
   BotCondition,
@@ -222,6 +222,42 @@ interface TradeRead {
   stake: BotStakeConfig;
 }
 
+/** The value of `name` on `block`, with any legacy spelling mapped forward. */
+function normalisedField(block: XmlElement, name: string): string | null {
+  const raw = fieldValue(block, name);
+  if (raw === null) return null;
+  return normaliseLegacyValue(name, raw);
+}
+
+/**
+ * The contract types a legacy `TYPE_LIST` value stands for.
+ *
+ * `both` is not a contract: DBot's own tooltip reads "If the contract type is
+ * 'Both', then the Purchase Conditions should include both Rise and Fall", and
+ * `trade_definition.js` expands it through `config.opposites[tradeType]` into
+ * the two contracts of that trade type. Storing `both` as a contract type would
+ * report a strategy as unplaceable when its author wrote the ordinary
+ * "either direction" configuration.
+ */
+function expandContractTypes(
+  raw: string | null,
+  tradeType: string | null,
+  warnings: BotWarning[]
+): string[] {
+  if (raw === null) return [];
+  if (raw !== 'both') return [raw];
+
+  const pair = tradeType === null ? null : OPPOSITE_CONTRACTS[tradeType.toUpperCase()];
+  if (!pair) {
+    warnings.push({
+      code: 'contract_type_both_unresolved',
+      message: `The trade type "${tradeType ?? '(none)'}" has no pair of contracts to expand "both" into.`
+    });
+    return [];
+  }
+  return [...pair];
+}
+
 function readTradeDefinition(blocks: XmlElement[], warnings: BotWarning[]): TradeRead {
   const market: BotMarketConfig = { market: null, submarket: null, symbol: null, candleInterval: null };
   const contract: BotContractConfig = { tradeTypeCategory: null, tradeType: null, contractTypes: [] };
@@ -231,14 +267,38 @@ function readTradeDefinition(blocks: XmlElement[], warnings: BotWarning[]): Trad
     const type = block.attrs.type ?? '';
     switch (type) {
       case 'trade': {
-        market.market = fieldValue(block, 'MARKET_LIST');
+        market.market = normalisedField(block, 'MARKET_LIST');
         market.submarket = fieldValue(block, 'SUBMARKET_LIST');
         market.symbol = fieldValue(block, 'SYMBOL_LIST');
         market.candleInterval = fieldValue(block, 'CANDLEINTERVAL_LIST');
-        contract.tradeTypeCategory = fieldValue(block, 'TRADETYPECAT_LIST');
-        contract.tradeType = fieldValue(block, 'TRADETYPE_LIST');
-        const contractType = fieldValue(block, 'TYPE_LIST');
-        if (contractType) contract.contractTypes.push(contractType);
+        contract.tradeTypeCategory = normalisedField(block, 'TRADETYPECAT_LIST');
+        contract.tradeType = normalisedField(block, 'TRADETYPE_LIST');
+        contract.contractTypes.push(
+          ...expandContractTypes(fieldValue(block, 'TYPE_LIST'), contract.tradeType, warnings)
+        );
+        break;
+      }
+      /**
+       * The oldest generation keeps market, contract and stake in one block
+       * nested inside `trade`'s SUBMARKET statement. DBot converts it to a
+       * trade-options block, so its fields are read the same way.
+       */
+      case 'market': {
+        market.market = market.market ?? normalisedField(block, 'MARKET_LIST');
+        market.submarket = market.submarket ?? fieldValue(block, 'SUBMARKET_LIST');
+        market.symbol = market.symbol ?? fieldValue(block, 'SYMBOL_LIST');
+        market.candleInterval = market.candleInterval ?? fieldValue(block, 'CANDLEINTERVAL_LIST');
+        contract.tradeTypeCategory = contract.tradeTypeCategory ?? normalisedField(block, 'TRADETYPECAT_LIST');
+        contract.tradeType = contract.tradeType ?? normalisedField(block, 'TRADETYPE_LIST');
+        if (contract.contractTypes.length === 0) {
+          contract.contractTypes.push(
+            ...expandContractTypes(fieldValue(block, 'TYPE_LIST'), contract.tradeType, warnings)
+          );
+        }
+        stake.currency = stake.currency ?? fieldValue(block, 'CURRENCY_LIST');
+        stake.durationUnit = stake.durationUnit ?? fieldValue(block, 'DURATIONTYPE_LIST');
+        stake.amount = stake.amount ?? valueNumber(block, 'AMOUNT');
+        stake.duration = stake.duration ?? valueNumber(block, 'DURATION');
         break;
       }
       case 'trade_definition_market': {
