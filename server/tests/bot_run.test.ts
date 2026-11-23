@@ -855,9 +855,21 @@ test('tick: a second satisfied tick opens a second contract', async () => {
     );
 
     const first = await tickBotRun(deps, user, run.runId, 'token', 'tick-1');
+    assert.equal(first.verdict, 'entry');
+
+    // DBot holds one contract at a time, so the next entry can only follow a
+    // settlement. Settle it the way Deriv would, then tick again.
+    const contract = store.getContract(user.id, String(first.contractId))!;
+    await store.putContract({
+      ...contract,
+      status: 'won',
+      profit: 0.95,
+      exitSpot: 101,
+      settlementTime: Date.now()
+    });
+
     const second = await tickBotRun(deps, user, run.runId, 'token', 'tick-2');
 
-    assert.equal(first.verdict, 'entry');
     assert.equal(second.verdict, 'entry');
     assert.notEqual(first.contractId, second.contractId);
     assert.equal(second.run.counters.entries, 2);
@@ -1379,4 +1391,192 @@ test('route: run endpoints report 503 when the runtime is not wired', async () =
     await store.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+/* ----------------------------- early selling ----------------------------- */
+
+/** A strategy that buys CALL, then sells as soon as Deriv says it can. */
+const SELL_EARLY_BOT = `<xml xmlns="http://www.w3.org/1999/xhtml" is_dbot="true">
+  <block type="trade_definition">
+    <statement name="TRADE_OPTIONS">
+      <block type="trade_definition_market">
+        <field name="MARKET_LIST">synthetic_index</field>
+        <field name="SUBMARKET_LIST">random_index</field>
+        <field name="SYMBOL_LIST">R_100</field>
+        <next><block type="trade_definition_tradetype">
+          <field name="TRADETYPECAT_LIST">callput</field>
+          <field name="TRADETYPE_LIST">callput</field>
+          <next><block type="trade_definition_contracttype">
+            <field name="TYPE_LIST">CALL</field>
+            <next><block type="trade_definition_candleinterval">
+              <field name="CANDLEINTERVAL_LIST">60</field>
+              <next><block type="trade_definition_tradeoptions">
+                <field name="DURATIONTYPE_LIST">m</field>
+                <field name="CURRENCY_LIST">USD</field>
+                <value name="DURATION"><shadow type="math_number"><field name="NUM">5</field></shadow></value>
+                <value name="AMOUNT"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+              </block></next>
+            </block></next>
+          </block></next>
+        </block></next>
+      </block>
+    </statement>
+  </block>
+  <block type="before_purchase">
+    <statement name="BEFOREPURCHASE_STACK">
+      <block type="controls_if">
+        <value name="IF0"><block type="check_direction"><field name="CHECK_DIRECTION">rise</field></block></value>
+        <statement name="DO0"><block type="purchase"><field name="PURCHASE_LIST">CALL</field></block></statement>
+      </block>
+    </statement>
+  </block>
+  <block type="during_purchase">
+    <statement name="DURING_PURCHASE_STACK">
+      <block type="controls_if">
+        <value name="IF0"><block type="check_sell"></block></value>
+        <statement name="DO0"><block type="sell_at_market"></block></statement>
+      </block>
+    </statement>
+  </block>
+</xml>`;
+
+/** Marks an open contract as sellable, the way `proposal_open_contract` would. */
+async function makeSellable(store: Store, userId: string, contractId: string, bidPrice = 9.5) {
+  const contract = store.getContract(userId, contractId)!;
+  await store.putContract({ ...contract, bidPrice, isValidToSell: true });
+}
+
+test('sell: a during_purchase stack sells the held contract through the gateway', async () => {
+  await withHarness(async ({ deps, user, store, broker }) => {
+    const bot = await importFixture(store, user.id, SELL_EARLY_BOT);
+    const run = await startBotRun(deps, user, bot.id, { accountId: 'DEMO' }, 'token');
+
+    const entry = await tickBotRun(deps, user, run.runId, 'token', 'tick-1');
+    assert.equal(entry.verdict, 'entry');
+    const contractId = String(entry.contractId);
+    await makeSellable(store, user.id, contractId);
+
+    const sold = await tickBotRun(deps, user, run.runId, 'token', 'tick-2');
+
+    // The sale settles the contract, so the same tick goes on to run
+    // after_purchase. This strategy has none, so it declines to trade again and
+    // the run stops — which is exactly DBot's loop.
+    assert.equal(sold.verdict, 'stopped');
+    assert.equal(sold.run.afterPurchaseFor, Number(contractId), 'after_purchase saw the sale');
+    assert.equal(broker.sells.length, 1, 'exactly one sell reached the broker');
+    assert.equal(broker.sells[0].contractId, Number(contractId));
+    assert.equal(broker.sells[0].price, 0, 'a zero price means sell at market');
+
+    // The sale is real execution state, not just an event: the contract is no
+    // longer open and the sale is recorded.
+    assert.notEqual(store.getContract(user.id, contractId)!.status, 'open');
+    const events = sold.run.events.map((e) => e.kind);
+    assert.ok(events.includes('exit'), `expected an exit event, got ${events.join(',')}`);
+  });
+});
+
+test('sell: a contract Deriv has not approved is not sold', async () => {
+  await withHarness(async ({ deps, user, store, broker }) => {
+    const bot = await importFixture(store, user.id, SELL_EARLY_BOT);
+    const run = await startBotRun(deps, user, bot.id, { accountId: 'DEMO' }, 'token');
+
+    const entry = await tickBotRun(deps, user, run.runId, 'token', 'tick-1');
+    const contractId = String(entry.contractId);
+
+    // Deriv reports a bid but withholds permission to sell.
+    const contract = store.getContract(user.id, contractId)!;
+    await store.putContract({ ...contract, bidPrice: 9.5, isValidToSell: false });
+
+    const after = await tickBotRun(deps, user, run.runId, 'token', 'tick-2');
+
+    assert.equal(broker.sells.length, 0, 'no sell was attempted');
+    // The tick continues past the sell decision, but must not open a second
+    // contract while this one is still held.
+    assert.equal(after.verdict, 'skipped');
+    assert.equal(after.reason, 'a contract is still open');
+    assert.equal(after.run.counters.entries, 1, 'no second entry while one is open');
+    assert.equal(store.getContract(user.id, contractId)!.status, 'open', 'the contract is still held');
+  });
+});
+
+test('sell: a contract with no sale terms at all is not sold', async () => {
+  await withHarness(async ({ deps, user, store, broker }) => {
+    const bot = await importFixture(store, user.id, SELL_EARLY_BOT);
+    const run = await startBotRun(deps, user, bot.id, { accountId: 'DEMO' }, 'token');
+
+    const entry = await tickBotRun(deps, user, run.runId, 'token', 'tick-1');
+    const contractId = String(entry.contractId);
+
+    // Deriv has sent no bid and no verdict: the record carries neither.
+    const after = await tickBotRun(deps, user, run.runId, 'token', 'tick-2');
+
+    assert.equal(broker.sells.length, 0, 'unknown sellability is not sellability');
+    assert.equal(after.run.runtimeStatus, 'running');
+    assert.equal(store.getContract(user.id, contractId)!.status, 'open');
+  });
+});
+
+test('sell: an already-settled contract is never sold, it is settled', async () => {
+  await withHarness(async ({ deps, user, store, broker }) => {
+    const bot = await importFixture(store, user.id, SELL_EARLY_BOT);
+    const run = await startBotRun(deps, user, bot.id, { accountId: 'DEMO' }, 'token');
+
+    const entry = await tickBotRun(deps, user, run.runId, 'token', 'tick-1');
+    const contractId = String(entry.contractId);
+
+    // The contract expired between ticks while still flagged sellable.
+    const contract = store.getContract(user.id, contractId)!;
+    await store.putContract({
+      ...contract,
+      status: 'won',
+      profit: 0.95,
+      bidPrice: 9.5,
+      isValidToSell: true,
+      exitSpot: 101,
+      settlementTime: Date.now()
+    });
+
+    await tickBotRun(deps, user, run.runId, 'token', 'tick-2');
+
+    assert.equal(broker.sells.length, 0, 'a settled contract must not be sold');
+  });
+});
+
+test('sell: a rejected sale leaves the contract open and the run alive', async () => {
+  await withHarness(async ({ deps, user, store, broker }) => {
+    const bot = await importFixture(store, user.id, SELL_EARLY_BOT);
+    const run = await startBotRun(deps, user, bot.id, { accountId: 'DEMO' }, 'token');
+
+    const entry = await tickBotRun(deps, user, run.runId, 'token', 'tick-1');
+    const contractId = String(entry.contractId);
+    await makeSellable(store, user.id, contractId);
+
+    broker.setScript({ sellError: new (await import('../execution/broker/types.js')).BrokerError('rejected', 'no') });
+
+    const after = await tickBotRun(deps, user, run.runId, 'token', 'tick-2');
+
+    assert.equal(after.verdict, 'skipped', 'the refusal is reported, not counted as a sale');
+    assert.equal(after.run.runtimeStatus, 'running', 'the run survives a refused sale');
+    assert.equal(store.getContract(user.id, contractId)!.status, 'open', 'the contract is still held');
+  });
+});
+
+test('sell: the entry ceiling does not strand an open contract', async () => {
+  await withHarness(async ({ deps, user, store, broker }) => {
+    const bot = await importFixture(store, user.id, SELL_EARLY_BOT);
+    // A ceiling of one entry: after the first purchase the run has no entries
+    // left, but it still holds a contract that may need selling.
+    const run = await startBotRun(deps, user, bot.id, { accountId: 'DEMO', maxEntries: 1 }, 'token');
+
+    const entry = await tickBotRun(deps, user, run.runId, 'token', 'tick-1');
+    assert.equal(entry.verdict, 'entry');
+    await makeSellable(store, user.id, String(entry.contractId));
+
+    const after = await tickBotRun(deps, user, run.runId, 'token', 'tick-2');
+
+    // The ceiling stopped no lifecycle work: the held contract was still sold.
+    assert.equal(broker.sells.length, 1, 'the held contract was still sold');
+    assert.notEqual(store.getContract(user.id, String(entry.contractId))!.status, 'open');
+    assert.equal(after.run.counters.entries, 1, 'the ceiling still capped entries');
+  });
 });

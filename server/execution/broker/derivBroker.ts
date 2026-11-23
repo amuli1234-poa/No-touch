@@ -487,7 +487,14 @@ export function mapContract(c: any): ContractUpdate {
     dateStart: toNumber(c.date_start),
     dateExpiry: toNumber(c.date_expiry),
     dateSettlement: toNumber(c.date_settlement),
-    soldFor: toNumber(c.sell_price) ?? toNumber(c.sold_for)
+    soldFor: toNumber(c.sell_price) ?? toNumber(c.sold_for),
+    // Deriv sends 0/1; keep it tri-state so "field absent" stays distinct from
+    // "present and false".
+    bidPrice: toNumber(c.bid_price),
+    isValidToSell:
+      c.is_valid_to_sell === undefined || c.is_valid_to_sell === null
+        ? null
+        : c.is_valid_to_sell === 1 || c.is_valid_to_sell === true
   };
 }
 

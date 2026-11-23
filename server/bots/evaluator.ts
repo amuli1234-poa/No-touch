@@ -388,24 +388,6 @@ export function planStrategy(tree: BlockTree): PlanResult {
   if (legacyDigitPlan && all.some((node) => node.type === 'variables_get')) {
     unsupportedTypes.push('variables_get');
   }
-  // The interpreter runs `before_purchase` and `after_purchase`, and nothing
-  // else. A non-empty `during_purchase` stack is therefore logic that would
-  // never execute: the strategy would trade, but not the way its author wrote
-  // it. Refusing is the only honest answer — accepting it would report "full"
-  // compatibility for a bot whose during-purchase rules are ignored.
-  //
-  // The stack is listed as its own entry point so the message names what was
-  // actually skipped rather than blaming a block type.
-  if (useInterpreter) {
-    const during = findTopLevel(tree, 'during_purchase');
-    if (during !== null && statementBlock(during, 'DURING_PURCHASE_STACK') !== null) {
-      reasons.push(
-        'The strategy acts while a contract is open (during purchase), which this build does not run. ' +
-          'Contracts are held to expiry.'
-      );
-    }
-  }
-
   const unsupported = [...new Set(unsupportedTypes)];
   if (unsupported.length > 0) {
     const named = unsupported

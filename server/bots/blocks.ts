@@ -297,14 +297,13 @@ const META: Record<string, BlockMeta> = {
  * Blocks DBot exports that this build recognises but deliberately does not
  * execute, with the reason a customer needs.
  *
- * `check_sell` is the one that matters in practice: WickSentinel holds every
- * contract to expiry, so a strategy that sells early would settle differently
- * here. It is refused rather than quietly held to expiry.
+ * Early selling is *not* in this list: `check_sell`, `sell_price` and
+ * `sell_at_market` are executed, because the live contract now carries
+ * `bid_price` and `is_valid_to_sell`. What remains here is genuinely
+ * unimplemented — Multipliers/Accumulator configuration, interactive prompts,
+ * and containers with no behaviour.
  */
 const DELIBERATELY_UNEXECUTED: Record<string, string> = {
-  check_sell: 'Selling before expiry is not supported; contracts are held to expiry.',
-  sell_at_market: 'Selling at market is not supported; contracts are held to expiry.',
-  sell_price: 'Sell-price reads are only meaningful while selling early, which is not supported.',
   trade_definition_multiplier: 'Multiplier configuration is not modelled by this build.',
   trade_definition_accumulator: 'Accumulator configuration is not modelled by this build.',
   multiplier_take_profit: 'Multiplier take-profit is not modelled by this build.',
@@ -326,9 +325,9 @@ const DELIBERATELY_UNEXECUTED: Record<string, string> = {
  * `executeStack`. Treating them as "not implemented" would report every real
  * DBot export as broken.
  *
- * `during_purchase` is included for the same reason: the runtime finds it, and
- * an empty one costs nothing. The early-sale *logic* inside it (`check_sell`)
- * is what this build refuses, and that is reported separately.
+ * `during_purchase` is included because `runDuringPurchase` executes it on
+ * every contract update. An empty one costs nothing and is the standard export
+ * shape, so it must never be reported as unsupported.
  */
 const CONTAINER_BLOCKS: ReadonlySet<string> = new Set<string>([
   'trade',

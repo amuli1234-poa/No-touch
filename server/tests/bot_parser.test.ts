@@ -87,10 +87,10 @@ const DIGITS_DBOT = VALID_DBOT.replace('>callput<', '>digits<')
 test('parses a genuine DBot export into the normalized model', () => {
   const result = analyzeDbotXml(VALID_DBOT, { filename: 'rise-fall.xml' });
 
-  // This fixture holds a `check_sell`, which this build refuses to execute
-  // because it holds every contract to expiry. Reporting `partial` is the
-  // honest verdict; `full` would promise an early sale that never happens.
-  assert.equal(result.compatibility, 'partial');
+  // This fixture holds a `check_sell` inside `during_purchase`. Early selling is
+  // implemented, so the strategy is fully supported — but only because the
+  // block genuinely executes. If that regresses, this assertion is the alarm.
+  assert.equal(result.compatibility, 'full');
   assert.equal(result.errors.length, 0);
   assert.ok(result.bot);
 
@@ -113,7 +113,7 @@ test('parses a genuine DBot export into the normalized model', () => {
   assert.equal(bot.stake.duration, 5);
   assert.equal(bot.stake.durationUnit, 't');
 
-  assert.deepEqual(bot.unsupportedBlocks.map((b) => b.type), ['check_sell']);
+  assert.deepEqual(bot.unsupportedBlocks.map((b) => b.type), []);
   assert.equal(bot.unknownBlocks.length, 0);
 });
 
@@ -337,7 +337,7 @@ test('does not silently drop unsupported blocks', () => {
   );
   const bot = analyzeDbotXml(withSeveral).bot!;
   const types = bot.unsupportedBlocks.map((b) => b.type).sort();
-  assert.deepEqual(types, ['check_sell', 'notify_telegram', 'trade_definition_multiplier']);
+  assert.deepEqual(types, ['notify_telegram', 'trade_definition_multiplier']);
 });
 
 test('reports unknown block types separately from unsupported ones', () => {

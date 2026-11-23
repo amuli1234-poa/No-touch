@@ -355,6 +355,18 @@ export interface ContractRecord {
   soldFor: number | null;
   /** Deriv transaction id of the purchase, for reconciliation. */
   buyTransactionId: number | null;
+  /**
+   * Live sale terms, mirrored from `proposal_open_contract`.
+   *
+   * `bidPrice` is what Deriv would pay to close now and `isValidToSell` is
+   * Deriv's own verdict on whether a sale is possible. Early selling reads both,
+   * so they are persisted rather than dropped between updates.
+   *
+   * Optional because records written before these fields existed must keep
+   * loading; a missing value means "unknown", not "zero" and not "not sellable".
+   */
+  bidPrice?: number | null;
+  isValidToSell?: boolean | null;
   updatedAt: number;
 }
 

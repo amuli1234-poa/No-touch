@@ -47,17 +47,19 @@ import {
   resolveDigitPrediction,
   runAfterPurchase,
   runBeforePurchase,
+  runDuringPurchase,
   runInitialization,
   runTickAnalysis,
   saveVariables,
   UnsupportedBlockError,
   type ContractFacts,
+  type OpenContractFacts,
   type TickContext
 } from './interpreter.js';
 import { contractFacts, isSettled, totalProfitOf } from './contractFacts.js';
-import type { BlockTree } from './tree.js';
+import { findTopLevel, type BlockTree } from './tree.js';
 import { DIGIT_PREDICTION_TYPES } from '../execution/types.js';
-import type { DerivContractType } from '../execution/types.js';
+import type { ContractRecord, DerivContractType } from '../execution/types.js';
 import type { BotRunEvent, BotRunRecord, BotRunStatus } from './runTypes.js';
 import { emptyCounters } from './runTypes.js';
 import { loadBotTree } from './service.js';
@@ -478,6 +480,151 @@ function interpretTick(
 }
 
 /**
+ * Builds the interpreter's view of the contract a run currently holds.
+ *
+ * Every field is copied from the stored record, which is refreshed from
+ * `proposal_open_contract`. A field Deriv has not reported stays `null`, and the
+ * sell blocks treat `null` as "cannot decide" rather than as a false answer.
+ */
+function openContractFacts(contract: ContractRecord): OpenContractFacts {
+  return {
+    contractId: contract.id,
+    buyPrice: Number.isFinite(contract.buyPrice) ? contract.buyPrice : null,
+    bidPrice: contract.bidPrice ?? null,
+    currency: contract.currency,
+    isSold: contract.status === 'sold',
+    isValidToSell: contract.isValidToSell ?? null,
+    profit: contract.profit,
+    payout: contract.payout,
+    currentSpot: null,
+    isExpired: isSettled(contract)
+  };
+}
+
+/**
+ * Runs the strategy's `during_purchase` stack against the contract it holds,
+ * and sells early when the strategy asks to.
+ *
+ * DBot evaluates this stack on every open-contract update. The tick loop is this
+ * build's only clock, so it runs once per tick while a contract is open.
+ *
+ * Every outcome is recorded on the run as an event and in the audit log. A
+ * failed sale is reported, never counted as a success.
+ */
+async function duringPurchaseStep(
+  deps: BotRunDeps,
+  user: UserRecord,
+  run: BotRunRecord,
+  bot: ImportedBotRecord,
+  accessToken: string | null,
+  now: number
+): Promise<void> {
+  const { store } = deps;
+  if (run.lastContractId === null) return;
+
+  const contract = store.getContract(user.id, String(run.lastContractId));
+  // A settled contract belongs to after_purchase, not here. Checking this before
+  // running the stack is what closes the expiry race: a contract that expired
+  // between the last update and this tick can never reach a sell request.
+  if (!contract || isSettled(contract) || contract.status !== 'open') return;
+
+  let tree: BlockTree;
+  try {
+    tree = loadBotTree(bot).tree;
+  } catch {
+    return;
+  }
+  // A strategy without a during_purchase stack has nothing to evaluate, and
+  // must not pay for a contract read every tick.
+  if (findTopLevel(tree, 'during_purchase') === null) return;
+
+  const ctx: TickContext = {
+    ticks: deps.market.getTicks(run.symbol),
+    variables: loadVariables(run.variables),
+    totalProfit: totalProfitOf(store.listContracts(user.id), runIntentIds(store, user.id, run)),
+    lastContract: null,
+    openContract: openContractFacts(contract)
+  };
+
+  let result;
+  try {
+    result = runDuringPurchase(tree, ctx);
+  } catch (err) {
+    if (err instanceof UnsupportedBlockError) {
+      throw new BotRunError(
+        'strategy_not_runnable',
+        `The strategy's during-purchase blocks cannot be executed: ${err.blockType}.`,
+        422,
+        [err.message]
+      );
+    }
+    throw err;
+  }
+
+  // Variables set during the contract's life persist into after_purchase, which
+  // is how a strategy records what it saw while holding the contract.
+  run.variables = saveVariables(result.variables);
+  for (const note of result.notifications) {
+    pushEvent(run, { at: now, kind: 'notify', detail: note.message });
+  }
+
+  if (!result.sellRequest) return;
+  if (result.sellRequest.contractId !== contract.id) {
+    // The stack named a contract this run does not hold. Selling it would be a
+    // cross-run action, so it is refused rather than attempted.
+    pushEvent(run, {
+      at: now,
+      kind: 'skip',
+      detail: 'Sell skipped: the request named a contract this run does not hold.'
+    });
+    return;
+  }
+
+  // Re-read under the gateway's own lock. The contract may have expired between
+  // the check above and this call, and the gateway refuses a non-open contract.
+  try {
+    const sale = await deps.gateway.closeContract(user, contract.id, accessToken);
+    pushEvent(run, {
+      at: now,
+      kind: 'exit',
+      detail: `Sold early for ${sale.soldFor ?? 'an unreported amount'}.`,
+      contractId: Number(contract.id)
+    });
+    await deps.auditor.record({
+      userId: user.id,
+      action: 'bot.run.sell',
+      outcome: 'allowed',
+      accountId: run.accountId,
+      intentId: contract.intentId,
+      detail: { runId: run.runId, botId: run.botId, contractId: contract.id, soldFor: sale.soldFor }
+    });
+  } catch (err) {
+    // A rejection or a pending close is not a sale. The run keeps the contract
+    // and tries again on the next tick only if Deriv still reports it sellable.
+    const reason = err instanceof Error ? err.message : 'The sale could not be completed.';
+    pushEvent(run, {
+      at: now,
+      kind: 'skip',
+      detail: `Early sale failed: ${reason}`,
+      contractId: Number(contract.id)
+    });
+    await deps.auditor.record({
+      userId: user.id,
+      action: 'bot.run.sell',
+      outcome: 'denied',
+      accountId: run.accountId,
+      intentId: contract.intentId,
+      detail: {
+        runId: run.runId,
+        botId: run.botId,
+        contractId: contract.id,
+        reason: err instanceof ExecutionError ? err.code : 'sell_failed'
+      }
+    });
+  }
+}
+
+/**
  * Reacts to a settled contract by running the strategy's `after_purchase` stack.
  *
  * Returns `stop` when the program did not ask to trade again, `continue`
@@ -628,16 +775,31 @@ export async function tickBotRun(
     return failRun(deps, run, 'Demo execution was disabled while the run was active.', now());
   }
 
-  if (run.counters.entries >= run.maxEntries) {
-    const stopped = await stopBotRun(deps, user, runId, accessToken, 'max entries reached');
-    return { run: stopped, verdict: 'stopped', reason: 'max entries reached', contractId: null };
-  }
+  // The entry ceiling caps *entries*, not lifecycle handling. It is checked
+  // before a new entry below, so a run that has used its last entry can still
+  // settle and sell the contract it holds — stopping here would strand it open
+  // with no further ticks to manage it.
+  const entriesExhausted = run.counters.entries >= run.maxEntries;
 
   // DBot's loop is before_purchase → purchase → settle → after_purchase, and only
   // a `trade_again` in after_purchase goes round again. The tick loop is this
   // build's only clock, so a settled contract is reacted to exactly once, before
   // any new entry is considered.
   if (plan.engine === 'interpreter') {
+    // While a contract is open, the strategy gets its during-purchase phase
+    // first: that is where an early sale is decided. It runs on *every* tick,
+    // because Deriv's sellability and bid change as the contract ages — running
+    // it once would mean a contract that was not yet sellable could never be
+    // sold at all.
+    //
+    // A completed sale settles the contract, so execution falls through to the
+    // settlement step below and `after_purchase` sees the real sale proceeds.
+    // A refused sale leaves the contract open, and the open-contract guard
+    // further down prevents a second entry in the same tick.
+    if (run.lastContractId !== null) {
+      await duringPurchaseStep(deps, user, run, bot, accessToken, now());
+    }
+
     const settlement = settleAfterPurchase(deps, store, user, run, bot, now());
     if (settlement === 'stop') {
       const stopped = await stopBotRun(
@@ -648,6 +810,27 @@ export async function tickBotRun(
         'the strategy chose not to trade again'
       );
       return { run: stopped, verdict: 'stopped', reason: 'trade again declined', contractId: null };
+    }
+  }
+
+  if (entriesExhausted) {
+    const stopped = await stopBotRun(deps, user, runId, accessToken, 'max entries reached');
+    return { run: stopped, verdict: 'stopped', reason: 'max entries reached', contractId: null };
+  }
+
+  // DBot holds one contract at a time: `purchase` is only reached from
+  // before_purchase, which the engine does not enter again until the previous
+  // contract has settled. Without this guard a tick that arrives while a
+  // contract is still open would buy a second one, doubling the stake the
+  // customer authorised and leaving two positions to manage.
+  if (run.lastContractId !== null) {
+    const held = store.getContract(user.id, String(run.lastContractId));
+    if (held && !isSettled(held) && held.status === 'open') {
+      run.counters.ticks += 1;
+      run.lastEvaluationAt = now();
+      run.lastTickKey = tickKey ?? null;
+      await store.putBotRun(run);
+      return { run, verdict: 'skipped', reason: 'a contract is still open', contractId: run.lastContractId };
     }
   }
 

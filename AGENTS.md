@@ -967,8 +967,8 @@ Files:
   function of the supplied ticks. Only a narrow block set is executable; a
   strategy containing anything else is **refused at start** rather than
   partially executed. Insufficient history yields `insufficient`, never an
-  entry. `check_sell` is refused on purpose: this build holds contracts to
-  expiry, so honouring an early sale would change the strategy's outcome.
+  entry. Early selling (`check_sell`, `sell_price`, `sell_at_market` inside
+  `during_purchase`) is implemented, so a strategy that uses it is runnable.
 - `server/bots/runService.ts` — `startBotRun` / `tickBotRun` / `stopBotRun`.
 - `server/bots/routes.ts` — `POST /api/bots/:id/run`,
   `POST /api/bots/runs/:runId/tick`, `POST /api/bots/runs/:runId/stop`,
@@ -1133,8 +1133,8 @@ the compatibility report honest:
   block, add its handler — the catalogue follows.
 - **Refuse, don't fake.** A block with no handler throws `UnsupportedBlockError`;
   a strategy whose conditions cannot be honoured is reported `partial` with the
-  reason. `check_sell` is the live example: this build holds every contract to
-  expiry, so a bot that asks for an early sale is `partial`, not `full`.
+  reason. `trade_definition_multiplier` is the live example. Do not add a handler
+  that answers a block from a guess: a wrong answer trades the customer's money.
 
 Deriv-specific shapes that are easy to get wrong:
 
@@ -1165,29 +1165,43 @@ specification, so read them before changing the interpreter:
   see it.
 - `bot_execution_safety.test.ts` — every entry is attributable to the run,
   audited, risk-checked, non-duplicable, stoppable and tenant-isolated.
-- `bot_early_sell.test.ts` — pins the early-sell refusal to the real Deriv
-  behaviour so it cannot regress into a guess.
+- `bot_early_sell.test.ts` — pins the early-sell implementation to the real
+  Deriv behaviour so it cannot regress into a guess.
 
 Early selling, verified from `packages/bot-skeleton/src/services/tradeEngine/`:
 
 - `check_sell` → `Bot.isSellAvailable()` = `contractId && !isSold &&
   isSellAvailable && !isExpired`, where `isSellAvailable` comes from
   `is_valid_to_sell` on a live `proposal_open_contract`.
-- `sell_price` → `Bot.getSellPrice()` = `round(bid_price - buy_price)`.
-- `sell_at_market` → `Bot.sellAtMarket()` sends `{ sell: id, price: 0 }`.
-  `InvalidOfferings` means "too close to expiry" and is treated as *let it
-  expire*; any other error re-reads the contract to detect a race.
+- `sell_price` → `Bot.getSellPrice()` = `getRoundedNumber(bid - buy, currency)`,
+  i.e. `Number(diff.toFixed(digits))` where the digits come from the currency
+  (USD 2, BTC 8, XRP 6, IDK 0). It is **not** an integer round: see
+  `CURRENCY_FRACTIONAL_DIGITS` in `interpreter.ts`.
+- `sell_at_market` → `Bot.sellAtMarket()` sends `{ sell: id, price: 0 }`. A zero
+  price means "at market".
 
-`mapContract()` drops `is_valid_to_sell` and `bid_price`, so a strategy-driven
-sell cannot be implemented without first persisting those fields. Until then the
-three blocks stay in `DELIBERATELY_UNEXECUTED`.
+The three facts the blocks read (`is_valid_to_sell`, `bid_price`, `buy_price`)
+are mapped by `mapContract()` and persisted on `ContractRecord`. A field Deriv
+has not reported stays `null`, and the blocks treat `null` as "cannot decide",
+never as a false answer. Do not default a missing bid to `0` or a missing verdict
+to `false`: that would sell on data the engine never had.
 
-`during_purchase` is the trap to watch. It is a legitimate container, but the
-interpreter only runs `before_purchase` and `after_purchase`. An **empty**
-`during_purchase` is harmless (every export emits one); a **populated** one is
-logic that would never run, so `planStrategy` refuses it by name. Do not
-"simplify" that check away — it is the difference between a bot that trades
-differently from its author's intent and one that says so.
+`during_purchase` executes on every tick while a contract is open, in
+`duringPurchaseStep` in `runService.ts`. Two rules are load-bearing:
+
+- The sale goes through `gateway.closeContract`, never the broker directly. That
+  is where ownership, the account lock, idempotency and the audit row live.
+- A completed sale settles the contract, so the same tick continues into
+  `after_purchase` — which is DBot's loop. Do not return early after a sale.
+  A *refused* sale leaves the contract open and must not be followed by a new
+  entry in the same tick; the open-contract guard below handles that.
+
+The run holds one contract at a time, as DBot does. `tickBotRun` refuses a new
+entry while `lastContractId` is still open. The entry ceiling
+(`run.counters.entries >= run.maxEntries`) caps *entries*, so it is checked
+before a new entry but **after** the during-purchase and settlement steps —
+checking it first would strand an open contract with no further ticks to sell or
+settle it.
 
 ## Test harness notes
 

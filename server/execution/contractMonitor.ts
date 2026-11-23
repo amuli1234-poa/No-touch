@@ -115,6 +115,11 @@ export class ContractMonitor {
         exitSpot: update.exitSpot ?? contract.exitSpot,
         payout: update.payout ?? contract.payout,
         expiryTime: update.dateExpiry ?? contract.expiryTime,
+        // Sale terms change on every tick, so they are copied even when null:
+        // an explicit null from Deriv means "no bid right now", which must
+        // overwrite a stale price rather than leave it looking sellable.
+        ...(update.bidPrice === undefined ? {} : { bidPrice: update.bidPrice }),
+        ...(update.isValidToSell === undefined ? {} : { isValidToSell: update.isValidToSell }),
         updatedAt: this.now()
       };
       await this.store.putContract(refreshed);

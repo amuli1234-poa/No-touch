@@ -117,6 +117,17 @@ export interface ContractUpdate {
   dateSettlement: number | null;
   soldFor?: number | null;
   derivTransactionId?: number | null;
+  /**
+   * The price Deriv would pay to close this contract right now, and whether it
+   * would accept a sale at all.
+   *
+   * `sell_price` and `check_sell` are defined in terms of these two values, so
+   * they must survive the mapping from the Deriv payload. `undefined` means the
+   * update did not carry the field — never treat that as "not sellable", which
+   * would silently refuse every sale.
+   */
+  bidPrice?: number | null;
+  isValidToSell?: boolean | null;
 }
 
 export type BrokerErrorCode =

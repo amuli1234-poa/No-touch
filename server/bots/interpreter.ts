@@ -80,6 +80,34 @@ export interface ContractFacts {
   result: 'win' | 'loss' | null;
 }
 
+/**
+ * The live state of the contract the strategy currently holds, for
+ * `check_sell` and `sell_price`.
+ *
+ * Mirrors the official engine, where `Bot.isSellAvailable()` reads
+ * `is_valid_to_sell` off the streaming `proposal_open_contract` and
+ * `getSellPrice()` reads `bid_price - buy_price`. Values are copied from the
+ * stored record; nothing here is estimated.
+ *
+ * `null` fields mean "Deriv did not report this", which the blocks must treat as
+ * "cannot decide" rather than as a false/zero answer.
+ */
+export interface OpenContractFacts {
+  contractId: string;
+  buyPrice: number | null;
+  bidPrice: number | null;
+  /** The contract's currency, which decides how the sale price is rounded. */
+  currency?: string | null;
+  /** True once Deriv reports the contract as sold. */
+  isSold?: boolean;
+  /** Deriv's own verdict on whether the contract can be sold right now. */
+  isValidToSell: boolean | null;
+  profit: number | null;
+  payout: number | null;
+  currentSpot: number | null;
+  isExpired: boolean;
+}
+
 /** A notification a `notify` block asked to display. */
 export interface InterpreterNotification {
   /** DBot's `success` | `info` | `warn` | `error`. */
@@ -110,6 +138,12 @@ export interface TickContext {
   procedures?: Map<string, ProcedureDef>;
   /** Current call depth, so a value-position call still respects the limit. */
   callDepth?: number;
+  /**
+   * The contract currently held, for `during_purchase` blocks that sell early.
+   * Absent when no contract is open, which makes the sell blocks report
+   * "unavailable" instead of acting on a contract that is not there.
+   */
+  openContract?: OpenContractFacts | null;
 }
 
 /** Thrown when a strategy uses a block this interpreter cannot execute. */
@@ -140,6 +174,14 @@ export interface StackOutcome {
   timeouts: ScheduledTimeout[];
   /** Notifications raised during this execution, in order. */
   notifications: InterpreterNotification[];
+  /**
+   * Set when `sell_at_market` ran: the contract the strategy asked to close.
+   *
+   * The interpreter does not sell. It records the request and the run service
+   * performs the sale through the execution gateway, so the ownership, lock,
+   * idempotency and audit checks all still apply.
+   */
+  sellRequest: { contractId: string } | null;
 }
 
 /** Result of executing a lifecycle stack for one tick. */
@@ -192,6 +234,32 @@ const VALUE_BLOCKS: Record<string, (node: TreeNode, ctx: TickContext) => Value> 
     const low = toNumber(evaluateInput(node, 'LOW', ctx));
     const high = toNumber(evaluateInput(node, 'HIGH', ctx));
     return Math.min(Math.max(value, low), high);
+  },
+
+  /* ----------------------------- early selling -------------------------- */
+  // DBot: `Bot.getSellPrice()` = `round(bid_price - buy_price)`. Null when
+  // either term is missing, because a price computed from a missing bid would
+  // be a number the strategy never could have obtained.
+  sell_price: (_node, ctx) => {
+    const open = ctx.openContract ?? null;
+    if (!open || open.bidPrice === null || open.buyPrice === null) return null;
+    if (!Number.isFinite(open.bidPrice) || !Number.isFinite(open.buyPrice)) return null;
+    const digits = currencyDecimalPlaces(open.currency);
+    return Number((open.bidPrice - open.buyPrice).toFixed(digits));
+  },
+  // DBot: `Bot.isSellAvailable()` = `contractId && !isSold && isSellAvailable
+  // && !isExpired`. A missing verdict is *not* availability: refusing to sell is
+  // recoverable, selling a contract the platform never approved is not.
+  check_sell: (_node, ctx) => {
+    const open = ctx.openContract ?? null;
+    if (!open) return false;
+    // Official: `contractId && !isSold && isSellAvailable && !isExpired`.
+    // `isSellAvailable` is `!isSold && is_valid_to_sell`, and a sold contract is
+    // reported as such, so both conditions reduce to the two checks below.
+    if (open.isSold) return false;
+    if (open.isValidToSell !== true) return false;
+    if (open.isExpired) return false;
+    return open.contractId !== '';
   },
 
   /* -------------------------------- text -------------------------------- */
@@ -425,6 +493,27 @@ const STATEMENT_BLOCKS: Record<string, (node: TreeNode, sc: StatementContext) =>
   },
   trade_again: (_node, sc) => {
     sc.outcome.tradeAgain = true;
+  },
+  /**
+   * DBot: `Bot.sellAtMarket()` sends `{ sell: contractId, price: 0 }`, where a
+   * zero price means "at market".
+   *
+   * The sale itself is not performed here. The interpreter records the request
+   * and the run service routes it through the execution gateway, which owns the
+   * ownership check, the account lock, idempotency and the audit trail. A block
+   * that sold directly would bypass all of them.
+   */
+  sell_at_market: (_node, sc) => {
+    const open = sc.ctx.openContract ?? null;
+    if (!open) {
+      sc.outcome.notifications.push({
+        type: 'warn',
+        sound: 'silent',
+        message: 'Sell at market was skipped: no contract is open.'
+      });
+      return;
+    }
+    sc.outcome.sellRequest = { contractId: open.contractId };
   }
 };
 
@@ -616,6 +705,23 @@ export function resolveDigitPrediction(tree: BlockTree, ctx: TickContext): numbe
 }
 
 /**
+ * Runs the strategy's `during_purchase` stack for the contract currently held.
+ *
+ * DBot evaluates this stack on every `proposal_open_contract` update, which is
+ * how a strategy decides to sell early: the stack calls `check_sell`, compares
+ * `sell_price` against its own threshold, then calls `sell_at_market`.
+ *
+ * `ctx.openContract` must carry the live contract, because every sell decision
+ * is a read of it. With no contract open the stack is not run at all — DBot
+ * only enters the during-purchase phase once a contract exists.
+ */
+export function runDuringPurchase(tree: BlockTree, ctx: TickContext): ExecutionResult {
+  const during = findTopLevel(tree, 'during_purchase');
+  const stack = during ? inputBlock(during, 'DURING_PURCHASE_STACK') : null;
+  return executeStack(stack, ctx, tree);
+}
+
+/**
  * Runs the strategy's `after_purchase` stack against a settled contract.
  *
  * DBot runs this once per settled contract to inspect the result and decide
@@ -643,7 +749,8 @@ export function executeStack(
     purchase: null,
     tradeAgain: false,
     timeouts: [],
-    notifications: []
+    notifications: [],
+    sellRequest: null
   };
   const sc: StatementContext = {
     ctx,
@@ -838,6 +945,35 @@ function writeVariable(node: TreeNode, value: Value, ctx: TickContext): void {
   const key = variableKey(node);
   if (key === null) return;
   ctx.variables.set(key, value);
+}
+
+/**
+ * Fractional digits Deriv uses when it rounds a money amount, transcribed from
+ * the official client (`packages/shared/src/utils/currency/currency.ts`).
+ *
+ * `getSellPrice()` is `getRoundedNumber(bid - buy, currency)`, i.e.
+ * `Number(diff.toFixed(digits))`. Rounding to an integer would be a different
+ * number for every non-zero decimal, and the strategy compares against its own
+ * threshold, so the digits matter.
+ *
+ * Only currencies with a non-default value are listed: everything else is a fiat
+ * currency with 2 digits, which is the official fallback in `calcDecimalPlaces`.
+ */
+const CURRENCY_FRACTIONAL_DIGITS: Record<string, number> = {
+  BTC: 8,
+  BCH: 8,
+  ETH: 8,
+  ETC: 8,
+  LTC: 8,
+  XRP: 6,
+  IDK: 0
+};
+
+/** Decimal places for a currency, matching the official `getDecimalPlaces`. */
+function currencyDecimalPlaces(currency: string | null | undefined): number {
+  if (!currency) return 2;
+  const digits = CURRENCY_FRACTIONAL_DIGITS[currency];
+  return typeof digits === 'number' ? digits : 2;
 }
 
 const MATH_CONSTANTS: Record<string, number> = {
@@ -1479,7 +1615,7 @@ function callProcedureForValue(node: TreeNode, ctx: TickContext): Value {
   }
   const sc: StatementContext = {
     ctx,
-    outcome: { purchase: null, tradeAgain: false, timeouts: [], notifications: [] },
+    outcome: { purchase: null, tradeAgain: false, timeouts: [], notifications: [], sellRequest: null },
     flow: 'normal',
     returnValue: null,
     procedures: ctx.procedures ?? new Map(),
