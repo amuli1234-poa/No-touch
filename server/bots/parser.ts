@@ -17,7 +17,7 @@
 
 import { parseXml, childElements, textContent, XmlError } from './xml.js';
 import type { XmlElement } from './xml.js';
-import { blockSpec, isKnownBlock, DBOT_MAIN_BLOCKS } from './blocks.js';
+import { blockSpec, isKnownBlock, EXECUTABLE_CONTRACT_TYPES, DBOT_MAIN_BLOCKS } from './blocks.js';
 import type {
   BotAnalysis,
   BotCondition,
@@ -361,8 +361,10 @@ function classify(
   }
 
   const unsupportedCount = bot.unsupportedBlocks.reduce((n, b) => n + b.count, 0);
+  // The placeable set comes from the execution layer's own contract catalogue,
+  // so a family gaining an adapter does not need this list edited too.
   const contractPlaceable = bot.contract.contractTypes.every((t) =>
-    ['CALL', 'PUT', 'MULTUP', 'MULTDOWN'].includes(t)
+    EXECUTABLE_CONTRACT_TYPES.includes(t)
   );
 
   if (unsupportedCount > 0) {

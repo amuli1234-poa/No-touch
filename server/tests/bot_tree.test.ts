@@ -156,6 +156,44 @@ test('preserves <mutation> attributes', () => {
   assert.equal(tree.blocks[0].mutation?.else, '1');
 });
 
+test('preserves <mutation> child elements, which carry procedure parameters', () => {
+  // Blockly writes a procedure's parameters as <arg> children of <mutation>.
+  // Dropping them deleted the parameters on every save, so a procedure lost its
+  // signature and any call to it failed on re-import.
+  const xml = `<xml is_dbot="true">
+  <block type="procedures_defnoreturn">
+    <mutation><arg name="amount" varid="v2"></arg><arg name="threshold"></arg></mutation>
+    <field name="NAME">doTrade</field>
+  </block>
+</xml>`;
+  const tree = xmlToTree(xml);
+  assert.deepEqual(tree.blocks[0].mutationChildren, [
+    { name: 'arg', attrs: { name: 'amount', varid: 'v2' } },
+    { name: 'arg', attrs: { name: 'threshold' } }
+  ]);
+
+  const out = treeToXml(tree);
+  assert.match(out, /<arg name="amount" varid="v2"><\/arg>/);
+  assert.match(out, /<arg name="threshold"><\/arg>/);
+  // Order is the call-site argument order, so it must survive verbatim.
+  assert.ok(out.indexOf('amount') < out.indexOf('threshold'));
+});
+
+test('round-trips a mutation that has both attributes and children', () => {
+  const xml = `<xml is_dbot="true">
+  <block type="procedures_callnoreturn">
+    <mutation name="doTrade"><arg name="amount"></arg></mutation>
+  </block>
+</xml>`;
+  const tree = xmlToTree(xml);
+  assert.equal(tree.blocks[0].mutation?.name, 'doTrade');
+  assert.deepEqual(tree.blocks[0].mutationChildren, [{ name: 'arg', attrs: { name: 'amount' } }]);
+
+  const again = xmlToTree(treeToXml(tree));
+  assert.equal(again.blocks[0].mutation?.name, 'doTrade');
+  assert.deepEqual(again.blocks[0].mutationChildren, [{ name: 'arg', attrs: { name: 'amount' } }]);
+});
+
 test('preserves declared variables', () => {
   const xml = `<xml is_dbot="true">
   <variables>
@@ -232,7 +270,7 @@ test('marks known blocks as known and unknown blocks as unknown', () => {
 
 test('collects placeholders for recognized DBot blocks with unsupported semantics', () => {
   const tree = xmlToTree(`<xml is_dbot="true">
-    <block type="read_details">
+    <block type="notify_telegram">
       <field name="DETAIL">entry_spot</field>
       <value name="CONTRACT_ID"><shadow type="future_number"><field name="NUM">1</field></shadow></value>
     </block>
@@ -243,7 +281,7 @@ test('collects placeholders for recognized DBot blocks with unsupported semantic
   const placeholders = collectUnknownBlocks(tree);
   assert.deepEqual(placeholders, [
     {
-      type: 'read_details',
+      type: 'notify_telegram',
       shape: 'stack',
       fields: [{ name: 'DETAIL' }],
       inputs: [{ name: 'CONTRACT_ID', kind: 'value' }]

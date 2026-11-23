@@ -1,20 +1,30 @@
 /**
- * Deriv DBot block registry.
+ * Deriv DBot block catalogue.
  *
- * Every entry below is taken from the block definitions in the DBot source
- * (`deriv-com/deriv-app`, `packages/bot-skeleton/src/scratch/blocks`). Block
- * types are the literal `Blockly.Blocks.<name>` identifiers that DBot writes
- * into an exported XML file; field names are the literal `name:` values on the
- * block's `field_*` inputs.
+ * Every block type below is taken from the official DBot source
+ * (`deriv-com/deriv-app`, `packages/bot-skeleton/src/scratch/blocks`), which
+ * registers 133 `Blockly.Blocks.<name>` types. Those names are the literal
+ * identifiers DBot writes into an exported XML file.
  *
- * Nothing here is guessed. A block that is not in this registry is reported as
- * unknown rather than being assumed to behave in some particular way.
+ * ## Why capability is derived, not declared
  *
- * Scope note: this phase interprets a deliberately small subset — trade
- * definition, purchase, the tick-analysis entry checks and the built-in
- * indicators. Everything else that DBot can export is listed as recognised but
- * unsupported, so the user is told precisely what could not be interpreted.
+ * This module used to carry a hand-maintained `SUPPORTED` list alongside the
+ * interpreter's own block tables. The two drifted: the interpreter grew loops,
+ * text, list, notify and contract-detail semantics that the list never learned
+ * about, so a perfectly executable bot was reported as "34 blocks not
+ * recognised". A customer-facing compatibility verdict that disagrees with what
+ * the engine can actually run is worse than no verdict at all.
+ *
+ * Capability is therefore read from the interpreter itself — the single
+ * authority on what executes. This file only supplies the *metadata* the
+ * interpreter cannot know: display labels, which lifecycle slots a block fills,
+ * and why a block we recognise is deliberately not executed.
+ *
+ * A block is `executable` only when `interpreter.ts` has a runtime handler for
+ * it. Parsing or rendering a block is never treated as evidence of execution.
  */
+
+import { isInterpreted } from './interpreter.js';
 
 /** How a block participates in the strategy, for grouping in the preview. */
 export type BlockRole =
@@ -29,6 +39,7 @@ export type BlockRole =
   | 'logic'
   | 'flow'
   | 'variable'
+  | 'utility'
   | 'unsupported';
 
 export interface BlockSpec {
@@ -48,18 +59,24 @@ export interface BlockSpec {
 const DBOT_PREFIX = 'https://deriv.com/dbot';
 
 /**
- * Supported subset. These are the blocks whose semantics No-touch can state
- * with confidence: the trade definition, the purchase action, the direction
- * checks, and the five built-in indicator statements.
+ * Metadata for blocks the engine executes, or recognises deliberately.
+ *
+ * Presence here is *not* what makes a block executable — `interpreter.ts` is.
+ * These entries only add labels, roles and lifecycle slots on top of a runtime
+ * handler that already exists.
  */
-const SUPPORTED: Record<string, BlockSpec> = {
+interface BlockMeta {
+  role: BlockRole;
+  label: string;
+  fields?: readonly string[];
+  statements?: readonly string[];
+}
+
+const META: Record<string, BlockMeta> = {
   /* ------------------------- trade definition ------------------------- */
-  // Legacy Deriv DBot export format. New exports split these fields across
-  // trade_definition_* blocks; older exports keep them on one `trade` block.
   trade: {
-    supported: true,
     role: 'trade-definition',
-    label: 'Trade definition',
+    label: 'Trade definition (legacy)',
     fields: [
       'MARKET_LIST',
       'SUBMARKET_LIST',
@@ -74,288 +91,327 @@ const SUPPORTED: Record<string, BlockSpec> = {
     statements: ['INITIALIZATION', 'SUBMARKET']
   },
   tradeOptions: {
-    supported: true,
     role: 'stake',
     label: 'Trade options (stake, duration, currency)',
     fields: ['DURATIONTYPE_LIST', 'CURRENCY_LIST']
   },
-  last_digit: {
-    supported: true,
-    role: 'entry',
-    label: 'Last tick digit'
-  },
   trade_definition: {
-    supported: true,
     role: 'trade-definition',
     label: 'Trade definition',
     fields: ['MARKET_LIST', 'SUBMARKET_LIST', 'SYMBOL_LIST'],
     statements: ['TRADE_OPTIONS', 'SUBMARKET', 'INITIALIZATION']
   },
   trade_definition_market: {
-    supported: true,
     role: 'market',
     label: 'Market selection',
     fields: ['MARKET_LIST', 'SUBMARKET_LIST', 'SYMBOL_LIST']
   },
   trade_definition_tradetype: {
-    supported: true,
     role: 'contract',
     label: 'Trade type',
     fields: ['TRADETYPECAT_LIST', 'TRADETYPE_LIST']
   },
   trade_definition_contracttype: {
-    supported: true,
     role: 'contract',
     label: 'Contract type',
     fields: ['TYPE_LIST']
   },
   trade_definition_candleinterval: {
-    supported: true,
     role: 'market',
     label: 'Candle interval',
     fields: ['CANDLEINTERVAL_LIST']
   },
   trade_definition_tradeoptions: {
-    supported: true,
     role: 'stake',
     label: 'Trade options (stake, duration, currency)',
-    fields: ['DURATIONTYPE_LIST', 'CURRENCY_LIST', 'AMOUNT_LIMITS'],
-    statements: [],
-    // DURATION and AMOUNT arrive as nested value blocks, read by the parser.
+    fields: ['DURATIONTYPE_LIST', 'CURRENCY_LIST', 'AMOUNT_LIMITS']
+  },
+  trade_definition_tradeoptions_payout: {
+    role: 'stake',
+    label: 'Trade options (payout)',
+    fields: ['DURATIONTYPE_LIST', 'CURRENCY_LIST']
   },
   trade_definition_restartbuysell: {
-    supported: true,
     role: 'trade-definition',
     label: 'Restart on buy/sell',
     fields: ['TIME_MACHINE_ENABLED']
   },
   trade_definition_restartonerror: {
-    supported: true,
     role: 'trade-definition',
     label: 'Restart on error',
     fields: ['RESTARTONERROR']
   },
-
-  /* ---------------------------- purchase ------------------------------ */
-  before_purchase: {
-    supported: true,
-    role: 'entry',
-    label: 'Before purchase',
-    statements: ['BEFOREPURCHASE_STACK']
+  trade_definition_multiplier: {
+    role: 'contract',
+    label: 'Multiplier configuration',
+    fields: ['MULTIPLIER_LIST']
   },
-  purchase: {
-    supported: true,
-    role: 'purchase',
-    label: 'Purchase contract',
-    fields: ['PURCHASE_LIST']
-  },
-  tick_analysis: {
-    supported: true,
-    role: 'entry',
-    label: 'Tick analysis',
-    statements: ['TICKANALYSIS_STACK']
-  },
-  check_direction: {
-    supported: true,
-    role: 'entry',
-    label: 'Market direction is Rise/Fall',
-    fields: ['CHECK_DIRECTION']
-  },
-  tick: {
-    supported: true,
-    role: 'entry',
-    label: 'Last tick'
+  trade_definition_accumulator: {
+    role: 'contract',
+    label: 'Accumulator configuration',
+    fields: ['GROWTHRATE_LIST']
   },
 
-  /* ------------------------------ exit -------------------------------- */
-  during_purchase: {
-    supported: true,
-    role: 'exit',
-    label: 'During purchase',
-    statements: ['DURING_PURCHASE_STACK']
-  },
-  check_sell: {
-    supported: true,
-    role: 'exit',
-    label: 'Sell condition'
-  },
-  after_purchase: {
-    supported: true,
-    role: 'exit',
-    label: 'After purchase',
-    statements: ['AFTERPURCHASE_STACK']
-  },
-  trade_again: {
-    supported: true,
-    role: 'exit',
-    label: 'Trade again'
-  },
+  /* ----------------------------- lifecycle ---------------------------- */
+  before_purchase: { role: 'entry', label: 'Before purchase', statements: ['BEFOREPURCHASE_STACK'] },
+  purchase: { role: 'purchase', label: 'Purchase contract', fields: ['PURCHASE_LIST'] },
+  tick_analysis: { role: 'entry', label: 'Tick analysis', statements: ['TICKANALYSIS_STACK'] },
+  during_purchase: { role: 'exit', label: 'During purchase', statements: ['DURING_PURCHASE_STACK'] },
+  check_sell: { role: 'exit', label: 'Sell condition' },
+  after_purchase: { role: 'exit', label: 'After purchase', statements: ['AFTERPURCHASE_STACK'] },
+  trade_again: { role: 'exit', label: 'Trade again' },
+
+  /* ------------------------------ market ------------------------------ */
+  tick: { role: 'entry', label: 'Last tick' },
+  tick_string: { role: 'entry', label: 'Last tick (formatted)' },
+  ticks: { role: 'entry', label: 'Tick list' },
+  ticks_string: { role: 'entry', label: 'Tick list (formatted)' },
+  last_digit: { role: 'entry', label: 'Last tick digit' },
+  lastDigitList: { role: 'entry', label: 'Last-digit list' },
+  check_direction: { role: 'entry', label: 'Market direction', fields: ['CHECK_DIRECTION'] },
+  ohlc: { role: 'market', label: 'Candle data' },
+  ohlc_values: { role: 'market', label: 'Candle values' },
+  get_ohlc: { role: 'market', label: 'Get candle' },
+  read_ohlc: { role: 'market', label: 'Read candle' },
+  read_ohlc_obj: { role: 'market', label: 'Read candle object' },
+  is_candle_black: { role: 'market', label: 'Candle is black' },
+  ohlc_values_in_list: { role: 'market', label: 'Candle values in list' },
+
+  /* ---------------------------- contract ------------------------------ */
+  contract_check_result: { role: 'exit', label: 'Contract result', fields: ['CHECK_RESULT'] },
+  read_details: { role: 'exit', label: 'Contract details' },
+  total_profit: { role: 'exit', label: 'Total profit' },
+  total_profit_string: { role: 'exit', label: 'Total profit (formatted)' },
+  total_runs: { role: 'exit', label: 'Total runs' },
+  balance: { role: 'exit', label: 'Account balance' },
+  payout: { role: 'exit', label: 'Payout' },
+  ask_price: { role: 'exit', label: 'Ask price' },
+  sell_price: { role: 'exit', label: 'Sell price' },
+  sell_at_market: { role: 'exit', label: 'Sell at market' },
+  barrier_offset: { role: 'contract', label: 'Barrier offset' },
+  epoch: { role: 'market', label: 'Current epoch' },
+  todatetime: { role: 'utility', label: 'To date/time' },
+  totimestamp: { role: 'utility', label: 'To timestamp' },
+  tick_delay: { role: 'utility', label: 'Tick delay' },
 
   /* ---------------------------- indicators ---------------------------- */
-  sma_statement: {
-    supported: true,
-    role: 'indicator',
-    label: 'Simple moving average',
-    fields: ['VARIABLE'],
-    statements: ['STATEMENT']
-  },
-  ema_statement: {
-    supported: true,
-    role: 'indicator',
-    label: 'Exponential moving average',
-    fields: ['VARIABLE'],
-    statements: ['STATEMENT']
-  },
-  rsi_statement: {
-    supported: true,
-    role: 'indicator',
-    label: 'Relative strength index',
-    fields: ['VARIABLE'],
-    statements: ['STATEMENT']
-  },
-  bb_statement: {
-    supported: true,
-    role: 'indicator',
-    label: 'Bollinger bands',
-    fields: ['VARIABLE', 'BBRESULT_LIST'],
-    statements: ['STATEMENT']
-  },
-  macda_statement: {
-    supported: true,
-    role: 'indicator',
-    label: 'MACD',
-    fields: ['VARIABLE', 'MACDFIELDS_LIST'],
-    statements: ['STATEMENT']
-  },
+  sma_statement: { role: 'indicator', label: 'Simple moving average', fields: ['VARIABLE'], statements: ['STATEMENT'] },
+  smaa_statement: { role: 'indicator', label: 'Simple moving average (array)', fields: ['VARIABLE'] },
+  ema_statement: { role: 'indicator', label: 'Exponential moving average', fields: ['VARIABLE'], statements: ['STATEMENT'] },
+  emaa_statement: { role: 'indicator', label: 'Exponential moving average (array)', fields: ['VARIABLE'] },
+  rsi_statement: { role: 'indicator', label: 'Relative strength index', fields: ['VARIABLE'], statements: ['STATEMENT'] },
+  rsia_statement: { role: 'indicator', label: 'RSI (array)', fields: ['VARIABLE'] },
+  bb_statement: { role: 'indicator', label: 'Bollinger bands', fields: ['VARIABLE', 'BBRESULT_LIST'], statements: ['STATEMENT'] },
+  bba_statement: { role: 'indicator', label: 'Bollinger bands (array)', fields: ['VARIABLE', 'BBRESULT_LIST'] },
+  macda_statement: { role: 'indicator', label: 'MACD', fields: ['VARIABLE', 'MACDFIELDS_LIST'], statements: ['STATEMENT'] },
+  period: { role: 'indicator', label: 'Indicator period' },
+  input_list: { role: 'indicator', label: 'Indicator input list' },
+  fast_ema_period: { role: 'indicator', label: 'Fast EMA period' },
+  slow_ema_period: { role: 'indicator', label: 'Slow EMA period' },
+  signal_ema_period: { role: 'indicator', label: 'Signal EMA period' },
+  std_dev_multiplier_up: { role: 'indicator', label: 'Std-dev multiplier up' },
+  std_dev_multiplier_down: { role: 'indicator', label: 'Std-dev multiplier down' },
 
-  /* ----------------------- generic Blockly logic ---------------------- */
-  // These are stock Blockly blocks DBot ships with. We understand their shape
-  // well enough to render them, but they are neutral structure, not trading
-  // logic, so they never make a bot executable on their own.
-  controls_if: {
-    supported: true,
-    role: 'logic',
-    label: 'If / else',
-    statements: ['DO0', 'ELSE']
-  },
-  logic_compare: {
-    supported: true,
-    role: 'logic',
-    label: 'Comparison'
-  },
-  logic_operation: {
-    supported: true,
-    role: 'logic',
-    label: 'And / or'
-  },
-  logic_negate: {
-    supported: true,
-    role: 'logic',
-    label: 'Not'
-  },
-  logic_boolean: {
-    supported: true,
-    role: 'logic',
-    label: 'True / false'
-  },
-  math_number: {
-    supported: true,
-    role: 'logic',
-    label: 'Number'
-  },
-  math_number_positive: {
-    supported: true,
-    role: 'logic',
-    label: 'Positive number'
-  },
-  math_arithmetic: {
-    supported: true,
-    role: 'logic',
-    label: 'Arithmetic'
-  },
-  variables_get: {
-    supported: true,
-    role: 'variable',
-    label: 'Read variable'
-  },
-  variables_set: {
-    supported: true,
-    role: 'variable',
-    label: 'Set variable'
-  }
+  /* ------------------------------ logic ------------------------------- */
+  controls_if: { role: 'logic', label: 'If / else', statements: ['DO0', 'ELSE'] },
+  logic_compare: { role: 'logic', label: 'Comparison' },
+  logic_operation: { role: 'logic', label: 'And / or' },
+  logic_negate: { role: 'logic', label: 'Not' },
+  logic_boolean: { role: 'logic', label: 'True / false' },
+  logic_null: { role: 'logic', label: 'Null' },
+  logic_ternary: { role: 'logic', label: 'Conditional value' },
+
+  /* ------------------------------- math ------------------------------- */
+  math_number: { role: 'logic', label: 'Number' },
+  math_number_positive: { role: 'logic', label: 'Positive number' },
+  math_arithmetic: { role: 'logic', label: 'Arithmetic' },
+  math_single: { role: 'logic', label: 'Math function' },
+  math_trig: { role: 'logic', label: 'Trigonometry' },
+  math_round: { role: 'logic', label: 'Round' },
+  math_modulo: { role: 'logic', label: 'Modulo' },
+  math_constrain: { role: 'logic', label: 'Constrain' },
+  math_constant: { role: 'logic', label: 'Math constant' },
+  math_change: { role: 'variable', label: 'Change variable' },
+  math_number_property: { role: 'logic', label: 'Number property' },
+  math_on_list: { role: 'logic', label: 'Math on list' },
+  math_random_int: { role: 'logic', label: 'Random integer' },
+  math_random_float: { role: 'logic', label: 'Random fraction' },
+
+  /* ------------------------------- text ------------------------------- */
+  text: { role: 'logic', label: 'Text' },
+  text_join: { role: 'variable', label: 'Join text' },
+  text_length: { role: 'logic', label: 'Text length' },
+  text_isEmpty: { role: 'logic', label: 'Text is empty' },
+  text_changeCase: { role: 'logic', label: 'Change case' },
+  text_trim: { role: 'logic', label: 'Trim text' },
+  text_charAt: { role: 'logic', label: 'Letter at' },
+  text_indexOf: { role: 'logic', label: 'Text index of' },
+  text_getSubstring: { role: 'logic', label: 'Text substring' },
+  text_append: { role: 'variable', label: 'Append text' },
+  text_print: { role: 'exit', label: 'Print to journal' },
+  text_prompt_ext: { role: 'utility', label: 'Prompt' },
+
+  /* ------------------------------- lists ------------------------------ */
+  lists_create_with: { role: 'variable', label: 'Create list', fields: ['VARIABLE'] },
+  lists_repeat: { role: 'logic', label: 'Repeat item into list' },
+  lists_length: { role: 'logic', label: 'List length' },
+  lists_isEmpty: { role: 'logic', label: 'List is empty' },
+  lists_indexOf: { role: 'logic', label: 'List index of' },
+  lists_getIndex: { role: 'logic', label: 'List item' },
+  lists_getSublist: { role: 'logic', label: 'List sublist' },
+  lists_setIndex: { role: 'variable', label: 'Set list item' },
+  lists_sort: { role: 'logic', label: 'Sort list' },
+  lists_split: { role: 'logic', label: 'Split text into list' },
+  lists_statement: { role: 'variable', label: 'List statement' },
+  stat: { role: 'indicator', label: 'Statistic' },
+  stat_list: { role: 'indicator', label: 'Statistic on list' },
+
+  /* ------------------------- variables / flow ------------------------- */
+  variables_get: { role: 'variable', label: 'Read variable' },
+  variables_set: { role: 'variable', label: 'Set variable' },
+
+  /* -------------------------- loops & procs --------------------------- */
+  controls_repeat: { role: 'flow', label: 'Repeat N times', statements: ['DO'] },
+  controls_repeat_ext: { role: 'flow', label: 'Repeat N times', statements: ['DO'] },
+  controls_whileUntil: { role: 'flow', label: 'Repeat while/until', statements: ['DO'] },
+  controls_for: { role: 'flow', label: 'Count with variable', fields: ['VAR'], statements: ['DO'] },
+  controls_forEach: { role: 'flow', label: 'For each item', fields: ['VAR'], statements: ['DO'] },
+  controls_flow_statements: { role: 'flow', label: 'Break / continue', fields: ['FLOW'] },
+  procedures_defnoreturn: { role: 'flow', label: 'Define procedure', fields: ['NAME'], statements: ['STACK'] },
+  procedures_defreturn: { role: 'flow', label: 'Define procedure with return', fields: ['NAME'], statements: ['STACK'] },
+  procedures_callnoreturn: { role: 'flow', label: 'Call procedure', fields: ['NAME'] },
+  procedures_callreturn: { role: 'flow', label: 'Call procedure with return', fields: ['NAME'] },
+  procedures_ifreturn: { role: 'flow', label: 'Return from procedure' },
+
+  /* ------------------------------- misc ------------------------------- */
+  notify: { role: 'exit', label: 'Notify', fields: ['NOTIFICATION_TYPE', 'NOTIFICATION_SOUND'] },
+  notify_telegram: { role: 'exit', label: 'Notify via Telegram' },
+  timeout: { role: 'flow', label: 'Wait', statements: ['TIMEOUTSTACK'] },
+  console: { role: 'exit', label: 'Console output' },
+  loader: { role: 'unsupported', label: 'Loader' },
+  block_holder: { role: 'unsupported', label: 'Block holder' },
+  useless_block: { role: 'unsupported', label: 'Useless block' }
 };
 
 /**
- * DBot blocks that exist and are recognised, but whose behaviour No-touch does
- * not currently model. They are reported individually rather than dropped.
+ * Blocks DBot exports that this build recognises but deliberately does not
+ * execute, with the reason a customer needs.
+ *
+ * `check_sell` is the one that matters in practice: WickSentinel holds every
+ * contract to expiry, so a strategy that sells early would settle differently
+ * here. It is refused rather than quietly held to expiry.
  */
-const RECOGNISED_UNSUPPORTED: Record<string, string> = {
-  trade_definition_multiplier: 'Multiplier contract configuration is not modelled.',
-  trade_definition_accumulator: 'Accumulator configuration is not modelled.',
-  multiplier_take_profit: 'Multiplier take-profit is not modelled.',
-  multiplier_stop_loss: 'Multiplier stop-loss is not modelled.',
-  accumulator_take_profit: 'Accumulator take-profit is not modelled.',
-  check_result: 'Result branching is not modelled.',
-  read_details: 'Contract detail reads are not modelled.',
-  sell_at_market: 'Selling at market is not modelled.',
-  sell_price: 'Sell-price reads are not modelled.',
-  ask_price: 'Ask-price reads are not modelled.',
-  payout: 'Payout reads are not modelled.',
-  get_ohlc: 'OHLC accessors are not modelled.',
-  ohlc: 'OHLC accessors are not modelled.',
-  ohlc_values: 'OHLC accessors are not modelled.',
-  readOhlc: 'OHLC accessors are not modelled.',
-  lastDigitList: 'Last-digit analysis is not modelled.',
-  stat: 'Statistical blocks are not modelled.',
-  stat_list: 'Statistical blocks are not modelled.',
-  ticks: 'Tick-history blocks are not modelled.',
-  tick_string: 'Tick-string blocks are not modelled.',
-  check_direction_string: 'String direction checks are not modelled.',
-  bba_statement: 'Bollinger-band arrays are not modelled.',
-  rsia_statement: 'RSI arrays are not modelled.',
-  smaa_statement: 'SMA arrays are not modelled.',
-  emaa_statement: 'EMA arrays are not modelled.',
-  macda_statement_array: 'MACD arrays are not modelled.',
-  procedures_defnoreturn: 'Custom procedures are not modelled.',
-  procedures_defreturn: 'Custom procedures are not modelled.',
-  procedures_callnoreturn: 'Custom procedures are not modelled.',
-  procedures_callreturn: 'Custom procedures are not modelled.',
-  controls_repeat_ext: 'Loops are not modelled.',
-  controls_whileUntil: 'Loops are not modelled.',
-  controls_for: 'Loops are not modelled.',
-  controls_flow_statements: 'Loop flow control is not modelled.',
-  text_print: 'Journal output is not modelled.',
-  text_join: 'Text manipulation is not modelled.',
-  text_prompt_ext: 'Prompts are not modelled.',
-  loader: 'Loader blocks are not modelled.',
-  block_holder: 'Block holders are not modelled.'
+const DELIBERATELY_UNEXECUTED: Record<string, string> = {
+  check_sell: 'Selling before expiry is not supported; contracts are held to expiry.',
+  sell_at_market: 'Selling at market is not supported; contracts are held to expiry.',
+  sell_price: 'Sell-price reads are only meaningful while selling early, which is not supported.',
+  trade_definition_multiplier: 'Multiplier configuration is not modelled by this build.',
+  trade_definition_accumulator: 'Accumulator configuration is not modelled by this build.',
+  multiplier_take_profit: 'Multiplier take-profit is not modelled by this build.',
+  multiplier_stop_loss: 'Multiplier stop-loss is not modelled by this build.',
+  accumulator_take_profit: 'Accumulator take-profit is not modelled by this build.',
+  text_prompt_ext: 'Interactive prompts cannot be answered by an automated run.',
+  notify_telegram: 'Telegram notifications need credentials this build does not manage.',
+  loader: 'Loader blocks carry no strategy logic.',
+  block_holder: 'Block holders carry no strategy logic.',
+  useless_block: 'Placeholder block with no behaviour.'
 };
 
-/** Returns the spec for a block type, or null when we have never seen it. */
+/**
+ * Lifecycle and configuration containers the runtime addresses by name.
+ *
+ * These never appear in a statement stream. `runBeforePurchase`,
+ * `runAfterPurchase`, `runTickAnalysis` and `planStrategy` locate them by block
+ * type and read their contents, so they are genuinely honoured — just not via
+ * `executeStack`. Treating them as "not implemented" would report every real
+ * DBot export as broken.
+ *
+ * `during_purchase` is included for the same reason: the runtime finds it, and
+ * an empty one costs nothing. The early-sale *logic* inside it (`check_sell`)
+ * is what this build refuses, and that is reported separately.
+ */
+const CONTAINER_BLOCKS: ReadonlySet<string> = new Set<string>([
+  'trade',
+  'tradeOptions',
+  'trade_definition',
+  'trade_definition_market',
+  'trade_definition_tradetype',
+  'trade_definition_contracttype',
+  'trade_definition_candleinterval',
+  'trade_definition_tradeoptions',
+  'trade_definition_tradeoptions_payout',
+  'trade_definition_restartbuysell',
+  'trade_definition_restartonerror',
+  'before_purchase',
+  'after_purchase',
+  'tick_analysis',
+  'during_purchase'
+]);
+
+/** True when the runtime consumes this block by name rather than executing it. */
+export function isContainerBlock(type: string): boolean {
+  return CONTAINER_BLOCKS.has(type);
+}
+
+/**
+ * True when this build refuses the block on purpose and can say why.
+ *
+ * Distinct from "not implemented": a deliberately unexecuted block has a known
+ * semantics this build cannot honour, so it is reported as unsupported with a
+ * reason rather than as an unknown block.
+ */
+export function isDeliberatelyUnexecuted(type: string): boolean {
+  return type in DELIBERATELY_UNEXECUTED;
+}
+
+/** Returns the metadata for a block type, synthesising a label when absent. */
+function metaFor(type: string): BlockMeta {
+  return META[type] ?? { role: 'logic', label: type };
+}
+
+/**
+ * The spec for a block type, or null when the type is not a DBot block.
+ *
+ * `supported` means "the interpreter has a runtime handler for this block". It
+ * is read from `interpreter.ts`, so it cannot drift from what actually runs.
+ */
 export function blockSpec(type: string): BlockSpec | null {
-  const supported = SUPPORTED[type];
-  if (supported) return supported;
-  const reason = RECOGNISED_UNSUPPORTED[type];
-  if (reason) {
-    return { supported: false, role: 'unsupported', label: type, reason };
+  const reason = DELIBERATELY_UNEXECUTED[type];
+  if (reason !== undefined) {
+    return { supported: false, ...metaFor(type), role: 'unsupported', reason };
+  }
+  if (isInterpreted(type) || CONTAINER_BLOCKS.has(type)) {
+    return { supported: true, ...metaFor(type) };
+  }
+  if (type in META) {
+    return {
+      supported: false,
+      ...metaFor(type),
+      role: 'unsupported',
+      reason: 'Recognised DBot block with no runtime implementation in this build.'
+    };
   }
   return null;
 }
 
 /** True when the block type is a DBot block we recognise at all. */
 export function isKnownBlock(type: string): boolean {
-  return type in SUPPORTED || type in RECOGNISED_UNSUPPORTED;
+  return type in DELIBERATELY_UNEXECUTED || type in META || isInterpreted(type);
 }
 
-/** The blocks this phase can interpret, for documentation and the UI. */
+/** Every block this build can execute, for documentation and the UI. */
 export function supportedBlockTypes(): string[] {
-  return Object.keys(SUPPORTED).sort();
+  return [...Object.keys(META), ...Object.keys(DELIBERATELY_UNEXECUTED)]
+    .filter((type) => isInterpreted(type) || CONTAINER_BLOCKS.has(type))
+    .sort();
 }
 
-/** Blocks recognised but not interpretable, with reasons. */
+/** Blocks recognised but not executable, with reasons. */
 export function unsupportedBlockTypes(): { type: string; reason: string }[] {
-  return Object.entries(RECOGNISED_UNSUPPORTED)
-    .map(([type, reason]) => ({ type, reason }))
+  const types = new Set([...Object.keys(META), ...Object.keys(DELIBERATELY_UNEXECUTED)]);
+  return [...types]
+    .filter((type) => !isInterpreted(type) && !CONTAINER_BLOCKS.has(type))
+    .map((type) => ({ type, reason: blockSpec(type)?.reason ?? 'Not executed by this build.' }))
     .sort((a, b) => a.type.localeCompare(b.type));
 }
 
@@ -372,9 +428,31 @@ export const DBOT_MANDATORY_BLOCKS = ['trade_definition', 'purchase', 'before_pu
  * `CONTRACT_FAMILY_TYPES` in the execution types. Kept here as data so the
  * compatibility classifier does not import execution modules.
  */
-export const EXECUTABLE_CONTRACT_TYPES = ['CALL', 'PUT', 'MULTUP', 'MULTDOWN'];
+export const EXECUTABLE_CONTRACT_TYPES = [
+  'CALL',
+  'PUT',
+  'MULTUP',
+  'MULTDOWN',
+  'DIGITEVEN',
+  'DIGITODD',
+  'DIGITMATCH',
+  'DIGITDIFF',
+  'DIGITOVER',
+  'DIGITUNDER',
+  'ONETOUCH',
+  'NOTOUCH',
+  'ACCU'
+];
 
 /** DBot trade-type categories that map onto the executable contract types. */
-export const EXECUTABLE_TRADE_TYPE_CATEGORIES = ['callput', 'multiplier'];
+export const EXECUTABLE_TRADE_TYPE_CATEGORIES = [
+  'callput',
+  'callputequal',
+  'digits',
+  'highlowticks',
+  'touch',
+  'multiplier',
+  'accumulator'
+];
 
 export { DBOT_PREFIX };

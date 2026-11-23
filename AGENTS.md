@@ -1121,3 +1121,81 @@ The builder mirrors Deriv Bot's layout, which is worth keeping when editing it:
   would each drive a tick loop and advance the bot twice per interval.
 - Reset moves a *baseline*, not the data: statistics are derived from contracts
   the server owns and cannot be deleted, so the tiles report "since reset".
+
+## DBot compatibility engine
+
+`server/bots/` is a DBot interpreter, not a condition extractor. Two rules keep
+the compatibility report honest:
+
+- **Capability is derived, never listed.** `blocks.ts` computes `supported` from
+  `isInterpreted()` in `interpreter.ts`. A hand-maintained list drifted from the
+  interpreter once and reported 34 runnable blocks as unknown. If you add a
+  block, add its handler — the catalogue follows.
+- **Refuse, don't fake.** A block with no handler throws `UnsupportedBlockError`;
+  a strategy whose conditions cannot be honoured is reported `partial` with the
+  reason. `check_sell` is the live example: this build holds every contract to
+  expiry, so a bot that asks for an early sale is `partial`, not `full`.
+
+Deriv-specific shapes that are easy to get wrong:
+
+- Procedure *calls* keep the target name in `<mutation name="...">`; procedure
+  *definitions* keep it in the `NAME` field. `procedureName()` reads both.
+- Procedure parameters are `<mutation><arg name=... varid=...>` children. They
+  are stored in `TreeNode.mutationChildren`; dropping them deletes the
+  signature on save.
+- `lists_create_with` is a *statement* that fills `VARIABLE` from a `STACK` of
+  `lists_statement`, not a value expression like stock Blockly.
+- `controls_whileUntil` throws "Infinite loop detected" at 10000 passes; the
+  interpreter mirrors that cap rather than exiting quietly.
+- `break`/`continue` are consumed by the loop that owns them. Only `halt` and
+  `return` escape a loop body.
+
+## Verification: what "supported" must mean
+
+Five test files exist to keep the compatibility report honest. They are the
+specification, so read them before changing the interpreter:
+
+- `bot_stress.test.ts` — procedures: nested calls, repeated calls, shadowing,
+  binding by name and by varid.
+- `bot_loops.test.ts` — repeat/while/until/for against the official generators.
+- `bot_xml_integrity.test.ts` — a semantic tree comparator, not a block count.
+  Two real defects were found this way: `<comment>` was dropped on save, and
+  `<mutation>` children were flattened into a map (losing parameter order).
+  If you add a `TreeNode` field, add it to `semantic()` or the tests cannot
+  see it.
+- `bot_execution_safety.test.ts` — every entry is attributable to the run,
+  audited, risk-checked, non-duplicable, stoppable and tenant-isolated.
+- `bot_early_sell.test.ts` — pins the early-sell refusal to the real Deriv
+  behaviour so it cannot regress into a guess.
+
+Early selling, verified from `packages/bot-skeleton/src/services/tradeEngine/`:
+
+- `check_sell` → `Bot.isSellAvailable()` = `contractId && !isSold &&
+  isSellAvailable && !isExpired`, where `isSellAvailable` comes from
+  `is_valid_to_sell` on a live `proposal_open_contract`.
+- `sell_price` → `Bot.getSellPrice()` = `round(bid_price - buy_price)`.
+- `sell_at_market` → `Bot.sellAtMarket()` sends `{ sell: id, price: 0 }`.
+  `InvalidOfferings` means "too close to expiry" and is treated as *let it
+  expire*; any other error re-reads the contract to detect a race.
+
+`mapContract()` drops `is_valid_to_sell` and `bid_price`, so a strategy-driven
+sell cannot be implemented without first persisting those fields. Until then the
+three blocks stay in `DELIBERATELY_UNEXECUTED`.
+
+`during_purchase` is the trap to watch. It is a legitimate container, but the
+interpreter only runs `before_purchase` and `after_purchase`. An **empty**
+`during_purchase` is harmless (every export emits one); a **populated** one is
+logic that would never run, so `planStrategy` refuses it by name. Do not
+"simplify" that check away — it is the difference between a bot that trades
+differently from its author's intent and one that says so.
+
+## Test harness notes
+
+- Use the real `Store`, `ExecutionGateway`, `AutoExecutionRunner` and
+  `ContractMonitor` with `FakeBroker`. Stubbing the gateway makes the safety
+  assertions vacuous.
+- Gateway audit rows: `execution.submit` is the pre-flight decision,
+  `execution.purchase` is the confirmed buy, and `execution.risk` is written
+  **only on refusal** — prove approval via the intent state and the signal's
+  `consumedByIntentId` instead.
+- Imports between server modules use `.js` specifiers (ESM).

@@ -249,7 +249,9 @@ test('rejects an invalid strategy at import time', async () => {
 test('preview does not store anything', async () => {
   await withStore(async (store) => {
     const preview = previewUpload('bot.xml', VALID_DBOT);
-    assert.equal(preview.compatibility, 'full');
+    // The fixture carries a `check_sell`, which this build refuses because it
+    // holds contracts to expiry; `partial` is the honest verdict for it.
+    assert.equal(preview.compatibility, 'partial');
     assert.equal(store.listImportedBots(USER_A).length, 0, 'a preview is not persisted');
   });
 });

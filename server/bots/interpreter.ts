@@ -102,6 +102,14 @@ export interface TickContext {
   totalProfit: number;
   /** Facts for the most recently settled contract, or null before the first. */
   lastContract: ContractFacts | null;
+  /**
+   * Procedure definitions in scope, so a `procedures_callreturn` used inside a
+   * value expression can find its body. Populated by `executeStack`; absent when
+   * a caller evaluates a bare value block, which has no procedures to reach.
+   */
+  procedures?: Map<string, ProcedureDef>;
+  /** Current call depth, so a value-position call still respects the limit. */
+  callDepth?: number;
 }
 
 /** Thrown when a strategy uses a block this interpreter cannot execute. */
@@ -216,6 +224,11 @@ const VALUE_BLOCKS: Record<string, (node: TreeNode, ctx: TickContext) => Value> 
   ticks_string: (node, ctx) =>
     ctx.ticks.map((tick) => formatQuote(tick.quote, tick.pipSize)),
 
+  /* ---------------------------- procedures ------------------------------ */
+  // A `procedures_callreturn` yields the procedure's return value. It is
+  // evaluated here so it can be used inside a condition, as DBot allows.
+  procedures_callreturn: (node, ctx) => callProcedureForValue(node, ctx),
+
   /* -------------------------- contract details -------------------------- */
   contract_check_result: (node, ctx) => {
     const wanted = fieldValue(node, 'CHECK_RESULT') ?? '';
@@ -232,13 +245,99 @@ const VALUE_BLOCKS: Record<string, (node: TreeNode, ctx: TickContext) => Value> 
  * `executeStack` walks these in `<next>` order. Each may itself schedule
  * timers or raise notifications, which the caller collects.
  */
+/**
+ * How a stack finished, for the loop and procedure constructs that need to know.
+ *
+ * `normal` is falling off the end. `break`/`continue`/`return` are the signals
+ * `controls_flow_statements` and `procedures_ifreturn` raise. `halt` means a
+ * `purchase` or `trade_again` ran: DBot ends the whole strategy there, so every
+ * enclosing loop and procedure must stop too.
+ */
+type FlowSignal = 'normal' | 'break' | 'continue' | 'return' | 'halt';
+
 interface StatementContext {
   ctx: TickContext;
   outcome: StackOutcome;
+  /** Signal raised by the innermost running stack; read by loops. */
+  flow: FlowSignal;
+  /** Value a `procedures_ifreturn` returned, when `flow` is 'return'. */
+  returnValue: Value;
+  /** Procedure definitions in scope, keyed by name. */
+  procedures: Map<string, ProcedureDef>;
+  /** Nesting depth of procedure calls, to bound runaway recursion. */
+  callDepth: number;
+}
+
+/** A `procedures_def*` block, resolved once per tick. */
+interface ProcedureDef {
+  name: string;
+  /**
+   * Parameters in declaration order, from `<mutation><arg>` children.
+   *
+   * DBot writes both a display name and a `varid`; the id is what a
+   * `variables_get` inside the body refers to, so both are kept.
+   */
+  args: { name: string; varid: string | null }[];
+  /** The body, from the `STACK` statement input. */
+  body: TreeNode | null;
+  /** True when the definition carries a `RETURN` value input. */
+  hasReturn: boolean;
+  /** The definition block itself, so its `RETURN` input can be evaluated. */
+  node: TreeNode;
+}
+
+/**
+ * DBot's own runaway guards, copied so a strategy behaves here as it does there.
+ *
+ * `controls_whileUntil` throws after 10000 iterations, and the JS generator
+ * traps every loop; using the same numbers means a strategy that loops forever
+ * fails here at the same point it fails on Deriv.
+ */
+const MAX_LOOP_ITERATIONS = 10000;
+/** Bound on nested procedure calls, well under any engine stack limit. */
+const MAX_CALL_DEPTH = 64;
+/** Bound on a single `repeat N times`, so a huge N cannot hang the tick loop. */
+const MAX_REPEAT_COUNT = 100000;
+
+/** Thrown when a strategy exceeds a documented execution bound. */
+export class ExecutionLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ExecutionLimitError';
+  }
 }
 
 const STATEMENT_BLOCKS: Record<string, (node: TreeNode, sc: StatementContext) => void> = {
   /* ------------------------------ variables ----------------------------- */
+  /**
+   * `lists_create_with` builds a list from its `STACK` of `lists_statement`
+   * children and assigns it to `VARIABLE`.
+   *
+   * Deriv models list creation as a statement, not a value expression, so this
+   * is the only way a real export produces a list.
+   */
+  lists_create_with: (node, sc) => {
+    const key = variableKey(node);
+    if (!key) return;
+    const list: Value[] = [];
+    let item = inputBlock(node, 'STACK');
+    while (item) {
+      if (item.type === 'lists_statement') {
+        list.push(evaluateInput(item, 'VALUE', sc.ctx));
+      }
+      item = item.next;
+    }
+    sc.ctx.variables.set(key, list);
+  },
+
+  /**
+   * `lists_statement` is a child of `lists_create_with` and carries one element.
+   *
+   * It is only meaningful inside that container, which collects the elements
+   * itself, so reaching one in a plain stack is a no-op rather than an error.
+   */
+  lists_statement: () => {},
+
   variables_set: (node, sc) => {
     writeVariable(node, evaluateInput(node, 'VALUE', sc.ctx), sc.ctx);
   },
@@ -290,6 +389,33 @@ const STATEMENT_BLOCKS: Record<string, (node: TreeNode, sc: StatementContext) =>
       delayMs: safeSeconds * 1000,
       stack: inputBlock(node, 'TIMEOUTSTACK')
     });
+  },
+
+  /* -------------------------- loops and flow ---------------------------- */
+  controls_repeat: executeRepeat,
+  controls_repeat_ext: executeRepeat,
+  controls_whileUntil: executeWhileUntil,
+  controls_for: executeFor,
+  controls_forEach: executeForEach,
+  controls_flow_statements: (node, sc) => {
+    sc.flow = fieldValue(node, 'FLOW') === 'BREAK' ? 'break' : 'continue';
+  },
+
+  /* ---------------------------- procedures ------------------------------ */
+  // A definition is hoisted, not executed: `collectProcedures` already recorded
+  // it, and running the body inline would call it before it is ever invoked.
+  procedures_defnoreturn: () => {},
+  procedures_defreturn: () => {},
+  procedures_callnoreturn: (node, sc) => {
+    executeProcedureCall(node, sc, false);
+  },
+  procedures_ifreturn: (node, sc) => {
+    // DBot's `procedures_ifreturn` runs `return` when its condition holds.
+    const condition = inputBlock(node, 'CONDITION');
+    if (condition && !truthy(evaluateBlock(condition, sc.ctx))) return;
+    const value = inputBlock(node, 'VALUE');
+    sc.returnValue = value ? evaluateBlock(value, sc.ctx) : null;
+    sc.flow = 'return';
   },
 
   /* ----------------------------- lifecycle ------------------------------ */
@@ -432,7 +558,7 @@ function toJsonValue(value: Value): JsonValue {
 export function runBeforePurchase(tree: BlockTree, ctx: TickContext): ExecutionResult {
   const before = findTopLevel(tree, 'before_purchase');
   const stack = before ? inputBlock(before, 'BEFOREPURCHASE_STACK') : null;
-  return executeStack(stack, ctx);
+  return executeStack(stack, ctx, tree);
 }
 
 /**
@@ -447,7 +573,7 @@ export function runBeforePurchase(tree: BlockTree, ctx: TickContext): ExecutionR
 export function runInitialization(tree: BlockTree, ctx: TickContext): ExecutionResult {
   const trade = findTopLevel(tree, 'trade') ?? findTopLevel(tree, 'trade_definition');
   const stack = trade ? inputBlock(trade, 'INITIALIZATION') : null;
-  return executeStack(stack, ctx);
+  return executeStack(stack, ctx, tree);
 }
 
 /**
@@ -461,7 +587,7 @@ export function runInitialization(tree: BlockTree, ctx: TickContext): ExecutionR
 export function runTickAnalysis(tree: BlockTree, ctx: TickContext): ExecutionResult {
   const analysis = findTopLevel(tree, 'tick_analysis');
   const stack = analysis ? inputBlock(analysis, 'TICKANALYSIS_STACK') : null;
-  return executeStack(stack, ctx);
+  return executeStack(stack, ctx, tree);
 }
 
 /**
@@ -498,7 +624,7 @@ export function resolveDigitPrediction(tree: BlockTree, ctx: TickContext): numbe
 export function runAfterPurchase(tree: BlockTree, ctx: TickContext): ExecutionResult {
   const after = findTopLevel(tree, 'after_purchase');
   const stack = after ? inputBlock(after, 'AFTERPURCHASE_STACK') : null;
-  return executeStack(stack, ctx);
+  return executeStack(stack, ctx, tree);
 }
 
 /**
@@ -508,27 +634,103 @@ export function runAfterPurchase(tree: BlockTree, ctx: TickContext): ExecutionRe
  * terminal for the before-purchase stack, and `trade_again` returns out of the
  * after-purchase function.
  */
-export function executeStack(stack: TreeNode | null, ctx: TickContext): ExecutionResult {
+export function executeStack(
+  stack: TreeNode | null,
+  ctx: TickContext,
+  tree: BlockTree | null = null
+): ExecutionResult {
   const outcome: StackOutcome = {
     purchase: null,
     tradeAgain: false,
     timeouts: [],
     notifications: []
   };
-  const sc: StatementContext = { ctx, outcome };
+  const sc: StatementContext = {
+    ctx,
+    outcome,
+    flow: 'normal',
+    returnValue: null,
+    procedures: collectProcedures(tree),
+    callDepth: 0
+  };
+  ctx.procedures = sc.procedures;
 
-  let node = stack;
-  while (node) {
-    const handler = STATEMENT_BLOCKS[node.type];
-    if (!handler) throw new UnsupportedBlockError(node.type);
-    handler(node, sc);
-
-    // `purchase` and `trade_again` both terminate their stack in DBot.
-    if (outcome.purchase !== null || outcome.tradeAgain) break;
-    node = node.next;
-  }
-
+  runNestedStack(stack, sc);
   return { ...outcome, variables: ctx.variables };
+}
+
+/**
+ * Procedures reachable from a stack.
+ *
+ * DBot hoists every `procedures_def*` block before running, so a call may appear
+ * above its definition. Definitions live at the top level of the workspace, so
+ * the caller passes the tree rather than the stack.
+ */
+function collectProcedures(tree: BlockTree | null): Map<string, ProcedureDef> {
+  const procedures = new Map<string, ProcedureDef>();
+  if (!tree) return procedures;
+  // Blockly keys variables by id; a parameter declared only by name still has
+  // an id in `<variables>`, and the body reads it through that id.
+  const declared = new Map<string, string>();
+  for (const variable of tree.variables) declared.set(variable.name, variable.id);
+  for (const node of walkTree(tree)) {
+    if (
+      node.type !== 'procedures_defnoreturn' &&
+      node.type !== 'procedures_defreturn'
+    ) {
+      continue;
+    }
+    const name = procedureName(node);
+    if (!name) continue;
+    procedures.set(name, {
+      name,
+      args: procedureArgs(node, declared),
+      body: inputBlock(node, 'STACK'),
+      hasReturn: node.type === 'procedures_defreturn',
+      node
+    });
+  }
+  return procedures;
+}
+
+/**
+ * Parameter names from a definition's mutation, in declaration order.
+ *
+ * Blockly stores them as `<mutation><arg name="x"/></mutation>`; the order is
+ * the call-site argument order, so it must not be sorted or de-duplicated.
+ */
+function procedureArgs(
+  node: TreeNode,
+  declared: Map<string, string>
+): { name: string; varid: string | null }[] {
+  const args: { name: string; varid: string | null }[] = [];
+  for (const child of node.mutationChildren ?? []) {
+    if (child.name !== 'arg') continue;
+    const name = child.attrs.name;
+    if (typeof name !== 'string' || name === '') continue;
+    // A mutation normally carries `varid`, but older exports omit it. Blockly
+    // resolves such a parameter by name against the workspace's variables, so
+    // the body's `variables_get` ends up holding the declared id. Falling back
+    // to the name alone would leave those reads unbound.
+    const varid = child.attrs.varid ?? child.attrs.varId ?? declared.get(name) ?? null;
+    args.push({ name, varid });
+  }
+  return args;
+}
+
+/**
+ * The procedure a call block targets.
+ *
+ * Blockly stores it on the `<mutation name="...">` attribute for a call, and in
+ * the `NAME` field for a definition. A hand-written export may use either, so
+ * both are consulted.
+ */
+function procedureName(node: TreeNode): string | null {
+  const fromField = fieldValue(node, 'NAME');
+  if (fromField) return fromField;
+  const fromMutation = node.mutation?.name;
+  if (typeof fromMutation === 'string' && fromMutation !== '') return fromMutation;
+  return null;
 }
 
 /**
@@ -603,6 +805,25 @@ function variableKey(node: TreeNode): string | null {
     node.fields.find((item) => item.name === 'VARIABLE');
   if (!field) return null;
   return field.id ?? field.value;
+}
+
+/**
+ * Binds a loop variable or procedure parameter under both its id and its name.
+ *
+ * `variableKey` prefers a block's `id`, falling back to the display name. DBot
+ * normally writes ids everywhere, but exports exist where a `variables_get`
+ * omits one while the declaring block keeps it. Writing both keys means either
+ * style of reference resolves to the value the loop or procedure just bound,
+ * instead of reading an unrelated variable that happens to share the name.
+ */
+function bindScopedVariable(
+  variables: Map<string, Value>,
+  id: string | undefined,
+  name: string,
+  value: Value
+): void {
+  if (id !== undefined && id !== name) variables.set(id, value);
+  variables.set(name, value);
 }
 
 function readVariable(node: TreeNode, ctx: TickContext): Value {
@@ -1032,7 +1253,245 @@ function runNestedStack(stack: TreeNode | null, sc: StatementContext): void {
     const handler = STATEMENT_BLOCKS[node.type];
     if (!handler) throw new UnsupportedBlockError(node.type);
     handler(node, sc);
-    if (sc.outcome.purchase !== null || sc.outcome.tradeAgain) return;
+    // A purchase ends the strategy; break/continue/return unwind to the loop or
+    // procedure that owns them. Either way this stack stops walking.
+    if (sc.outcome.purchase !== null || sc.outcome.tradeAgain) {
+      sc.flow = 'halt';
+      return;
+    }
+    if (sc.flow !== 'normal') return;
     node = node.next;
   }
 }
+
+/**
+ * Runs a loop body one iteration and reports what the loop should do next.
+ *
+ * The body runs on a nested context so a `break` inside it cannot leak into an
+ * enclosing loop: the signal is consumed here and the caller decides.
+ */
+function runLoopBody(body: TreeNode | null, sc: StatementContext): FlowSignal {
+  const inner: StatementContext = { ...sc, flow: 'normal' };
+  runNestedStack(body, inner);
+  // `break` and `continue` belong to this loop and are consumed here, so the
+  // outer context stays `normal`. Only `halt` and `return` outlive the loop.
+  if (inner.flow === 'halt' || inner.flow === 'return') {
+    sc.flow = inner.flow;
+    sc.returnValue = inner.returnValue;
+  } else {
+    sc.flow = 'normal';
+  }
+  return inner.flow;
+}
+
+/**
+ * `controls_repeat` / `controls_repeat_ext`: run the body N times.
+ *
+ * DBot's generator evaluates TIMES once into `repeat_end` before the loop, so a
+ * body that changes the count does not extend the loop. `TIMES` is a value input
+ * on `_ext` and a field on the legacy `controls_repeat`.
+ */
+function executeRepeat(node: TreeNode, sc: StatementContext): void {
+  const raw =
+    readNumberField(node, 'TIMES') ?? toNumber(evaluateInput(node, 'TIMES', sc.ctx));
+  const times = Number.isFinite(raw) ? Math.floor(raw) : 0;
+  if (times <= 0) return;
+  if (times > MAX_REPEAT_COUNT) {
+    throw new ExecutionLimitError(
+      `A repeat block asked for ${times} iterations, above the limit of ${MAX_REPEAT_COUNT}.`
+    );
+  }
+  const body = inputBlock(node, 'DO');
+  for (let i = 0; i < times; i += 1) {
+    const signal = runLoopBody(body, sc);
+    if (signal === 'break') {
+      sc.flow = 'normal';
+      return;
+    }
+    if (signal === 'halt' || signal === 'return') return;
+  }
+}
+
+/**
+ * `controls_whileUntil`: repeat while (or until) a condition holds.
+ *
+ * The 10000-iteration ceiling and the "Infinite loop detected" failure are
+ * DBot's own, from its `controls_whileUntil` generator. A strategy that spins
+ * here would spin there too, so this fails at the same point rather than
+ * hanging the tick loop.
+ */
+function executeWhileUntil(node: TreeNode, sc: StatementContext): void {
+  const until = fieldValue(node, 'MODE') === 'UNTIL';
+  const body = inputBlock(node, 'DO');
+  let iterations = 0;
+  while (true) {
+    const condition = truthy(evaluateInput(node, 'BOOL', sc.ctx));
+    if (until ? condition : !condition) return;
+    if (iterations > MAX_LOOP_ITERATIONS) {
+      throw new ExecutionLimitError('Infinite loop detected');
+    }
+    iterations += 1;
+    const signal = runLoopBody(body, sc);
+    if (signal === 'break') {
+      sc.flow = 'normal';
+      return;
+    }
+    if (signal === 'halt' || signal === 'return') return;
+  }
+}
+
+/**
+ * `controls_for`: count a variable from FROM to TO by BY.
+ *
+ * DBot decides the direction once, from whether the start is above the end, and
+ * steps by `Math.abs(BY)` in that direction. Reproducing that matters because a
+ * descending range with a positive step still counts down.
+ */
+function executeFor(node: TreeNode, sc: StatementContext): void {
+  const from = toNumber(evaluateInput(node, 'FROM', sc.ctx));
+  const to = toNumber(evaluateInput(node, 'TO', sc.ctx));
+  const byRaw = toNumber(evaluateInput(node, 'BY', sc.ctx));
+  const by = Number.isFinite(byRaw) && byRaw !== 0 ? Math.abs(byRaw) : 1;
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return;
+
+  const variable = node.fields.find((item) => item.name === 'VAR');
+  if (!variable) return;
+  const descending = from > to;
+  const body = inputBlock(node, 'DO');
+
+  let iterations = 0;
+  for (let i = from; descending ? i >= to : i <= to; i += descending ? -by : by) {
+    if (iterations > MAX_LOOP_ITERATIONS) {
+      throw new ExecutionLimitError('Infinite loop detected');
+    }
+    iterations += 1;
+    bindScopedVariable(sc.ctx.variables, variable.id, variable.value, i);
+    const signal = runLoopBody(body, sc);
+    if (signal === 'break') {
+      sc.flow = 'normal';
+      return;
+    }
+    if (signal === 'halt' || signal === 'return') return;
+    // Guard against a step that cannot make progress (by rounds to 0 at i).
+    if (!Number.isFinite(i)) return;
+  }
+}
+
+/**
+ * `controls_forEach`: run the body once per element of a list.
+ *
+ * DBot binds the item to the loop variable, so the body sees the element rather
+ * than its index.
+ */
+function executeForEach(node: TreeNode, sc: StatementContext): void {
+  const list = toList(evaluateInput(node, 'LIST', sc.ctx));
+  const variable = node.fields.find((item) => item.name === 'VAR');
+  if (!variable) return;
+  const body = inputBlock(node, 'DO');
+
+  let iterations = 0;
+  for (const item of list) {
+    if (iterations > MAX_LOOP_ITERATIONS) {
+      throw new ExecutionLimitError('Infinite loop detected');
+    }
+    iterations += 1;
+    bindScopedVariable(sc.ctx.variables, variable.id, variable.value, item);
+    const signal = runLoopBody(body, sc);
+    if (signal === 'break') {
+      sc.flow = 'normal';
+      return;
+    }
+    if (signal === 'halt' || signal === 'return') return;
+  }
+}
+
+/**
+ * Calls a `procedures_def*` block.
+ *
+ * Parameters are bound into the run's variable map, which is what DBot's
+ * generator does too — it emits a plain JS function whose parameters shadow the
+ * globals. They are restored afterwards so a call cannot permanently overwrite a
+ * variable of the same name, matching JS parameter scoping.
+ */
+function executeProcedureCall(node: TreeNode, sc: StatementContext, wantsReturn: boolean): Value {
+  const name = procedureName(node);
+  if (!name) return null;
+  const def = sc.procedures.get(name);
+  if (!def) {
+    // DBot would throw a ReferenceError for an undefined function. Returning a
+    // value here would let a strategy trade on a call that never happened.
+    throw new ExecutionLimitError(`Procedure "${name}" is called but never defined.`);
+  }
+  if (sc.callDepth >= MAX_CALL_DEPTH) {
+    throw new ExecutionLimitError(
+      `Procedure calls nested deeper than ${MAX_CALL_DEPTH}; the strategy may recurse forever.`
+    );
+  }
+
+  // Bind arguments. A missing argument is null, as DBot's `|| 'null'` fallback.
+  const saved = new Map<string, Value | undefined>();
+  def.args.forEach((arg, index) => {
+    const value = evaluateInput(node, `ARG${index}`, sc.ctx);
+    for (const key of [arg.varid, arg.name]) {
+      if (key === null) continue;
+      if (!saved.has(key)) saved.set(key, sc.ctx.variables.get(key));
+      sc.ctx.variables.set(key, value);
+    }
+  });
+
+  const inner: StatementContext = { ...sc, flow: 'normal', returnValue: null, callDepth: sc.callDepth + 1 };
+  runNestedStack(def.body, inner);
+
+  let result: Value = null;
+  if (inner.flow === 'return') result = inner.returnValue;
+  else if (def.hasReturn) result = evaluateInput(def.node, 'RETURN', sc.ctx);
+
+  // A purchase inside a procedure still ends the strategy.
+  if (inner.flow === 'halt') sc.flow = 'halt';
+
+  for (const [key, value] of saved) {
+    if (value === undefined) sc.ctx.variables.delete(key);
+    else sc.ctx.variables.set(key, value);
+  }
+
+  if (!wantsReturn) return null;
+  return result;
+}
+
+/**
+ * Evaluates a `procedures_callreturn` block to its procedure's return value.
+ *
+ * Value blocks are pure by rule 1, so this builds a throwaway statement context
+ * that shares the run's variable map and procedure table. A call that would
+ * `purchase` cannot do so from a value position — DBot's generator returns a
+ * value, not a trade — so a `halt` raised inside is discarded.
+ */
+function callProcedureForValue(node: TreeNode, ctx: TickContext): Value {
+  // The depth has to live on the shared context: a procedure that recurses
+  // through its RETURN expression re-enters here, and a local counter would
+  // start from zero every time, overflowing the JS stack instead of failing at
+  // the documented bound.
+  const depth = (ctx.callDepth ?? 0) + 1;
+  if (depth > MAX_CALL_DEPTH) {
+    throw new ExecutionLimitError(
+      `Procedure calls nested deeper than ${MAX_CALL_DEPTH}; the strategy may recurse forever.`
+    );
+  }
+  const sc: StatementContext = {
+    ctx,
+    outcome: { purchase: null, tradeAgain: false, timeouts: [], notifications: [] },
+    flow: 'normal',
+    returnValue: null,
+    procedures: ctx.procedures ?? new Map(),
+    callDepth: depth
+  };
+  const previous = ctx.callDepth;
+  ctx.callDepth = depth;
+  try {
+    return executeProcedureCall(node, sc, true);
+  } finally {
+    ctx.callDepth = previous;
+  }
+}
+
+

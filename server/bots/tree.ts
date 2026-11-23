@@ -81,8 +81,38 @@ export interface TreeNode {
   shadows: TreeShadow[];
   /** Raw `<mutation>` attributes, e.g. `elseif`/`else` counts, variable ids. */
   mutation?: Record<string, string>;
+  /**
+   * `<mutation>` child elements, in source order.
+   *
+   * Blockly writes procedure parameters here (`<arg name="x"/>`) and keeps
+   * `<arg>` order significant, so this is a list rather than a map. Dropping
+   * them would delete a procedure's parameters on every save.
+   */
+  mutationChildren?: TreeMutationChild[];
+  /**
+   * The block's `<comment>`, if it has one.
+   *
+   * Comments are written by the user, not generated, and carry their own
+   * attributes (pinned, width, height). Dropping them would silently delete
+   * annotations from the customer's strategy on every save.
+   */
+  comment?: TreeComment;
   /** The block connected after this one in the same stack. */
   next: TreeNode | null;
+}
+
+/** A block's `<comment>`: its text plus the display attributes Blockly stores. */
+export interface TreeComment {
+  text: string;
+  attrs: Record<string, string>;
+}
+
+/** A child element of `<mutation>`, e.g. `<arg name="amount"/>`. */
+export interface TreeMutationChild {
+  name: string;
+  attrs: Record<string, string>;
+  /** Text content, which some mutations use instead of an attribute. */
+  text?: string;
 }
 
 /** A `<shadow>` block written directly under its parent block. */
@@ -165,6 +195,23 @@ function readBlock(node: XmlElement, shadow: boolean, depth: number): TreeNode {
   if (mutation) {
     const mutationAttrs = attrsExcept(mutation, new Set());
     if (Object.keys(mutationAttrs).length > 0) treeNode.mutation = mutationAttrs;
+    const children: TreeMutationChild[] = [];
+    for (const child of mutation.children) {
+      if (child.type !== 'element') continue;
+      const text = textContent(child);
+      const entry: TreeMutationChild = {
+        name: child.name,
+        attrs: { ...child.attrs }
+      };
+      if (text !== null && text.trim() !== '') entry.text = text;
+      children.push(entry);
+    }
+    if (children.length > 0) treeNode.mutationChildren = children;
+  }
+
+  const comment = firstChild(node, 'comment');
+  if (comment) {
+    treeNode.comment = { text: textContent(comment) ?? '', attrs: { ...comment.attrs } };
   }
 
   for (const child of node.children) {
@@ -315,8 +362,24 @@ function writeBlock(node: TreeNode, indent: string): string {
   const lines: string[] = [`${indent}<${tag}${writeAttrs(head)}>`];
   const inner = `${indent}  `;
 
-  if (node.mutation && Object.keys(node.mutation).length > 0) {
-    lines.push(`${inner}<mutation${writeAttrs(node.mutation)}></mutation>`);
+  if (node.mutation || node.mutationChildren) {
+    const attrs = node.mutation ?? {};
+    const children = node.mutationChildren ?? [];
+    if (children.length === 0) {
+      lines.push(`${inner}<mutation${writeAttrs(attrs)}></mutation>`);
+    } else {
+      lines.push(`${inner}<mutation${writeAttrs(attrs)}>`);
+      for (const child of children) {
+        const body = child.text === undefined ? '' : escapeXmlText(child.text);
+        lines.push(`${inner}  <${child.name}${writeAttrs(child.attrs)}>${body}</${child.name}>`);
+      }
+      lines.push(`${inner}</mutation>`);
+    }
+  }
+  if (node.comment) {
+    lines.push(
+      `${inner}<comment${writeAttrs(node.comment.attrs)}>${escapeXmlText(node.comment.text)}</comment>`
+    );
   }
   for (const field of node.fields) {
     lines.push(writeField(field, inner));

@@ -87,7 +87,10 @@ const DIGITS_DBOT = VALID_DBOT.replace('>callput<', '>digits<')
 test('parses a genuine DBot export into the normalized model', () => {
   const result = analyzeDbotXml(VALID_DBOT, { filename: 'rise-fall.xml' });
 
-  assert.equal(result.compatibility, 'full');
+  // This fixture holds a `check_sell`, which this build refuses to execute
+  // because it holds every contract to expiry. Reporting `partial` is the
+  // honest verdict; `full` would promise an early sale that never happens.
+  assert.equal(result.compatibility, 'partial');
   assert.equal(result.errors.length, 0);
   assert.ok(result.bot);
 
@@ -110,7 +113,7 @@ test('parses a genuine DBot export into the normalized model', () => {
   assert.equal(bot.stake.duration, 5);
   assert.equal(bot.stake.durationUnit, 't');
 
-  assert.equal(bot.unsupportedBlocks.length, 0);
+  assert.deepEqual(bot.unsupportedBlocks.map((b) => b.type), ['check_sell']);
   assert.equal(bot.unknownBlocks.length, 0);
 });
 
@@ -311,28 +314,30 @@ test('accepts the five predefined entities and numeric references', () => {
 /* ------------------------ unsupported / unknown blocks ------------------- */
 
 test('marks recognised-but-uninterpreted blocks as unsupported with reasons', () => {
+  // `notify_telegram` needs credentials this build does not manage, so it is
+  // recognised and refused rather than silently ignored.
   const withUnsupported = VALID_DBOT.replace(
     '<block type="purchase">',
-    '<block type="read_details"></block><block type="purchase">'
+    '<block type="notify_telegram"></block><block type="purchase">'
   );
   const result = analyzeDbotXml(withUnsupported);
   const bot = result.bot!;
 
   assert.equal(result.compatibility, 'partial');
-  assert.equal(bot.unsupportedBlocks.length, 1);
-  assert.equal(bot.unsupportedBlocks[0].type, 'read_details');
-  assert.ok(bot.unsupportedBlocks[0].reason.length > 0);
+  const entry = bot.unsupportedBlocks.find((b) => b.type === 'notify_telegram');
+  assert.ok(entry, 'notify_telegram should be reported as unsupported');
+  assert.ok(entry.reason.length > 0);
   assert.match(result.compatibilityReason, /could not be interpreted/i);
 });
 
 test('does not silently drop unsupported blocks', () => {
   const withSeveral = VALID_DBOT.replace(
     '<block type="purchase">',
-    '<block type="read_details"></block><block type="payout"></block><block type="purchase">'
+    '<block type="notify_telegram"></block><block type="trade_definition_multiplier"></block><block type="purchase">'
   );
   const bot = analyzeDbotXml(withSeveral).bot!;
   const types = bot.unsupportedBlocks.map((b) => b.type).sort();
-  assert.deepEqual(types, ['payout', 'read_details']);
+  assert.deepEqual(types, ['check_sell', 'notify_telegram', 'trade_definition_multiplier']);
 });
 
 test('reports unknown block types separately from unsupported ones', () => {
@@ -389,17 +394,34 @@ test('warns when the DBot marker is missing', () => {
 /* --------------------------- compatibility rules ------------------------ */
 
 test('classifies a placeable contract type as fully supported', () => {
-  assert.equal(analyzeDbotXml(VALID_DBOT).compatibility, 'full');
+  // Strip the refused `check_sell` so only contract placeability is under test.
+  const withoutSell = VALID_DBOT.replace(
+    '<block type="controls_if">\n        <value name="IF0"><block type="check_sell"></block></value>\n      </block>',
+    ''
+  );
+  const result = analyzeDbotXml(withoutSell);
+  assert.equal(result.compatibility, 'full');
+  assert.match(result.compatibilityReason, /does not authorise execution/i);
 });
 
 test('classifies a non-placeable contract type as partial', () => {
-  const result = analyzeDbotXml(DIGITS_DBOT);
+  // A contract type outside the executable catalogue is refused even when every
+  // block in the file is interpreted.
+  const exotic = VALID_DBOT.replace('>CALL</field>', '>RANGE</field>').replace(
+    '<block type="controls_if">\n        <value name="IF0"><block type="check_sell"></block></value>\n      </block>',
+    ''
+  );
+  const result = analyzeDbotXml(exotic);
   assert.equal(result.compatibility, 'partial');
   assert.match(result.compatibilityReason, /not one No-touch can place/i);
 });
 
 test('compatibility "full" never claims the bot is authorised to execute', () => {
-  const result = analyzeDbotXml(VALID_DBOT);
+  const withoutSell = VALID_DBOT.replace(
+    '<block type="controls_if">\n        <value name="IF0"><block type="check_sell"></block></value>\n      </block>',
+    ''
+  );
+  const result = analyzeDbotXml(withoutSell);
   assert.equal(result.compatibility, 'full');
   assert.match(result.compatibilityReason, /does not authorise execution/i);
 });
