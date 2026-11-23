@@ -23,7 +23,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { Store, UserRecord } from '../store/store.js';
-import type { MarketDataService } from '../services/marketData.js';
+import type { MarketDataService, MarketTick } from '../services/marketData.js';
 import type { ExecutionGateway } from '../execution/gateway.js';
 import { ExecutionError } from '../execution/gateway.js';
 import type { AutoExecutionRunner } from '../execution/autoRunner.js';
@@ -34,7 +34,26 @@ import { createSignal, SignalError } from '../services/signals.js';
 import { resolveTradableAccountForUser, AccountAccessError } from '../execution/accountGuard.js';
 import { executionPermitted } from '../config/flags.js';
 import type { ExecutionFlags } from '../config/flags.js';
-import { evaluateStrategy, planStrategy, type StrategyPlan } from './evaluator.js';
+import {
+  CONTRACT_TYPE_FAMILY,
+  directionForContract,
+  evaluateStrategy,
+  planStrategy,
+  type EvaluationVerdict,
+  type StrategyPlan
+} from './evaluator.js';
+import {
+  loadVariables,
+  runAfterPurchase,
+  runBeforePurchase,
+  saveVariables,
+  UnsupportedBlockError,
+  type ContractFacts,
+  type TickContext
+} from './interpreter.js';
+import { contractFacts, isSettled, totalProfitOf } from './contractFacts.js';
+import type { BlockTree } from './tree.js';
+import type { DerivContractType } from '../execution/types.js';
 import type { BotRunEvent, BotRunRecord, BotRunStatus } from './runTypes.js';
 import { emptyCounters } from './runTypes.js';
 import { loadBotTree } from './service.js';
@@ -276,6 +295,7 @@ export async function startBotRun(
     lastEvaluationAt: null,
     lastExecutionId: null,
     lastContractId: null,
+    afterPurchaseFor: null,
     error: null,
     counters: emptyCounters(),
     events: [],
@@ -284,7 +304,8 @@ export async function startBotRun(
     symbol: plan.symbol,
     timeframe: plan.timeframe,
     lastTickKey: null,
-    lastTickAt: startedAt
+    lastTickAt: startedAt,
+    variables: {}
   };
 
   pushEvent(run, {
@@ -310,6 +331,168 @@ export async function startBotRun(
   });
 
   return run;
+}
+
+/**
+ * Decides one tick for an interpreted (genuine DBot) strategy.
+ *
+ * Runs the strategy's `before_purchase` stack against the run's own variables.
+ * The purchase the stack reaches names the contract to buy, so the returned
+ * verdict carries that type rather than the trade definition's — a DBot program
+ * may legitimately choose between contract types at runtime.
+ *
+ * A block this build cannot execute fails the *run* instead of returning
+ * "no entry": silently skipping a decision block would let a bot trade on a
+ * strategy it is not actually running.
+ */
+function interpretTick(
+  deps: BotRunDeps,
+  store: Store,
+  user: UserRecord,
+  run: BotRunRecord,
+  bot: ImportedBotRecord,
+  ticks: MarketTick[]
+): EvaluationVerdict {
+  let tree: BlockTree;
+  try {
+    tree = loadBotTree(bot).tree;
+  } catch {
+    return { kind: 'ineligible', reason: 'The saved strategy could not be read.' };
+  }
+
+  const facts = lastSettledContract(store, user.id, run);
+  const ctx: TickContext = {
+    ticks,
+    variables: loadVariables(run.variables),
+    totalProfit: totalProfitOf(store.listContracts(user.id), runIntentIds(store, user.id, run)),
+    lastContract: facts
+  };
+
+  let result;
+  try {
+    result = runBeforePurchase(tree, ctx);
+  } catch (err) {
+    if (err instanceof UnsupportedBlockError) {
+      throw new BotRunError(
+        'strategy_not_runnable',
+        `The strategy uses a block this build cannot execute: ${err.blockType}.`,
+        422,
+        [err.message]
+      );
+    }
+    throw err;
+  }
+
+  run.variables = saveVariables(result.variables);
+
+  if (result.purchase === null) {
+    const detail =
+      result.notifications.length > 0
+        ? result.notifications.map((n) => n.message).join('; ')
+        : 'The strategy did not reach a purchase on this tick.';
+    return { kind: 'no_entry', reason: detail };
+  }
+
+  // The contract family follows the type the program actually bought.
+  const family = CONTRACT_TYPE_FAMILY[result.purchase as DerivContractType];
+  if (!family) {
+    throw new BotRunError(
+      'strategy_not_runnable',
+      `The strategy buys "${result.purchase}", which this build cannot place.`,
+      422,
+      [`Unsupported purchase contract type: ${result.purchase}`]
+    );
+  }
+
+  return {
+    kind: 'entry',
+    direction: directionForContract(result.purchase as DerivContractType),
+    contractType: result.purchase as DerivContractType,
+    reason: `The strategy's program reached purchase for ${result.purchase}.`
+  };
+}
+
+/**
+ * Reacts to a settled contract by running the strategy's `after_purchase` stack.
+ *
+ * Returns `stop` when the program did not ask to trade again, `continue`
+ * otherwise (including when there is nothing settled yet). A contract is handled
+ * once: the run records which settlement it consumed, so a tick loop polling the
+ * same settled contract cannot replay the decision.
+ */
+function settleAfterPurchase(
+  deps: BotRunDeps,
+  store: Store,
+  user: UserRecord,
+  run: BotRunRecord,
+  bot: ImportedBotRecord,
+  now: number
+): 'continue' | 'stop' {
+  if (run.lastContractId === null) return 'continue';
+  if (run.afterPurchaseFor === run.lastContractId) return 'continue';
+
+  const contract = store.getContract(user.id, String(run.lastContractId));
+  if (!contract || !isSettled(contract)) return 'continue';
+
+  let tree: BlockTree;
+  try {
+    tree = loadBotTree(bot).tree;
+  } catch {
+    return 'continue';
+  }
+
+  const ctx: TickContext = {
+    ticks: deps.market.getTicks(run.symbol),
+    variables: loadVariables(run.variables),
+    totalProfit: totalProfitOf(store.listContracts(user.id), runIntentIds(store, user.id, run)),
+    lastContract: contractFacts(contract, store.getTradeIntent(user.id, contract.intentId))
+  };
+
+  let result;
+  try {
+    result = runAfterPurchase(tree, ctx);
+  } catch (err) {
+    if (err instanceof UnsupportedBlockError) {
+      throw new BotRunError(
+        'strategy_not_runnable',
+        `The strategy's after-purchase blocks cannot be executed: ${err.blockType}.`,
+        422,
+        [err.message]
+      );
+    }
+    throw err;
+  }
+
+  run.afterPurchaseFor = run.lastContractId;
+  run.variables = saveVariables(result.variables);
+
+  for (const note of result.notifications) {
+    pushEvent(run, { at: now, kind: 'notify', detail: note.message });
+  }
+
+  return result.tradeAgain ? 'continue' : 'stop';
+}
+
+/** Intent ids that belong to this run, so profit is not pooled across runs. */
+function runIntentIds(store: Store, userId: string, run: BotRunRecord): Set<string> {
+  const ids = new Set<string>();
+  for (const intent of store.listTradeIntents(userId)) {
+    if (intent.idempotencyKey.startsWith(`bot:${run.runId}:`)) ids.add(intent.id);
+  }
+  return ids;
+}
+
+/** Facts for the run's most recently settled contract, or null. */
+function lastSettledContract(
+  store: Store,
+  userId: string,
+  run: BotRunRecord
+): ContractFacts | null {
+  if (run.lastContractId === null) return null;
+  const contract = store.getContract(userId, String(run.lastContractId));
+  if (!contract || !isSettled(contract)) return null;
+  const intent = store.getTradeIntent(userId, contract.intentId);
+  return contractFacts(contract, intent);
 }
 
 export interface TickResult {
@@ -385,6 +568,24 @@ export async function tickBotRun(
     return { run: stopped, verdict: 'stopped', reason: 'max entries reached', contractId: null };
   }
 
+  // DBot's loop is before_purchase → purchase → settle → after_purchase, and only
+  // a `trade_again` in after_purchase goes round again. The tick loop is this
+  // build's only clock, so a settled contract is reacted to exactly once, before
+  // any new entry is considered.
+  if (plan.engine === 'interpreter') {
+    const settlement = settleAfterPurchase(deps, store, user, run, bot, now());
+    if (settlement === 'stop') {
+      const stopped = await stopBotRun(
+        deps,
+        user,
+        runId,
+        accessToken,
+        'the strategy chose not to trade again'
+      );
+      return { run: stopped, verdict: 'stopped', reason: 'trade again declined', contractId: null };
+    }
+  }
+
   // Fresh market data, or skip this tick. A stale price never becomes a signal.
   const snapshot = await deps.market.freshSnapshot(plan.symbol);
   if (!snapshot) {
@@ -399,7 +600,10 @@ export async function tickBotRun(
   }
 
   const ticks = deps.market.getTicks(plan.symbol);
-  const verdict = evaluateStrategy({ plan, ticks });
+  const verdict =
+    plan.engine === 'interpreter'
+      ? interpretTick(deps, store, user, run, bot, ticks)
+      : evaluateStrategy({ plan, ticks });
 
   run.counters.ticks += 1;
   run.lastEvaluationAt = now();
@@ -419,6 +623,11 @@ export async function tickBotRun(
     return { run, verdict: verdict.kind, reason: verdict.reason, contractId: null };
   }
 
+  // A DBot program may choose its contract per entry; the plan's type is the
+  // default for every other strategy.
+  const chosenType =
+    verdict.kind === 'entry' && verdict.contractType ? verdict.contractType : plan.contractType;
+
   // The strategy's conditions hold. Record a validated, expiring signal.
   run.counters.signals += 1;
   let signal;
@@ -430,8 +639,8 @@ export async function tickBotRun(
       symbol: plan.symbol,
       timeframe: plan.timeframe,
       direction: verdict.direction,
-      contractFamily: plan.contractFamily,
-      contractType: plan.contractType,
+      contractFamily: CONTRACT_TYPE_FAMILY[chosenType],
+      contractType: chosenType,
       analysisId: `bot:${run.botId}:${run.strategyRevision}`,
       reason: `bot ${bot.name}`
     });

@@ -27,13 +27,27 @@
 
 import type { MarketSnapshot } from '../services/marketData.js';
 import type { BlockTree, TreeNode } from './tree.js';
+import { INTERPRETED_BLOCKS, isDbProgram } from './interpreter.js';
 import type { ContractFamily, DerivContractType } from '../execution/types.js';
 import { DIGIT_PREDICTION_TYPES } from '../execution/types.js';
 import { fieldValue, findTopLevel, walkTree } from './tree.js';
 
 export type EvaluationVerdict =
   /** `NONE` when the strategy's family is chosen by prediction, not direction. */
-  | { kind: 'entry'; direction: 'RISE' | 'FALL' | 'NONE'; reason: string; digit?: number }
+  | {
+      kind: 'entry';
+      direction: 'RISE' | 'FALL' | 'NONE';
+      reason: string;
+      digit?: number;
+      /**
+       * Contract the strategy chose for *this* entry.
+       *
+       * A DBot program may branch between contract types at runtime, so the
+       * purchase block's choice overrides the trade definition's default. Absent
+       * means "use the plan's contract type".
+       */
+      contractType?: DerivContractType;
+    }
   | { kind: 'no_entry'; reason: string }
   | { kind: 'insufficient'; reason: string }
   | { kind: 'ineligible'; reason: string };
@@ -84,6 +98,15 @@ export interface StrategyPlan {
   currency: string | null;
   duration: number | null;
   durationUnit: string | null;
+  /**
+   * Which engine decides entries for this strategy.
+   *
+   * `plan` means the fixed condition list below fully describes the entry rule.
+   * `interpreter` means the strategy is a genuine DBot program whose entry
+   * decision is made by walking its block tree, so `conditions` is empty and
+   * must not be read as "always trade".
+   */
+  engine: 'plan' | 'interpreter';
 }
 
 export interface PlanResult {
@@ -96,14 +119,14 @@ export interface PlanResult {
 }
 
 /**
- * Blocks the evaluator can execute.
+ * Blocks the *plan* engine can execute.
  *
- * Deliberately narrow. `controls_if`, loops, procedures and the OHLC/stat
- * families are absent: their semantics interact with control flow this
- * evaluator does not model, so a strategy using them is refused rather than
- * approximated.
+ * Deliberately narrow: these are the structural blocks `planStrategy` reads and
+ * the flat condition/value blocks `evaluateStrategy` compares. `controls_if`,
+ * loops and procedures are absent because the plan engine reduces a strategy to
+ * a condition list and cannot branch.
  */
-export const EXECUTABLE = new Set([
+const PLAN_EXECUTABLE = new Set<string>([
   'trade',
   'tradeOptions',
   'last_digit',
@@ -134,6 +157,15 @@ export const EXECUTABLE = new Set([
 ]);
 
 /**
+ * Blocks this build can execute, as the union of both engines.
+ *
+ * The plan engine's set plus everything the interpreter implements. Which set
+ * actually applies to a strategy depends on the engine chosen for it, so
+ * `planStrategy` checks against the narrower of the two it will really use.
+ */
+export const EXECUTABLE = new Set<string>([...PLAN_EXECUTABLE, ...INTERPRETED_BLOCKS]);
+
+/**
  * Blocks whose absence from `EXECUTABLE` is deliberate and worth naming.
  *
  * `check_sell` sells a contract before expiry. This build holds every contract
@@ -141,9 +173,7 @@ export const EXECUTABLE = new Set([
  * change its outcome. It is refused instead of ignored.
  */
 const UNSUPPORTED_REASONS: Record<string, string> = {
-  check_sell: 'Selling before expiry is not supported; contracts are held to expiry.',
-  controls_if: 'Conditional branching is not modelled.',
-  variables_set: 'Assigning variables outside an indicator block is not modelled.'
+  check_sell: 'Selling before expiry is not supported; contracts are held to expiry.'
 };
 
 /**
@@ -153,7 +183,7 @@ const UNSUPPORTED_REASONS: Record<string, string> = {
  * price". It is exhaustive by type, so adding a contract type without deciding
  * its family is a compile error rather than a runtime surprise.
  */
-const CONTRACT_TYPE_FAMILY: Record<DerivContractType, ContractFamily> = {
+export const CONTRACT_TYPE_FAMILY: Record<DerivContractType, ContractFamily> = {
   CALL: 'rise_fall',
   PUT: 'rise_fall',
   MULTUP: 'multipliers',
@@ -175,6 +205,18 @@ const CONTRACT_TYPE_FAMILY: Record<DerivContractType, ContractFamily> = {
  * plan keeps `rise_fall` unless a barrier is actually configured.
  */
 const CONTRACT_TYPES = new Set<string>(Object.keys(CONTRACT_TYPE_FAMILY));
+
+/**
+ * The direction a contract type buys in, for the signal it produces.
+ *
+ * Prediction families have no direction of their own, so they report `NONE`:
+ * their outcome is decided by the digit, not by which way the market moved.
+ */
+export function directionForContract(type: DerivContractType): 'RISE' | 'FALL' | 'NONE' {
+  if (type === 'CALL' || type === 'MULTUP') return 'RISE';
+  if (type === 'PUT' || type === 'MULTDOWN') return 'FALL';
+  return 'NONE';
+}
 
 /**
  * Reads the digit a `DIGIT*` strategy predicts.
@@ -319,8 +361,20 @@ export function planStrategy(tree: BlockTree): PlanResult {
       fieldValue(n, 'TYPE_LIST')?.startsWith('DIGIT') === true
     )
   );
+  // A genuine DBot export runs its own program. The simplified dialect — a bare
+  // value block in statement position — is modelled by the condition list below
+  // instead, so existing bots keep trading exactly as before.
+  const useInterpreter = !legacyDigit && isDbProgram(tree);
 
-  const unsupportedTypes = all.filter((n) => !EXECUTABLE.has(n.type)).map((n) => n.type);
+  // Check against the set for the engine that will actually run this strategy.
+  // A branching program is fine for the interpreter and impossible for the plan
+  // engine, so judging it by the plan engine's narrow set would refuse a
+  // strategy this build can genuinely execute.
+  const runnable = useInterpreter ? EXECUTABLE : PLAN_EXECUTABLE;
+  const unsupportedTypes = all.filter((n) => !runnable.has(n.type)).map((n) => n.type);
+  // The legacy digit path reads its prediction from a `last_digit` block. A
+  // `variables_get` there would stand in for the prediction, and that path does
+  // not resolve variables, so it is refused rather than guessed at.
   if (legacyDigit && all.some((node) => node.type === 'variables_get')) {
     unsupportedTypes.push('variables_get');
   }
@@ -392,14 +446,18 @@ export function planStrategy(tree: BlockTree): PlanResult {
 
   // Entry conditions: everything inside the before-purchase stack, plus a
   // top-level tick_analysis stack when DBot wrote one. `purchase` is the action,
-  // not a condition, so it is excluded here.
+  // not a condition, so it is excluded here. A genuine DBot program is not
+  // reduced to conditions at all — the interpreter decides — so this walk is
+  // skipped rather than run and discarded.
   const beforePurchase = findTopLevel(tree, 'before_purchase');
   const entryStack = statementBlock(beforePurchase, 'BEFOREPURCHASE_STACK');
   const analysisStack = statementBlock(findTopLevel(tree, 'tick_analysis'), 'TICKANALYSIS_STACK');
 
-  const conditionNodes = [...stackBlocks(entryStack), ...stackBlocks(analysisStack)].filter(
-    (n) => n.type !== 'purchase'
-  );
+  const conditionNodes = useInterpreter
+    ? []
+    : [...stackBlocks(entryStack), ...stackBlocks(analysisStack)].filter(
+        (n) => n.type !== 'purchase'
+      );
 
   const conditions: PlanCondition[] = [];
 
@@ -444,8 +502,9 @@ export function planStrategy(tree: BlockTree): PlanResult {
   }
 
   // A strategy with no entry condition cannot decide when to trade. Refusing is
-  // the honest answer: "always trade" is not what an empty stack means.
-  if (conditions.length === 0) {
+  // the honest answer: "always trade" is not what an empty stack means. An
+  // interpreted program carries its rule in the block tree, so it is exempt.
+  if (conditions.length === 0 && !useInterpreter) {
     reasons.push('The strategy has no entry condition that this build can evaluate.');
   }
 
@@ -519,7 +578,8 @@ export function planStrategy(tree: BlockTree): PlanResult {
       stake,
       currency,
       duration,
-      durationUnit
+      durationUnit,
+      engine: useInterpreter ? 'interpreter' : 'plan'
     },
     reasons: [],
     unsupported: []
@@ -598,6 +658,16 @@ export interface EvaluateInput {
  */
 export function evaluateStrategy(input: EvaluateInput): EvaluationVerdict {
   const { plan, ticks } = input;
+
+  // An interpreter plan carries no condition list: its entry rule lives in the
+  // block tree. Evaluating it here would read "no conditions" as "always trade",
+  // so it is refused rather than allowed to fall through to a vacuous entry.
+  if (plan.engine === 'interpreter') {
+    return {
+      kind: 'ineligible',
+      reason: 'This strategy is decided by its block program, not by plan conditions.'
+    };
+  }
 
   if (ticks.length === 0) {
     return { kind: 'insufficient', reason: 'No ticks have arrived for this symbol.' };

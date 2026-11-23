@@ -18,6 +18,9 @@
 /** Runtime state of one evaluation session. */
 export type BotRunStatus = 'idle' | 'running' | 'stopping' | 'stopped' | 'failed';
 
+/** A JSON-serialisable value, the only shape a persisted variable may take. */
+export type JsonValue = number | string | boolean | null | JsonValue[];
+
 /** A single evaluated condition, kept for the run log and the UI. */
 export interface BotRunEvent {
   at: number;
@@ -58,6 +61,14 @@ export interface BotRunRecord {
   /** The most recent contract opened by this run, when one exists. */
   lastExecutionId: string | null;
   lastContractId: number | null;
+  /**
+   * The contract whose `after_purchase` stack has already run.
+   *
+   * DBot runs `after_purchase` once per settled contract, not once per tick. The
+   * tick loop is the only clock this build has, so the run remembers which
+   * settlement it has already reacted to and does not repeat it.
+   */
+  afterPurchaseFor: number | null;
   /** Set when the run failed; cleared on a fresh start. */
   error: string | null;
   counters: BotRunCounters;
@@ -80,6 +91,15 @@ export interface BotRunRecord {
   lastTickKey: string | null;
   /** Timestamp of the last tick accepted, used to expire an abandoned run. */
   lastTickAt: number | null;
+  /**
+   * Interpreter variables for this run, keyed by Blockly variable id (or name
+   * when the export omits ids).
+   *
+   * This lives on the run, not in a module global, so two bots — or two runs of
+   * one bot — can never read each other's variables. It is plain JSON so the
+   * run survives a store round-trip.
+   */
+  variables: Record<string, JsonValue>;
 }
 
 /** Fields a client may see. Identical to the record today, but explicit. */

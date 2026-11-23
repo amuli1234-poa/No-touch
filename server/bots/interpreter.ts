@@ -1,0 +1,984 @@
+/**
+ * Deterministic interpreter for imported DBot strategies.
+ *
+ * `evaluator.ts` answers "do this strategy's entry conditions hold?" by
+ * extracting a fixed plan. That works for the handful of shapes it models, but
+ * a real DBot export is a *program*: variables, conditionals, arithmetic, text,
+ * timers and post-trade result checks. A plan cannot represent a strategy whose
+ * entry condition depends on a value computed three blocks earlier.
+ *
+ * This module executes the block tree instead. It is a small tree-walking
+ * interpreter with JavaScript semantics, because that is what DBot itself
+ * compiles its blocks to — each generator in `deriv-com/deriv-app`
+ * (`packages/bot-skeleton/src/scratch/blocks`) emits JavaScript, and matching
+ * that output is the only way to reproduce a strategy's behaviour rather than
+ * approximate it.
+ *
+ * Design rules:
+ *
+ *  1. **Purity per tick.** Evaluating a tick reads the ticks, the run's
+ *     variables and the settled-contract facts handed in. It performs no I/O
+ *     and reads no clock, so the same inputs always produce the same verdict.
+ *     That is what makes a purchase reproducible when a customer asks why it
+ *     happened.
+ *
+ *  2. **Variables are run-scoped.** The caller owns the variable map and
+ *     persists it per run. Nothing here is module-global, so one run's
+ *     variables can never be read by another bot, another user or a later run.
+ *
+ *  3. **Unknown means unknown.** A block type absent from `VALUE_BLOCKS` /
+ *     `STATEMENT_BLOCKS` raises `UnsupportedBlockError` rather than evaluating
+ *     to a plausible-looking default. The caller refuses the strategy; it is
+ *     never traded on a guess.
+ *
+ *  4. **Side effects are inert.** `notify` records a message for the caller to
+ *     display. It cannot buy, sell or alter variables, so a notification
+ *     failure cannot corrupt a decision.
+ */
+
+import type { MarketTick } from '../services/marketData.js';
+import type { JsonValue } from './runTypes.js';
+import type { BlockTree, TreeNode } from './tree.js';
+import { fieldValue, findTopLevel } from './tree.js';
+
+/* ------------------------------- values --------------------------------- */
+
+/**
+ * A value a block can evaluate to.
+ *
+ * Mirrors the JavaScript values DBot's generators produce: numbers, strings,
+ * booleans, arrays (the tick/digit lists) and `null` for an unset variable or
+ * an absent contract detail.
+ */
+export type Value = number | string | boolean | null | Value[];
+
+/* --------------------------- contract facts ----------------------------- */
+
+/**
+ * The settled-contract facts an `after_purchase` block may read.
+ *
+ * Built by the caller from the stored `ContractRecord`, never synthesised. A
+ * field the record does not carry stays `null` so `read_details` returns null
+ * rather than a fabricated number.
+ */
+export interface ContractFacts {
+  /** Deriv transaction id of the purchase (`read_details` index 1). */
+  buyTransactionId: number | string | null;
+  buyPrice: number | null;
+  /** Settlement value received (`read_details` index 3). */
+  sellPrice: number | null;
+  profit: number | null;
+  contractType: string | null;
+  /** Epoch milliseconds of entry; formatted to HH:mm:ss for index 6. */
+  entryTime: number | null;
+  entrySpot: number | null;
+  /** Epoch milliseconds of settlement; formatted to HH:mm:ss for index 8. */
+  exitTime: number | null;
+  exitSpot: number | null;
+  barrier: number | null;
+  /** `win` when profit >= 0, `loss` otherwise — DBot's own rule. */
+  result: 'win' | 'loss' | null;
+}
+
+/** A notification a `notify` block asked to display. */
+export interface InterpreterNotification {
+  /** DBot's `success` | `info` | `warn` | `error`. */
+  type: string;
+  sound: string;
+  message: string;
+}
+
+/**
+ * Everything the interpreter may read while evaluating one tick.
+ *
+ * `variables` and `totalProfit` are owned by the run and passed back out
+ * through `ExecutionResult`, so they persist across ticks without any module
+ * state.
+ */
+export interface TickContext {
+  ticks: MarketTick[];
+  variables: Map<string, Value>;
+  /** Realised profit for this run so far, from settled contracts. */
+  totalProfit: number;
+  /** Facts for the most recently settled contract, or null before the first. */
+  lastContract: ContractFacts | null;
+}
+
+/** Thrown when a strategy uses a block this interpreter cannot execute. */
+export class UnsupportedBlockError extends Error {
+  readonly blockType: string;
+  constructor(blockType: string) {
+    super(`Block type "${blockType}" cannot be executed by this interpreter.`);
+    this.name = 'UnsupportedBlockError';
+    this.blockType = blockType;
+  }
+}
+
+/** A timer a `timeout` block asked to schedule. */
+export interface ScheduledTimeout {
+  /** Milliseconds to wait, as DBot's `sleep(seconds)` would. */
+  delayMs: number;
+  /** The stack to run once the delay elapses. */
+  stack: TreeNode | null;
+}
+
+/** Outcome of running a stack of statements. */
+export interface StackOutcome {
+  /** Set when a `purchase` block ran: the contract type to buy. */
+  purchase: string | null;
+  /** True when `trade_again` ran, i.e. the strategy wants another entry. */
+  tradeAgain: boolean;
+  /** Timers scheduled during this execution, in the order they were reached. */
+  timeouts: ScheduledTimeout[];
+  /** Notifications raised during this execution, in order. */
+  notifications: InterpreterNotification[];
+}
+
+/** Result of executing a lifecycle stack for one tick. */
+export interface ExecutionResult extends StackOutcome {
+  /** Variable state after execution, to persist on the run. */
+  variables: Map<string, Value>;
+}
+
+/* --------------------------- block registries --------------------------- */
+
+/**
+ * Blocks that evaluate to a value.
+ *
+ * Each entry is a function of `(node, context)`; none of them may mutate the
+ * context. A block absent from this map is unsupported — see rule 3.
+ */
+const VALUE_BLOCKS: Record<string, (node: TreeNode, ctx: TickContext) => Value> = {
+  /* ------------------------------ literals ------------------------------ */
+  math_number: (node) => readNumberField(node, 'NUM') ?? 0,
+  math_number_positive: (node) => readNumberField(node, 'NUM') ?? 0,
+  math_constant: (node) => MATH_CONSTANTS[fieldValue(node, 'CONSTANT') ?? ''] ?? null,
+  logic_boolean: (node) => fieldValue(node, 'BOOL') === 'TRUE',
+  logic_null: () => null,
+  text: (node) => fieldValue(node, 'TEXT') ?? '',
+
+  /* ------------------------------ variables ----------------------------- */
+  variables_get: (node, ctx) => readVariable(node, ctx),
+
+  /* ------------------------------- logic -------------------------------- */
+  logic_compare: (node, ctx) => compareValues(node, ctx),
+  logic_operation: (node, ctx) => logicalOperation(node, ctx),
+  logic_negate: (node, ctx) => !truthy(evaluateInput(node, 'BOOL', ctx)),
+  logic_ternary: (node, ctx) =>
+    truthy(evaluateInput(node, 'IF', ctx))
+      ? evaluateInput(node, 'THEN', ctx)
+      : evaluateInput(node, 'ELSE', ctx),
+
+  /* -------------------------------- math -------------------------------- */
+  math_arithmetic: (node, ctx) => arithmetic(node, ctx),
+  math_single: (node, ctx) => singleOperandMath(node, ctx),
+  math_round: (node, ctx) => roundValue(node, ctx),
+  math_modulo: (node, ctx) => {
+    const dividend = toNumber(evaluateInput(node, 'DIVIDEND', ctx));
+    const divisor = toNumber(evaluateInput(node, 'DIVISOR', ctx));
+    // JS `%` is a remainder with the dividend's sign; Blockly emits `a % b`.
+    return divisor === 0 ? NaN : dividend % divisor;
+  },
+  math_constrain: (node, ctx) => {
+    const value = toNumber(evaluateInput(node, 'VALUE', ctx));
+    const low = toNumber(evaluateInput(node, 'LOW', ctx));
+    const high = toNumber(evaluateInput(node, 'HIGH', ctx));
+    return Math.min(Math.max(value, low), high);
+  },
+
+  /* -------------------------------- text -------------------------------- */
+  text_join: (node, ctx) => textJoinValue(node, ctx),
+  text_length: (node, ctx) => String(evaluateInput(node, 'VALUE', ctx) ?? '').length,
+  text_isEmpty: (node, ctx) => String(evaluateInput(node, 'VALUE', ctx) ?? '').length === 0,
+
+  /* -------------------------------- lists ------------------------------- */
+  lists_getIndex: (node, ctx) => listGetIndex(node, ctx),
+  lists_length: (node, ctx) => toList(evaluateInput(node, 'VALUE', ctx)).length,
+  lists_isEmpty: (node, ctx) => toList(evaluateInput(node, 'VALUE', ctx)).length === 0,
+  lists_indexOf: (node, ctx) => listIndexOf(node, ctx),
+
+  /* ----------------------------- tick access ---------------------------- */
+  last_digit: (node, ctx) => lastDigitOfLatest(ctx),
+  lastDigitList: (node, ctx) => lastDigitList(ctx),
+  check_direction: (node, ctx) => {
+    const wanted = fieldValue(node, 'CHECK_DIRECTION') ?? '';
+    return marketDirection(ctx.ticks) === wanted;
+  },
+  tick: (node, ctx) => {
+    const latest = ctx.ticks[ctx.ticks.length - 1];
+    return latest ? latest.quote : null;
+  },
+  tick_string: (node, ctx) => {
+    const latest = ctx.ticks[ctx.ticks.length - 1];
+    return latest ? formatQuote(latest.quote, latest.pipSize) : null;
+  },
+  ticks: (node, ctx) => ctx.ticks.map((tick) => tick.quote),
+  ticks_string: (node, ctx) =>
+    ctx.ticks.map((tick) => formatQuote(tick.quote, tick.pipSize)),
+
+  /* -------------------------- contract details -------------------------- */
+  contract_check_result: (node, ctx) => {
+    const wanted = fieldValue(node, 'CHECK_RESULT') ?? '';
+    return ctx.lastContract?.result === wanted;
+  },
+  read_details: (node, ctx) => readContractDetail(node, ctx.lastContract),
+  total_profit: (node, ctx) => ctx.totalProfit,
+  total_profit_string: (node, ctx) => String(ctx.totalProfit)
+};
+
+/**
+ * Blocks that perform an action and have no value.
+ *
+ * `executeStack` walks these in `<next>` order. Each may itself schedule
+ * timers or raise notifications, which the caller collects.
+ */
+interface StatementContext {
+  ctx: TickContext;
+  outcome: StackOutcome;
+}
+
+const STATEMENT_BLOCKS: Record<string, (node: TreeNode, sc: StatementContext) => void> = {
+  /* ------------------------------ variables ----------------------------- */
+  variables_set: (node, sc) => {
+    writeVariable(node, evaluateInput(node, 'VALUE', sc.ctx), sc.ctx);
+  },
+  math_change: (node, sc) => {
+    const delta = toNumber(evaluateInput(node, 'DELTA', sc.ctx));
+    const current = readVariable(node, sc.ctx);
+    // DBot: `x = (typeof x === 'number' ? x : 0) + delta`
+    writeVariable(node, (typeof current === 'number' ? current : 0) + delta, sc.ctx);
+  },
+
+  /* -------------------------------- text -------------------------------- */
+  // DBot's `text_join` is a *statement* that assigns to a variable, and its
+  // generator joins with a single space (`[...].join(" ")`) even though the
+  // block's own description says "without spaces". The generator is what runs,
+  // so a space is the behaviour being reproduced.
+  text_join: (node, sc) => {
+    const parts = stackOf(node, 'STACK').map((child) => {
+      const value = evaluateInput(child, 'TEXT', sc.ctx);
+      return value === null ? '' : String(value);
+    });
+    writeVariable(node, parts.join(' '), sc.ctx);
+  },
+
+  /* -------------------------------- logic ------------------------------- */
+  controls_if: (node, sc) => executeIf(node, sc),
+
+  /* -------------------------------- misc -------------------------------- */
+  notify: (node, sc) => {
+    const message = evaluateInput(node, 'MESSAGE', sc.ctx);
+    sc.outcome.notifications.push({
+      type: fieldValue(node, 'NOTIFICATION_TYPE') ?? 'info',
+      sound: fieldValue(node, 'NOTIFICATION_SOUND') ?? 'silent',
+      // DBot falls back to "<empty message>" for a blank input.
+      message: message === null || message === '' ? '<empty message>' : String(message)
+    });
+  },
+  /* ----------------------------- indicators ----------------------------- */
+  // DBot: `var = Bot.sma(inputList, period)`. The input list is the block's
+  // INPUT_LIST child; when it is absent DBot passes `undefined`, so the
+  // indicator cannot be computed and the variable is set to null rather than a
+  // guessed average.
+  sma_statement: (node, sc) => writeIndicator(node, sc, 'sma'),
+  ema_statement: (node, sc) => writeIndicator(node, sc, 'ema'),
+  timeout: (node, sc) => {
+    const seconds = toNumber(evaluateInput(node, 'SECONDS', sc.ctx));
+    // DBot's generator defaults a missing SECONDS input to 1.
+    const safeSeconds = Number.isFinite(seconds) && seconds >= 0 ? seconds : 1;
+    sc.outcome.timeouts.push({
+      delayMs: safeSeconds * 1000,
+      stack: inputBlock(node, 'TIMEOUTSTACK')
+    });
+  },
+
+  /* ----------------------------- lifecycle ------------------------------ */
+  purchase: (node, sc) => {
+    const type = fieldValue(node, 'PURCHASE_LIST');
+    if (type) sc.outcome.purchase = type;
+  },
+  trade_again: (_node, sc) => {
+    sc.outcome.tradeAgain = true;
+  }
+};
+
+/** Every block type this interpreter can execute, values and statements. */
+export const INTERPRETED_BLOCKS: readonly string[] = [
+  ...new Set([...Object.keys(VALUE_BLOCKS), ...Object.keys(STATEMENT_BLOCKS)])
+].sort();
+
+/** True when `type` has an implemented semantics in this interpreter. */
+export function isInterpreted(type: string): boolean {
+  return type in VALUE_BLOCKS || type in STATEMENT_BLOCKS;
+}
+
+/**
+ * True when a block type produces a value rather than an action.
+ *
+ * DBot never wires a value block into a statement slot. A strategy that does is
+ * written in WickSentinel's own simplified dialect, where a bare
+ * `check_direction` stands in for "only buy when this holds".
+ */
+export function isValueBlock(type: string): boolean {
+  return type in VALUE_BLOCKS;
+}
+
+/**
+ * True when the strategy's entry stack is a genuine DBot program.
+ *
+ * Two conditions, both mechanical:
+ *
+ *  1. Every block in statement position must be a statement block. A real DBot
+ *     export nests its conditions inside `controls_if`; the simplified dialect —
+ *     a bare `check_direction` with a `next` block — does not, and stays with the
+ *     plan evaluator that already models it.
+ *
+ *  2. The stack must contain a `controls_if`, i.e. an actual decision. A stack
+ *     that is only `purchase` buys on every tick. DBot allows that, but
+ *     WickSentinel has always refused an unconditional strategy, and silently
+ *     starting to trade one would change how existing bots behave.
+ */
+export function isDbProgram(tree: BlockTree): boolean {
+  const before = findTopLevel(tree, 'before_purchase');
+  let node = before ? inputBlock(before, 'BEFOREPURCHASE_STACK') : null;
+  let hasDecision = false;
+  while (node) {
+    if (isValueBlock(node.type)) return false;
+    if (node.type === 'controls_if') hasDecision = true;
+    node = node.next;
+  }
+  return hasDecision;
+}
+
+/* --------------------------- run state bridge --------------------------- */
+
+/** Upper bound on distinct variables one run may hold. */
+const MAX_VARIABLES = 200;
+
+/** Upper bound on elements retained in a list-valued variable. */
+const MAX_LIST_LENGTH = 1000;
+
+/**
+ * Converts a persisted variable map into interpreter scope.
+ *
+ * Values come back from JSON, so a list stays a list and a number stays a
+ * number; anything that is not a recognised shape is dropped rather than
+ * coerced, so a corrupted record cannot become a number the strategy acts on.
+ */
+export function loadVariables(raw: Record<string, unknown> | null | undefined): Map<string, Value> {
+  const variables = new Map<string, Value>();
+  if (!raw) return variables;
+  for (const [key, value] of Object.entries(raw)) {
+    const normalised = normaliseValue(value);
+    if (normalised !== undefined) variables.set(key, normalised);
+  }
+  return variables;
+}
+
+/**
+ * Serialises interpreter scope for persistence.
+ *
+ * Non-finite numbers become `null`: JSON has no NaN/Infinity, and silently
+ * writing `null` keeps the record honest — the strategy sees a value that is
+ * absent rather than one that is wrong.
+ */
+export function saveVariables(variables: Map<string, Value>): Record<string, JsonValue> {
+  const out: Record<string, JsonValue> = {};
+  let count = 0;
+  for (const [key, value] of variables) {
+    if (count >= MAX_VARIABLES) break;
+    out[key] = toJsonValue(value);
+    count += 1;
+  }
+  return out;
+}
+
+function normaliseValue(value: unknown): Value | undefined {
+  if (value === null) return null;
+  if (typeof value === 'string' || typeof value === 'boolean') return value;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (Array.isArray(value)) {
+    const list: Value[] = [];
+    for (const item of value.slice(0, MAX_LIST_LENGTH)) {
+      const normalised = normaliseValue(item);
+      if (normalised !== undefined) list.push(normalised);
+    }
+    return list;
+  }
+  return undefined;
+}
+
+function toJsonValue(value: Value): JsonValue {
+  if (Array.isArray(value)) {
+    return value.slice(0, MAX_LIST_LENGTH).map((item) => {
+      const inner = toJsonValue(item);
+      return Array.isArray(inner) ? null : inner;
+    });
+  }
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  return value;
+}
+
+/* ----------------------------- entry points ----------------------------- */
+
+/**
+ * Runs the strategy's `before_purchase` stack for one tick.
+ *
+ * This is the entry decision: if the stack reaches a `purchase` block, the
+ * returned `purchase` names the contract type to buy. A strategy that does not
+ * reach `purchase` returns `purchase: null`, which the caller treats as "no
+ * entry" — never as a default buy.
+ */
+export function runBeforePurchase(tree: BlockTree, ctx: TickContext): ExecutionResult {
+  const before = findTopLevel(tree, 'before_purchase');
+  const stack = before ? inputBlock(before, 'BEFOREPURCHASE_STACK') : null;
+  return executeStack(stack, ctx);
+}
+
+/**
+ * Runs the strategy's `after_purchase` stack against a settled contract.
+ *
+ * DBot runs this once per settled contract to inspect the result and decide
+ * whether to trade again. `lastContract` must carry the real settled facts.
+ */
+export function runAfterPurchase(tree: BlockTree, ctx: TickContext): ExecutionResult {
+  const after = findTopLevel(tree, 'after_purchase');
+  const stack = after ? inputBlock(after, 'AFTERPURCHASE_STACK') : null;
+  return executeStack(stack, ctx);
+}
+
+/**
+ * Executes a stack of statements in `<next>` order.
+ *
+ * Stops at the first `purchase` or `trade_again`, matching DBot: `purchase` is
+ * terminal for the before-purchase stack, and `trade_again` returns out of the
+ * after-purchase function.
+ */
+export function executeStack(stack: TreeNode | null, ctx: TickContext): ExecutionResult {
+  const outcome: StackOutcome = {
+    purchase: null,
+    tradeAgain: false,
+    timeouts: [],
+    notifications: []
+  };
+  const sc: StatementContext = { ctx, outcome };
+
+  let node = stack;
+  while (node) {
+    const handler = STATEMENT_BLOCKS[node.type];
+    if (!handler) throw new UnsupportedBlockError(node.type);
+    handler(node, sc);
+
+    // `purchase` and `trade_again` both terminate their stack in DBot.
+    if (outcome.purchase !== null || outcome.tradeAgain) break;
+    node = node.next;
+  }
+
+  return { ...outcome, variables: ctx.variables };
+}
+
+/**
+ * Evaluates a block to a value.
+ *
+ * A `shadow` literal is read from its fields directly, because DBot stores
+ * numeric defaults as shadows rather than real blocks.
+ */
+export function evaluateBlock(node: TreeNode | null, ctx: TickContext): Value {
+  if (!node) return null;
+  if (node.shadow) return evaluateShadow(node);
+  const handler = VALUE_BLOCKS[node.type];
+  if (!handler) throw new UnsupportedBlockError(node.type);
+  return handler(node, ctx);
+}
+
+/* ------------------------------ internals ------------------------------- */
+
+function evaluateShadow(node: TreeNode): Value {
+  if (node.type === 'math_number' || node.type === 'math_number_positive') {
+    return readNumberField(node, 'NUM') ?? 0;
+  }
+  if (node.type === 'text') return fieldValue(node, 'TEXT') ?? '';
+  if (node.type === 'logic_boolean') return fieldValue(node, 'BOOL') === 'TRUE';
+  return null;
+}
+
+/** Evaluates the block wired into `name`, or null when the input is empty. */
+function evaluateInput(node: TreeNode, name: string, ctx: TickContext): Value {
+  return evaluateBlock(inputBlock(node, name), ctx);
+}
+
+/** Returns the block connected to a named input, if any. */
+function inputBlock(node: TreeNode, name: string): TreeNode | null {
+  const input = node.inputs.find((item) => item.name === name);
+  return input?.block ?? null;
+}
+
+/** Walks a `<statement>` input as a flat array, for order-sensitive joins. */
+function stackOf(node: TreeNode, name: string): TreeNode[] {
+  const out: TreeNode[] = [];
+  let current = inputBlock(node, name);
+  while (current) {
+    out.push(current);
+    current = current.next;
+  }
+  return out;
+}
+
+function readNumberField(node: TreeNode, name: string): number | null {
+  const raw = fieldValue(node, name);
+  if (raw === null) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * The key a variable block refers to.
+ *
+ * The id is preferred because two variables may share a display name, and the
+ * id is what Blockly itself keys on. Exports from some DBot versions omit ids,
+ * so the display name is the fallback.
+ *
+ * DBot is inconsistent about the *field* name: `variables_set`, `variables_get`,
+ * `math_change` and `text_append` use `VAR`, while `text_join`, indicators and
+ * `lists_create_with` use `VARIABLE`. Reading only one would silently drop
+ * every write made by the other half of the library.
+ */
+function variableKey(node: TreeNode): string | null {
+  const field =
+    node.fields.find((item) => item.name === 'VAR') ??
+    node.fields.find((item) => item.name === 'VARIABLE');
+  if (!field) return null;
+  return field.id ?? field.value;
+}
+
+function readVariable(node: TreeNode, ctx: TickContext): Value {
+  const key = variableKey(node);
+  if (key === null) return null;
+  // An unset variable reads as null, matching an undefined JS binding used
+  // before assignment rather than inventing a 0.
+  return ctx.variables.get(key) ?? null;
+}
+
+function writeVariable(node: TreeNode, value: Value, ctx: TickContext): void {
+  const key = variableKey(node);
+  if (key === null) return;
+  ctx.variables.set(key, value);
+}
+
+const MATH_CONSTANTS: Record<string, number> = {
+  PI: Math.PI,
+  E: Math.E,
+  GOLDEN_RATIO: (1 + Math.sqrt(5)) / 2,
+  SQRT2: Math.SQRT2,
+  SQRT1_2: Math.SQRT1_2,
+  INFINITY: Infinity
+};
+
+const COMPARE_OPS = new Set(['EQ', 'NEQ', 'LT', 'LTE', 'GT', 'GTE']);
+
+function compareValues(node: TreeNode, ctx: TickContext): boolean {
+  const op = fieldValue(node, 'OP') ?? '';
+  if (!COMPARE_OPS.has(op)) return false;
+  const left = evaluateInput(node, 'A', ctx);
+  const right = evaluateInput(node, 'B', ctx);
+
+  // Blockly emits `==`/`!=` (loose), and `<`/`>` for ordering. Loose equality
+  // coerces, so a `variables_set` storing "5" compares equal to the literal 5 —
+  // reproducing the generated code matters more than the tidier `===`.
+  switch (op) {
+    case 'EQ':
+      return looseEquals(left, right);
+    case 'NEQ':
+      return !looseEquals(left, right);
+    default:
+      break;
+  }
+
+  const a = comparable(left);
+  const b = comparable(right);
+  switch (op) {
+    case 'LT':
+      return a < b;
+    case 'LTE':
+      return a <= b;
+    case 'GT':
+      return a > b;
+    case 'GTE':
+      return a >= b;
+    default:
+      return false;
+  }
+}
+
+/** JS `===` for our value types, including structural equality for arrays. */
+function strictEquals(left: Value, right: Value): boolean {
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right)) return false;
+    if (left.length !== right.length) return false;
+    return left.every((item, index) => strictEquals(item, right[index]));
+  }
+  return left === right;
+}
+
+/**
+ * JS `==`, which is what Blockly emits for `EQ`.
+ *
+ * Arrays are compared structurally: `[] == []` is false in JS, but a strategy
+ * comparing two tick lists means "the same list", and treating every such
+ * comparison as false would make a loop condition silently never hold.
+ */
+function looseEquals(left: Value, right: Value): boolean {
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return strictEquals(left, right);
+  }
+  // eslint-disable-next-line
+  return left == right;
+}
+
+/**
+ * Coerces an operand for an ordering comparison.
+ *
+ * Blockly emits bare `<`/`>` between the two operands, so JS decides: two
+ * strings compare lexicographically, anything else compares numerically. A
+ * non-numeric string in a numeric comparison yields NaN, making every ordering
+ * test false — the same outcome the generated code has.
+ */
+function comparable(value: Value): number | string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return value;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (value === null) return 0;
+  return NaN;
+}
+
+function truthy(value: Value): boolean {
+  if (Array.isArray(value)) return value.length > 0;
+  return Boolean(value);
+}
+
+function toNumber(value: Value): number {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  if (value === null) return 0;
+  if (Array.isArray(value)) return NaN;
+  const parsed = Number(value);
+  return parsed;
+}
+
+function toList(value: Value): Value[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function arithmetic(node: TreeNode, ctx: TickContext): Value {
+  const op = fieldValue(node, 'OP') ?? '';
+  const a = toNumber(evaluateInput(node, 'A', ctx));
+  const b = toNumber(evaluateInput(node, 'B', ctx));
+  switch (op) {
+    case 'ADD':
+      return a + b;
+    case 'MINUS':
+      return a - b;
+    case 'MULTIPLY':
+      return a * b;
+    // JS division by zero yields Infinity/NaN rather than throwing; the caller
+    // treats a non-finite operand as "no signal", so this cannot buy.
+    case 'DIVIDE':
+      return a / b;
+    case 'POWER':
+      return Math.pow(a, b);
+    default:
+      return NaN;
+  }
+}
+
+function singleOperandMath(node: TreeNode, ctx: TickContext): Value {
+  const op = fieldValue(node, 'OP') ?? '';
+  const value = toNumber(evaluateInput(node, 'NUM', ctx));
+  switch (op) {
+    case 'ROOT':
+      return Math.sqrt(value);
+    case 'ABS':
+      return Math.abs(value);
+    case 'NEG':
+      return -value;
+    case 'LN':
+      return Math.log(value);
+    case 'LOG10':
+      return Math.log(value) / Math.log(10);
+    case 'EXP':
+      return Math.pow(Math.E, value);
+    case 'POW10':
+      return Math.pow(10, value);
+    case 'ROUND':
+      return Math.round(value);
+    case 'ROUNDUP':
+      return Math.ceil(value);
+    case 'ROUNDDOWN':
+      return Math.floor(value);
+    case 'SIN':
+      return Math.sin((value / 180) * Math.PI);
+    case 'COS':
+      return Math.cos((value / 180) * Math.PI);
+    case 'TAN':
+      return Math.tan((value / 180) * Math.PI);
+    case 'ASIN':
+      return (Math.asin(value) / Math.PI) * 180;
+    case 'ACOS':
+      return (Math.acos(value) / Math.PI) * 180;
+    case 'ATAN':
+      return (Math.atan(value) / Math.PI) * 180;
+    default:
+      return NaN;
+  }
+}
+
+function roundValue(node: TreeNode, ctx: TickContext): Value {
+  const op = fieldValue(node, 'OP') ?? 'ROUND';
+  const value = toNumber(evaluateInput(node, 'NUM', ctx));
+  if (op === 'ROUNDUP') return Math.ceil(value);
+  if (op === 'ROUNDDOWN') return Math.floor(value);
+  return Math.round(value);
+}
+
+function logicalOperation(node: TreeNode, ctx: TickContext): Value {
+  const op = fieldValue(node, 'OP') ?? '';
+  const left = evaluateInput(node, 'A', ctx);
+  if (op === 'AND') {
+    // JS `&&` short-circuits and returns the operand, not a coerced boolean.
+    return truthy(left) ? evaluateInput(node, 'B', ctx) : left;
+  }
+  if (op === 'OR') {
+    return truthy(left) ? left : evaluateInput(node, 'B', ctx);
+  }
+  return false;
+}
+
+/**
+ * DBot's `text_join` in value position.
+ *
+ * The statement form assigns to a variable; when a `text_join` appears in a
+ * value slot (some exports place it there) the joined text is returned instead
+ * of assigned.
+ */
+function textJoinValue(node: TreeNode, ctx: TickContext): Value {
+  return stackOf(node, 'STACK')
+    .map((child) => {
+      const value = evaluateInput(child, 'TEXT', ctx);
+      return value === null ? '' : String(value);
+    })
+    .join(' ');
+}
+
+function listGetIndex(node: TreeNode, ctx: TickContext): Value {
+  const mode = fieldValue(node, 'MODE') ?? 'GET';
+  const where = fieldValue(node, 'WHERE') ?? 'FIRST';
+  const list = [...toList(evaluateInput(node, 'VALUE', ctx))];
+  if (list.length === 0) return null;
+
+  const atIndex = (): number => {
+    // Blockly's `getAdjusted` treats FROM_START as 1-based and FROM_END as
+    // offset from the end, so the stored `AT` is converted before use.
+    const raw = toNumber(evaluateInput(node, 'AT', ctx));
+    if (where === 'FROM_END') return list.length - 1 - (raw - 1);
+    return raw - 1;
+  };
+
+  let index: number;
+  if (where === 'FIRST') index = 0;
+  else if (where === 'LAST') index = list.length - 1;
+  else index = atIndex();
+
+  if (!Number.isInteger(index) || index < 0 || index >= list.length) return null;
+
+  if (mode === 'GET') return list[index];
+  // GET_REMOVE and REMOVE both consume the element; the interpreter has no
+  // shared list identity across blocks, so a removal is reported as its value.
+  return list[index];
+}
+
+function listIndexOf(node: TreeNode, ctx: TickContext): Value {
+  const list = toList(evaluateInput(node, 'VALUE', ctx));
+  const target = evaluateInput(node, 'FIND', ctx);
+  const index = list.findIndex((item) => strictEquals(item, target));
+  if (index === -1) return 0;
+  return fieldValue(node, 'END') === 'LAST' ? list.length - index : index + 1;
+}
+
+/**
+ * Writes an indicator result into the block's variable.
+ *
+ * The indicator's parameters live in a nested `STATEMENT` stack of
+ * `input_list`/`period` child blocks. Both are required: with either missing,
+ * DBot's generated call passes `undefined` and the indicator yields NaN. That
+ * is recorded as `null` here so a comparison against it fails to resolve rather
+ * than comparing against a number that was never computed.
+ */
+function writeIndicator(node: TreeNode, sc: StatementContext, kind: 'sma' | 'ema'): void {
+  const params = inputBlock(node, 'STATEMENT');
+  const listBlock = params ? inputBlock(params, 'INPUT_LIST') : null;
+  const periodBlock = params ? inputBlock(params, 'PERIOD') : null;
+
+  const series = listBlock ? numericSeries(evaluateBlock(listBlock, sc.ctx)) : [];
+  const period = periodBlock ? toNumber(evaluateBlock(periodBlock, sc.ctx)) : NaN;
+
+  let result: number | null = null;
+  if (Number.isInteger(period) && period > 0 && series.length >= period) {
+    result =
+      kind === 'sma' ? simpleAverage(series, period) : exponentialAverage(series, period);
+  }
+  writeVariable(node, result, sc.ctx);
+}
+
+/** A list of numbers, or the raw quotes when the input is a tick list. */
+function numericSeries(value: Value): number[] {
+  if (!Array.isArray(value)) return [];
+  const out: number[] = [];
+  for (const item of value) {
+    const num = toNumber(item);
+    if (Number.isFinite(num)) out.push(num);
+  }
+  return out;
+}
+
+function simpleAverage(values: number[], period: number): number {
+  const window = values.slice(values.length - period);
+  return window.reduce((sum, v) => sum + v, 0) / period;
+}
+
+/**
+ * EMA over a bounded tail, seeded with an SMA.
+ *
+ * The tail is capped at a multiple of the period for the same reason the plan
+ * evaluator caps it: a seeded EMA depends on where the series starts, so an
+ * unbounded window would make the same market produce different values
+ * depending on buffer length. A fixed tail keeps a decision reproducible.
+ */
+function exponentialAverage(values: number[], period: number): number {
+  const warmup = Math.max(period, period * 3);
+  const window = values.slice(Math.max(0, values.length - warmup));
+  let ema = simpleAverage(window.slice(0, period), period);
+  const k = 2 / (period + 1);
+  for (let i = period; i < window.length; i += 1) {
+    ema = window[i] * k + ema * (1 - k);
+  }
+  return ema;
+}
+
+/** `rise` / `fall` / '' from the last two ticks, as DBot's `getDirection`. */
+function marketDirection(ticks: MarketTick[]): string {
+  if (ticks.length < 2) return '';
+  const previous = ticks[ticks.length - 2].quote;
+  const latest = ticks[ticks.length - 1].quote;
+  if (previous < latest) return 'rise';
+  if (previous > latest) return 'fall';
+  return '';
+}
+
+/** Digits of the last ticks, as DBot's `getLastDigitList` computes them. */
+function lastDigitList(ctx: TickContext): Value[] {
+  return ctx.ticks.slice(-1000).map((tick) => {
+    const text = formatQuote(tick.quote, tick.pipSize);
+    return Number(text[text.length - 1]);
+  });
+}
+
+function lastDigitOfLatest(ctx: TickContext): Value {
+  const latest = ctx.ticks[ctx.ticks.length - 1];
+  if (!latest) return null;
+  const text = formatQuote(latest.quote, latest.pipSize);
+  return Number(text[text.length - 1]);
+}
+
+/** Formats a quote to the symbol's pip size, as DBot's `toFixed(pipSize)`. */
+function formatQuote(quote: number, pipSize: number | null): string {
+  const size = typeof pipSize === 'number' && Number.isInteger(pipSize) && pipSize >= 0 ? pipSize : 0;
+  return quote.toFixed(size);
+}
+
+/**
+ * Maps DBot's `DETAIL_INDEX` dropdown onto the settled contract.
+ *
+ * DBot's `read_details` calls `Bot.readDetails(i)` which is
+ * `createDetails(contract)[i - 1]`, so the dropdown's 1-based index addresses
+ * the 0-based array below. The mapping is taken verbatim from
+ * `createDetails` in `bot-skeleton/src/services/tradeEngine/utils/helpers.js`.
+ */
+function readContractDetail(node: TreeNode, facts: ContractFacts | null): Value {
+  const raw = fieldValue(node, 'DETAIL_INDEX');
+  if (facts === null) return null;
+  switch (raw) {
+    case '1':
+      return facts.buyTransactionId;
+    case '2':
+      return facts.buyPrice;
+    case '3':
+      return facts.sellPrice;
+    case '4':
+      return facts.profit;
+    case '5':
+      return facts.contractType;
+    case '6':
+      return formatClock(facts.entryTime);
+    case '7':
+      return facts.entrySpot;
+    case '8':
+      return formatClock(facts.exitTime);
+    case '9':
+      return facts.exitSpot;
+    case '10':
+      // DBot writes 0 when the contract has no barrier.
+      return facts.barrier ?? 0;
+    case '11':
+      return facts.result;
+    default:
+      return null;
+  }
+}
+
+/** `HH:mm:ss` in UTC, matching DBot's `formatTime(..., 'HH:mm:ss')`. */
+function formatClock(epochMs: number | null): string | null {
+  if (epochMs === null || !Number.isFinite(epochMs)) return null;
+  const date = new Date(epochMs);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`;
+}
+
+/**
+ * Runs a `controls_if` chain.
+ *
+ * `IF0`/`DO0` is the first branch and each `IF<n>`/`DO<n>` pair is an
+ * else-if; `ELSE` runs when none matched. Branches are tested in order and only
+ * the matching one executes, so a later condition's side effects never happen
+ * when an earlier branch already matched.
+ */
+function executeIf(node: TreeNode, sc: StatementContext): void {
+  let index = 0;
+  while (true) {
+    const condition = inputBlock(node, `IF${index}`);
+    if (!condition) break;
+    if (truthy(evaluateBlock(condition, sc.ctx))) {
+      runNestedStack(inputBlock(node, `DO${index}`), sc);
+      return;
+    }
+    index += 1;
+  }
+  runNestedStack(inputBlock(node, 'ELSE'), sc);
+}
+
+/**
+ * Runs a nested stack inside a block.
+ *
+ * A nested `purchase`/`trade_again` must terminate the *whole* strategy run,
+ * not just the nested stack, so the flags are propagated through the shared
+ * outcome rather than kept local.
+ */
+function runNestedStack(stack: TreeNode | null, sc: StatementContext): void {
+  let node = stack;
+  while (node) {
+    const handler = STATEMENT_BLOCKS[node.type];
+    if (!handler) throw new UnsupportedBlockError(node.type);
+    handler(node, sc);
+    if (sc.outcome.purchase !== null || sc.outcome.tradeAgain) return;
+    node = node.next;
+  }
+}

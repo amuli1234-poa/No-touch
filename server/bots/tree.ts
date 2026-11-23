@@ -38,6 +38,13 @@ import { blockSpec } from './blocks.js';
 export interface TreeField {
   name: string;
   value: string;
+  /**
+   * `id` attribute, which Blockly writes on variable fields to tie a
+   * `variables_get`/`variables_set`/`math_change` to one `<variable>`
+   * declaration. Two variables may share a name, so this is the only stable
+   * identity; dropping it would merge distinct variables on re-save.
+   */
+  id?: string;
 }
 
 /** A `<value>` or `<statement>` input holding one connected block. */
@@ -126,7 +133,9 @@ function readFields(node: XmlElement): TreeField[] {
   for (const field of childElements(node, 'field')) {
     const name = field.attrs.name;
     if (typeof name !== 'string') continue;
-    out.push({ name, value: textContent(field) });
+    const entry: TreeField = { name, value: textContent(field) };
+    if (typeof field.attrs.id === 'string') entry.id = field.attrs.id;
+    out.push(entry);
   }
   return out;
 }
@@ -290,6 +299,13 @@ function writeAttrs(attrs: Record<string, string>): string {
     .join('');
 }
 
+function writeField(field: TreeField, indent: string): string {
+  const attrs = field.id
+    ? writeAttrs({ name: field.name, id: field.id })
+    : ` name="${escapeXmlAttr(field.name)}"`;
+  return `${indent}<field${attrs}>${escapeXmlText(field.value)}</field>`;
+}
+
 function writeBlock(node: TreeNode, indent: string): string {
   const tag = node.shadow ? 'shadow' : 'block';
   const head: Record<string, string> = { type: node.type };
@@ -303,16 +319,14 @@ function writeBlock(node: TreeNode, indent: string): string {
     lines.push(`${inner}<mutation${writeAttrs(node.mutation)}></mutation>`);
   }
   for (const field of node.fields) {
-    lines.push(`${inner}<field name="${escapeXmlAttr(field.name)}">${escapeXmlText(field.value)}</field>`);
+    lines.push(writeField(field, inner));
   }
   for (const shadow of node.shadows) {
     lines.push(
       `${inner}<shadow${writeAttrs({ name: shadow.name, type: shadow.type })}>`
     );
     for (const field of shadow.fields) {
-      lines.push(
-        `${inner}  <field name="${escapeXmlAttr(field.name)}">${escapeXmlText(field.value)}</field>`
-      );
+      lines.push(writeField(field, `${inner}  `));
     }
     lines.push(`${inner}</shadow>`);
   }
@@ -323,9 +337,7 @@ function writeBlock(node: TreeNode, indent: string): string {
     if (input.shadow) {
       lines.push(`${inner}  <shadow${writeAttrs({ type: input.shadow.type })}>`);
       for (const field of input.shadow.fields) {
-        lines.push(
-          `${inner}    <field name="${escapeXmlAttr(field.name)}">${escapeXmlText(field.value)}</field>`
-        );
+        lines.push(writeField(field, `${inner}    `));
       }
       lines.push(`${inner}  </shadow>`);
     }

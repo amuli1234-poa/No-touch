@@ -111,6 +111,34 @@ const FALLING_CALL_BOT = RISING_CALL_BOT.replace(
   '<field name="CHECK_DIRECTION">fall</field>'
 );
 
+/**
+ * A genuine DBot program: the direction test is nested inside `controls_if`, as
+ * the official builder always emits it, and the decision is made by branching.
+ * The plan engine cannot model this, so it must run on the interpreter.
+ */
+const BRANCHING_CALL_BOT = RISING_CALL_BOT.replace(
+  `<block type="check_direction">
+        <field name="CHECK_DIRECTION">rise</field>
+        <next><block type="purchase"><field name="PURCHASE_LIST">CALL</field></block></next>
+      </block>`,
+  `<block type="controls_if">
+        <value name="IF0"><block type="check_direction"><field name="CHECK_DIRECTION">rise</field></block></value>
+        <statement name="DO0"><block type="purchase"><field name="PURCHASE_LIST">CALL</field></block></statement>
+      </block>`
+);
+
+/** The same program with a direction that cannot be satisfied by the ticks. */
+const BRANCHING_FALLING_BOT = BRANCHING_CALL_BOT.replace(
+  '<field name="CHECK_DIRECTION">rise</field>',
+  '<field name="CHECK_DIRECTION">fall</field>'
+);
+
+/** A branching program whose after-purchase stack never asks to trade again. */
+const BRANCHING_NO_RETRADE_BOT = BRANCHING_CALL_BOT.replace(
+  '<statement name="AFTERPURCHASE_STACK"><block type="trade_again"></block></statement>',
+  '<statement name="AFTERPURCHASE_STACK"></statement>'
+);
+
 const LEGACY_DIGIT_DIFF_BOT = `<xml xmlns="http://www.w3.org/1999/xhtml" collection="false">
   <block type="trade" id="trade" x="0" y="0">
     <field name="MARKET_LIST">volidx</field>
@@ -721,6 +749,129 @@ test('tick: a second satisfied tick opens a second contract', async () => {
     const intents = store.listTradeIntents(user.id);
     assert.equal(intents.length, 2);
     assert.equal(new Set(intents.map((i) => i.signalId)).size, 2);
+  });
+});
+
+test('tick: a branching DBot program runs on the interpreter and buys', async () => {
+  await withHarness(async ({ deps, user, store }) => {
+    const bot = await importFixture(store, user.id, BRANCHING_CALL_BOT);
+
+    // The plan must hand the decision to the interpreter, not refuse the
+    // branching block or fall back to a condition list it cannot honour.
+    const plan = planForBot(bot);
+    assert.equal(plan.engine, 'interpreter');
+
+    const run = await startBotRun(deps, user, bot.id, { accountId: 'DEMO' }, 'token');
+    const result = await tickBotRun(deps, user, run.runId, 'token', 'tick-1');
+
+    assert.equal(result.verdict, 'entry');
+    assert.ok(result.contractId, 'the program reached purchase');
+    assert.equal(result.run.counters.entries, 1);
+    assert.equal(store.listTradeIntents(user.id).length, 1);
+  });
+});
+
+test('tick: a branching program whose condition fails buys nothing', async () => {
+  await withHarness(async ({ deps, user, store }) => {
+    const bot = await importFixture(store, user.id, BRANCHING_FALLING_BOT);
+    const run = await startBotRun(deps, user, bot.id, { accountId: 'DEMO' }, 'token');
+
+    const result = await tickBotRun(deps, user, run.runId, 'token', 'tick-1');
+    assert.equal(result.verdict, 'no_entry');
+    assert.equal(result.run.runtimeStatus, 'running');
+    assert.equal(store.listTradeIntents(user.id).length, 0);
+  });
+});
+
+test('tick: interpreter variables persist across ticks', async () => {
+  await withHarness(async ({ deps, user, store }) => {
+    const counterBot = BRANCHING_CALL_BOT.replace(
+      `<block type="controls_if">
+        <value name="IF0"><block type="check_direction"><field name="CHECK_DIRECTION">rise</field></block></value>
+        <statement name="DO0"><block type="purchase"><field name="PURCHASE_LIST">CALL</field></block></statement>
+      </block>`,
+      `<block type="math_change">
+        <field name="VAR" id="v1">count</field>
+        <value name="DELTA"><block type="math_number"><field name="NUM">1</field></block></value>
+        <next>
+          <block type="controls_if">
+            <value name="IF0"><block type="logic_compare">
+              <field name="OP">EQ</field>
+              <value name="A"><block type="variables_get"><field name="VAR" id="v1">count</field></block></value>
+              <value name="B"><block type="math_number"><field name="NUM">2</field></block></value>
+            </block></value>
+            <statement name="DO0"><block type="purchase"><field name="PURCHASE_LIST">CALL</field></block></statement>
+          </block>
+        </next>
+      </block>`
+    );
+
+    const bot = await importFixture(store, user.id, counterBot);
+    const run = await startBotRun(deps, user, bot.id, { accountId: 'DEMO' }, 'token');
+
+    // First tick increments to 1 and does not buy; the second reaches 2 and buys.
+    const first = await tickBotRun(deps, user, run.runId, 'token', 'tick-1');
+    assert.equal(first.verdict, 'no_entry');
+    assert.equal(first.run.variables.v1, 1);
+
+    const second = await tickBotRun(deps, user, run.runId, 'token', 'tick-2');
+    assert.equal(second.verdict, 'entry');
+    assert.equal(second.run.variables.v1, 2);
+  });
+});
+
+test('tick: a settled contract runs after_purchase and stops when it declines to retrade', async () => {
+  await withHarness(async ({ deps, user, store }) => {
+    const bot = await importFixture(store, user.id, BRANCHING_NO_RETRADE_BOT);
+    const run = await startBotRun(deps, user, bot.id, { accountId: 'DEMO' }, 'token');
+
+    const first = await tickBotRun(deps, user, run.runId, 'token', 'tick-1');
+    assert.equal(first.verdict, 'entry');
+    const contractId = String(first.contractId);
+
+    // Settle the contract the way Deriv would, with a small profit.
+    const contract = store.getContract(user.id, contractId)!;
+    await store.putContract({
+      ...contract,
+      status: 'won',
+      profit: 0.95,
+      exitSpot: 101,
+      settlementTime: Date.now()
+    });
+
+    // The strategy's after_purchase has no `trade_again`, so the run ends rather
+    // than looping, and the settlement is not replayed on a later tick.
+    const second = await tickBotRun(deps, user, run.runId, 'token', 'tick-2');
+    assert.equal(second.verdict, 'stopped');
+    assert.equal(second.run.runtimeStatus, 'stopped');
+    assert.equal(second.run.afterPurchaseFor, Number(contractId));
+    assert.equal(store.listTradeIntents(user.id).length, 1);
+  });
+});
+
+test('tick: after_purchase runs once per settlement, not once per tick', async () => {
+  await withHarness(async ({ deps, user, store }) => {
+    // `BRANCHING_CALL_BOT` ends in `trade_again`, so a settled contract must let
+    // the run continue — but the same settlement must not be replayed each tick.
+    const bot = await importFixture(store, user.id, BRANCHING_CALL_BOT);
+    const run = await startBotRun(deps, user, bot.id, { accountId: 'DEMO' }, 'token');
+
+    const first = await tickBotRun(deps, user, run.runId, 'token', 'tick-1');
+    assert.equal(first.verdict, 'entry');
+
+    const contract = store.getContract(user.id, String(first.contractId))!;
+    await store.putContract({
+      ...contract,
+      status: 'won',
+      profit: 0.95,
+      exitSpot: 101,
+      settlementTime: Date.now()
+    });
+
+    const second = await tickBotRun(deps, user, run.runId, 'token', 'tick-2');
+    assert.equal(second.run.runtimeStatus, 'running');
+    assert.equal(second.run.afterPurchaseFor, Number(first.contractId));
+    assert.equal(second.verdict, 'entry');
   });
 });
 

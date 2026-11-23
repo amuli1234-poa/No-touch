@@ -1052,3 +1052,41 @@ wrong answer rather than a visible error. `STATE_COPY` now lives in
 `compatibilityCopy.ts`, is typed `Record<BotCompatibilityState, …>` so a missing
 state fails to compile, and is checked against the server's
 `COMPATIBILITY_STATES` array by `compatibilityCopy.test.ts`.
+
+## The server has its own typecheck — `tsc --noEmit` does not cover it
+
+`tsconfig.json` excludes `server`, so `npm run lint` (plain `tsc --noEmit`) will
+happily pass while `server/` is broken. Use `npm run lint:server`
+(`tsc --noEmit -p server/tsconfig.json`) for anything under `server/`. This bit
+once: a required `BotRunRecord.variables` field was missing from the run literal
+and the default typecheck never saw it.
+
+`npm test` likewise only covers `src`. Server tests run via
+`npm run test:server`, which is serial (`--test-concurrency=1`) on purpose:
+several suites point a `Store` at `os.tmpdir()` and contend on the same lock
+when files run in parallel.
+
+## Two strategy engines: `plan` and `interpreter`
+
+`planStrategy` picks one engine per strategy (`StrategyPlan.engine`):
+
+- `plan` — the simplified dialect. Conditions are reduced to a flat list and
+  compared by `evaluateStrategy`. Cannot branch, so `controls_if` and friends
+  are not executable there.
+- `interpreter` — a genuine DBot export, detected by `isDbProgram`. Runs the
+  real `before_purchase` / `after_purchase` stacks from `server/bots/interpreter.ts`.
+
+Consequences worth remembering:
+
+- `EXECUTABLE` (in `evaluator.ts`) is the *union* of both engines' blocks.
+  `planStrategy` checks against the set for the engine it will actually use
+  (`PLAN_EXECUTABLE` vs `EXECUTABLE`), so a branching program is not refused for
+  a limitation only the plan engine has.
+- `evaluateStrategy` refuses an `interpreter` plan outright. An interpreter plan
+  carries no condition list, and an empty condition list reads as "always
+  trade" — a vacuous entry. Only `interpretTick` may decide for that engine.
+- Variable field names differ by block: `VAR` for `variables_set`/`variables_get`,
+  `math_change`, `text_append`, `controls_for`; `VARIABLE` for `text_join`,
+  `lists_create_with`, and indicator blocks. `variableKey()` accepts both.
+- Run variables live on `BotRunRecord.variables` (per run, never module-global),
+  so two runs of one bot cannot read each other's state.
