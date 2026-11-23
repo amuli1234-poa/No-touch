@@ -169,6 +169,25 @@ export function loadBotTree(record: ImportedBotRecord): {
   };
 }
 
+/**
+ * Compatibility for a stored bot, re-derived from its current XML.
+ *
+ * `ImportedBotRecord.compatibility` is a snapshot taken when the bot was
+ * imported or last saved. The set of blocks this build interprets grows between
+ * releases, so a snapshot can say `partial` for a block that has since gained an
+ * interpreter — while the live execution plan for the same XML says `runnable`.
+ * Deriving it on read keeps the two verdicts consistent. Unreadable XML yields
+ * `invalid` from the analyser itself, so there is no stale value to fall back to.
+ */
+export function botCompatibility(record: ImportedBotRecord): {
+  compatibility: ImportedBotRecord['compatibility'];
+  reason: string;
+} {
+  const xml = record.workingXml ?? record.sourceXml;
+  const analysis = analyzeDbotXml(xml, { filename: record.originalFilename });
+  return { compatibility: analysis.compatibility, reason: analysis.compatibilityReason };
+}
+
 export interface SaveBotTreeResult {
   record: ImportedBotRecord;
   changed: boolean;

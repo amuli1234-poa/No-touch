@@ -17,7 +17,14 @@ import path from 'node:path';
 import { test } from 'node:test';
 
 import { Store } from '../store/store.js';
-import { ImportError, importBot, loadBotTree, saveBotTree, toView } from '../bots/service.js';
+import {
+  ImportError,
+  botCompatibility,
+  importBot,
+  loadBotTree,
+  saveBotTree,
+  toView
+} from '../bots/service.js';
 import { collectUnknownBlocks, treeToXml, xmlToTree } from '../bots/tree.js';
 
 const VALID_DBOT = `<xml xmlns="http://www.w3.org/1999/xhtml" is_dbot="true">
@@ -264,4 +271,34 @@ test('an unknown block survives a save round trip through the store', async () =
     assert.match(saved, /KEEP/);
     assert.match(saved, /R_75/);
   });
+});
+
+test('compatibility is derived from the current XML, not the import-time snapshot', async () => {
+  await withStore(async (store) => {
+    const { record } = await importBot(store, USER_A, 'bot.xml', VALID_DBOT);
+
+    // Simulate a record stored by an older build: the snapshot says `partial`
+    // because a block it could not interpret has since gained an interpreter.
+    const stale = {
+      ...record,
+      compatibility: 'partial' as const,
+      compatibilityReason: '1 block(s) could not be interpreted, so this bot cannot be run as-is.'
+    };
+
+    const derived = botCompatibility(stale);
+    assert.equal(derived.compatibility, 'full');
+    assert.doesNotMatch(derived.reason, /could not be interpreted/);
+  });
+});
+
+test('unreadable XML derives invalid rather than trusting the stored snapshot', () => {
+  const unreadable = {
+    sourceXml: 'not xml at all',
+    compatibility: 'full' as const,
+    compatibilityReason: 'stored reason'
+  } as unknown as Parameters<typeof botCompatibility>[0];
+
+  const derived = botCompatibility(unreadable);
+  assert.equal(derived.compatibility, 'invalid');
+  assert.notEqual(derived.reason, 'stored reason');
 });

@@ -227,6 +227,18 @@ export function RunPanel({
 
       <Tabs active={tab} onChange={setTab} />
 
+      {/* A refused start belongs next to the control that caused it, not only
+          inside the Journal tab, which is not the tab the user is looking at. */}
+      {error && tab !== 'journal' && (
+        <div className="shrink-0 border-b border-danger/30 bg-danger/10 px-3 py-2">
+          <p className="text-[10.5px] font-bold text-danger">The bot could not start.</p>
+          <p className="mt-0.5 break-words text-[10px] leading-relaxed text-danger/90">
+            {error.message}
+            {error.code && !error.message.includes(error.code) ? ` (${error.code})` : ''}
+          </p>
+        </div>
+      )}
+
       {/* Tab content ----------------------------------------------------- */}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {tab === 'summary' && (

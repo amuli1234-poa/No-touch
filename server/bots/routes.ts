@@ -39,6 +39,7 @@ import type { ExecutionFlags } from '../config/flags.js';
 import {
   ImportError,
   archiveBot,
+  botCompatibility,
   deleteBot,
   duplicateBot,
   importBot,
@@ -296,6 +297,8 @@ export function createBotsRouter(ctx: SessionContext, store: Store, runtime?: Bo
       const loaded = loadBotTree(bot);
       const unknownBlocks = collectUnknownBlocks(loaded.tree);
       const executionPlan = planStrategy(loaded.tree);
+      // Derived live, not the import-time snapshot: the two verdicts must agree.
+      const compatibility = botCompatibility(bot);
       res.json({
         botId: bot.id,
         name: bot.name,
@@ -309,8 +312,8 @@ export function createBotsRouter(ctx: SessionContext, store: Store, runtime?: Bo
           reasons: executionPlan.reasons,
           unsupported: executionPlan.unsupported
         },
-        compatibility: bot.compatibility,
-        compatibilityReason: bot.compatibilityReason,
+        compatibility: compatibility.compatibility,
+        compatibilityReason: compatibility.reason,
         status: bot.status
       });
     } catch (e) {
