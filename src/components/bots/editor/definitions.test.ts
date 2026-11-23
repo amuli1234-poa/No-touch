@@ -1,5 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+
+import { xmlToTree } from '../../../../server/bots/tree';
 
 import {
   DBOT_DECLS,
@@ -230,4 +234,126 @@ test('every declaration role maps explicitly to a style and a category', () => {
     assert.ok(decl.role in ROLE_STYLE, `${decl.type} has role "${decl.role}" with no ROLE_STYLE entry`);
     assert.ok(decl.role in ROLE_CATEGORY, `${decl.type} has role "${decl.role}" with no ROLE_CATEGORY entry`);
   }
+});
+
+/**
+ * A block the engine executes but the editor never declares has no placeholder
+ * either: `collectUnknownBlocks` only seeds types the server reports as
+ * unsupported, so Blockly met an undefined type and threw
+ * `Invalid block definition for type: timeout`, abandoning the whole load.
+ *
+ * These lock the two halves of the fix: the declarations exist, and the shape
+ * check that finds such gaps stays honest.
+ */
+test('declares every block the interpreter executes and DBot can export', () => {
+  const declared = new Set(DBOT_DECLS.map((decl) => decl.type));
+  // Types that used to crash an import. Each is executed by the engine, so it
+  // must be declared rather than left to the placeholder path.
+  for (const type of [
+    'timeout',
+    'notify',
+    'total_profit',
+    'lastDigitList',
+    'ticks',
+    'sell_at_market',
+    'sell_price',
+    'contract_check_result',
+    'read_details'
+  ]) {
+    assert.ok(declared.has(type), `${type} is executed but not declared, so it would crash the editor`);
+  }
+});
+
+test('a delayed run keeps its statement and its expression-shaped delay', () => {
+  // DBot's `timeout` takes `SECONDS` as an input_value, not a field: a strategy
+  // may read the delay from a variable, as the shipped Digit_Differs_AI export
+  // does. Declaring it as a field would drop that connection.
+  const timeout = DBOT_DECLS.find((decl) => decl.type === 'timeout')!;
+  const json = declToJson(timeout, new Map());
+  const args = messageArgs(json as Record<string, unknown>);
+
+  assert.deepEqual(
+    args
+      .filter((arg) => arg.type === 'input_statement' || arg.type === 'input_value')
+      .map((arg) => ({ type: arg.type, name: arg.name })),
+    [
+      { type: 'input_statement', name: 'TIMEOUTSTACK' },
+      { type: 'input_value', name: 'SECONDS' }
+    ]
+  );
+  assert.equal(json.previousStatement, null);
+  assert.equal(json.nextStatement, null);
+  assert.equal(json.output, undefined);
+});
+
+test('expressions that emit any type are declared with a null output', () => {
+  // `read_details` can yield a number or a string, and Blockly encodes "any
+  // type" as `output: null`. Treating null as "absent" would make the block a
+  // statement, so it could not be plugged into a value socket.
+  const details = DBOT_DECLS.find((decl) => decl.type === 'read_details')!;
+  assert.equal(declToJson(details, new Map()).output, null);
+
+  const profit = DBOT_DECLS.find((decl) => decl.type === 'total_profit')!;
+  assert.equal(declToJson(profit, new Map()).output, 'Number');
+});
+
+test('notify carries both of DBot dropdowns plus its message input', () => {
+  const notify = DBOT_DECLS.find((decl) => decl.type === 'notify')!;
+  const args = messageArgs(declToJson(notify, new Map()) as Record<string, unknown>);
+  const fields = args.filter((arg) => arg.type === 'field_dropdown').map((arg) => arg.name);
+  assert.deepEqual(fields, ['NOTIFICATION_TYPE', 'NOTIFICATION_SOUND']);
+  assert.ok(args.some((arg) => arg.type === 'input_value' && arg.name === 'MESSAGE'));
+
+  // The options must be DBot's own values, or an imported file's value would be
+  // rewritten the first time the block is edited.
+  assert.deepEqual(fieldDefaults('NOTIFICATION_TYPE'), ['success', 'info', 'warn', 'error']);
+  assert.ok(fieldDefaults('NOTIFICATION_SOUND').includes('silent'));
+});
+
+/**
+ * The end-to-end shape of the reported bug.
+ *
+ * The shipped `Digit_Differs_AI.xml` is a real DBot export. Importing it threw
+ * `Invalid block definition for type: ...` because it uses blocks the engine
+ * executes but the editor never declared, so no placeholder was registered for
+ * them either. Reading the actual file keeps this test honest: if the export
+ * gains a block type, the failure names it instead of drifting.
+ */
+test('the shipped Digit_Differs_AI export declares every block it uses', () => {
+  const xmlPath = path.join(import.meta.dirname, '..', '..', '..', '..', 'Digit_Differs_AI.xml');
+  const tree = xmlToTree(fs.readFileSync(xmlPath, 'utf8'));
+  const declared = new Set(DBOT_DECLS.map((decl) => decl.type));
+
+  const used = new Set<string>();
+  const visit = (node: typeof tree.blocks[number] | null) => {
+    if (!node) return;
+    used.add(node.type);
+    visit(node.next);
+    for (const input of node.inputs) visit(input.block ?? null);
+  };
+  for (const block of tree.blocks) visit(block);
+
+  // Blocks that come from `blockly/blocks` rather than from our declarations.
+  const stock = new Set([
+    'controls_if',
+    'lists_getIndex',
+    'logic_boolean',
+    'logic_compare',
+    'logic_operation',
+    'math_arithmetic',
+    'math_change',
+    'math_number',
+    'math_single',
+    'text',
+    'text_join',
+    'variables_get',
+    'variables_set'
+  ]);
+
+  const undeclared = [...used].filter((type) => !declared.has(type) && !stock.has(type));
+  assert.deepEqual(
+    undeclared,
+    [],
+    'these blocks are executed but undeclared, so Blockly would throw "Invalid block definition"'
+  );
 });

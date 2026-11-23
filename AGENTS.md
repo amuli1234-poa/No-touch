@@ -1252,3 +1252,24 @@ settle it.
   **only on refusal** — prove approval via the intent state and the signal's
   `consumedByIntentId` instead.
 - Imports between server modules use `.js` specifiers (ESM).
+
+## Block editor: undeclared types crash the whole load
+
+`Blockly.Xml.domToWorkspace` throws `Invalid block definition for type: X` and
+**abandons the entire load** on the first undefined type — it does not skip the
+block. So every block the engine executes must also be *declared* in
+`DBOT_DECLS` (`src/components/bots/editor/definitions.ts`), even ones we never
+expect users to drag out.
+
+Placeholders are not a substitute. `registerUnknownBlocks` only seeds types the
+server reports as unsupported; a type the server *can* execute but the editor
+never declares gets no placeholder and no declaration, and the import crashes.
+
+When adding an engine handler, add the matching declaration — field names and
+input names must match DBot's `message0`/`args0` shape exactly, because the XML
+is the source of truth. `definitions.test.ts` parses the shipped
+`Digit_Differs_AI.xml` and asserts this; extend that audit when you add blocks.
+
+Two legacy DBot types stay as placeholders on purpose: `loader` (fetches blocks
+from a URL at run time) and `market` (pre-`trade_definition_market`; current
+DBot no longer defines it). They are visible and preserved, never executed.

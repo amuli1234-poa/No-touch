@@ -64,10 +64,41 @@ export function registerStrategyBlocks(observed = new Map<string, Set<string>>()
 }
 
 /**
- * Registers placeholder definitions for the unknown block types in a tree.
- *
- * Called on every load, because the set of unknown types depends on the file
- * being opened. Each type is defined once.
+ * Defines one placeholder for a block type Blockly has no definition for,
+ * carrying the fields and inputs read from the XML so nothing is lost on save.
+ * Idempotent: a type already registered keeps its first definition.
+ */
+function definePlaceholder(
+  type: string,
+  shape: 'stack' | 'value',
+  fields: { name: string }[],
+  inputs: { name: string; kind: InputKind }[]
+): void {
+  const placeholder = unknownBlockType(type, shape);
+  if (Blockly.Blocks[placeholder]) return;
+  Blockly.common.defineBlocksWithJsonArray([
+    unknownToJson(
+      type,
+      fields.map((field) => field.name),
+      inputs.map((input) => ({ name: input.name, kind: input.kind })),
+      shape
+    )
+  ]);
+  const definition = Blockly.Blocks[placeholder];
+  definition.domToMutation = function (this: Blockly.Block, mutation: Element): void {
+    placeholderMutations.set(this, mutation.cloneNode(true) as Element);
+  };
+  definition.mutationToDom = function (this: Blockly.Block): Element {
+    const mutation = placeholderMutations.get(this);
+    return mutation
+      ? (mutation.cloneNode(true) as Element)
+      : Blockly.utils.xml.createElement('mutation');
+  };
+}
+
+/**
+ * Registers placeholder definitions for the unknown block types the server
+ * reported for the file being opened. Each type is defined once.
  */
 export function registerUnknownBlocks(
   blocks: {
@@ -82,27 +113,48 @@ export function registerUnknownBlocks(
     const key = `${block.type}\0${block.shape}`;
     if (!block.type || seen.has(key)) continue;
     seen.add(key);
-    const placeholder = unknownBlockType(block.type, block.shape);
-    if (Blockly.Blocks[placeholder]) continue;
-    Blockly.common.defineBlocksWithJsonArray([
-      unknownToJson(
-        block.type,
-        block.fields.map((f) => f.name),
-        block.inputs.map((i) => ({ name: i.name, kind: i.kind })),
-        block.shape
-      )
-    ]);
-    const definition = Blockly.Blocks[placeholder];
-    definition.domToMutation = function (this: Blockly.Block, mutation: Element): void {
-      placeholderMutations.set(this, mutation.cloneNode(true) as Element);
-    };
-    definition.mutationToDom = function (this: Blockly.Block): Element {
-      const mutation = placeholderMutations.get(this);
-      return mutation
-        ? (mutation.cloneNode(true) as Element)
-        : Blockly.utils.xml.createElement('mutation');
-    };
+    definePlaceholder(block.type, block.shape, block.fields, block.inputs);
   }
+}
+
+/**
+ * Registers a placeholder for every block type in `root` that Blockly has no
+ * definition for, and returns the `type\0shape` keys that must be renamed to
+ * their placeholder type before the XML is handed to Blockly.
+ *
+ * `Blockly.Xml.domToWorkspace` throws `Invalid block definition for type: X`
+ * and abandons the whole load when it meets an undefined type. The server-side
+ * seeds only cover types it reports as unsupported, so a type the engine
+ * executes but the editor never declared would crash the editor outright. This
+ * is the backstop for that gap: reading the shape from the XML means no
+ * imported strategy can fail to open, whatever the declaration list says.
+ */
+export function registerBlocksMissingFromXml(root: Element): Set<string> {
+  const renamed = new Set<string>();
+  const nodes = [root, ...Array.from(root.querySelectorAll('block, shadow'))];
+  for (const node of nodes) {
+    const type = node.getAttribute('type');
+    if (!type || Blockly.Blocks[type]) continue;
+    const shape: 'stack' | 'value' = node.parentElement?.nodeName === 'value' ? 'value' : 'stack';
+    const children = Array.from(node.children);
+    definePlaceholder(
+      type,
+      shape,
+      children
+        .filter((child) => child.nodeName === 'field')
+        .map((child) => ({ name: child.getAttribute('name') ?? '' }))
+        .filter((field) => field.name !== ''),
+      children
+        .filter((child) => child.nodeName === 'value' || child.nodeName === 'statement')
+        .map((child) => ({
+          name: child.getAttribute('name') ?? '',
+          kind: (child.nodeName === 'value' ? 'value' : 'statement') as InputKind
+        }))
+        .filter((input) => input.name !== '')
+    );
+    renamed.add(`${type}\0${shape}`);
+  }
+  return renamed;
 }
 
 export { strategyTheme };

@@ -21,6 +21,7 @@ import * as EnMessages from 'blockly/msg/en';
 import {
   isUnknownBlockType,
   originalBlockType,
+  registerBlocksMissingFromXml,
   registerStrategyBlocks,
   registerUnknownBlocks,
   strategyToolbox,
@@ -103,6 +104,11 @@ export function mountEditor(host: Element, options: MountOptions): MountedEditor
   }
   registerStrategyBlocks(observed);
   registerUnknownBlocks(options.unknownBlocks);
+  // The server only seeds types it reports as unsupported, so a type the engine
+  // executes but the editor never declared gets neither a declaration nor a
+  // placeholder — and one undefined type aborts the whole load. Scanning the
+  // document closes that gap: any undeclared type becomes a placeholder.
+  const unregistered = root ? registerBlocksMissingFromXml(root) : new Set<string>();
 
   const toolbox = strategyToolbox() as never;
   const ws = Blockly.inject(host, {
@@ -125,9 +131,10 @@ export function mountEditor(host: Element, options: MountOptions): MountedEditor
   });
 
   if (root) {
-    const placeholderTypes = new Set(
-      options.unknownBlocks.map((block) => `${block.type}\0${block.shape}`)
-    );
+    const placeholderTypes = new Set([
+      ...options.unknownBlocks.map((block) => `${block.type}\0${block.shape}`),
+      ...unregistered
+    ]);
     const nodes = [root, ...Array.from(root.querySelectorAll('block, shadow'))];
     for (const node of nodes) {
       const type = node.getAttribute('type');

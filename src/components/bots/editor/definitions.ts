@@ -47,6 +47,39 @@ export function originalBlockType(type: string): string {
 
 export type InputKind = 'statement' | 'value';
 
+/** The connection shape and named slots of one block occurrence. */
+export interface BlockShape {
+  type: string;
+  shape: 'stack' | 'value';
+  fields: { name: string }[];
+  inputs: { name: string; kind: InputKind }[];
+}
+
+/**
+ * The shapes that have no Blockly definition yet.
+ *
+ * `Blockly.Xml.domToWorkspace` throws `Invalid block definition for type: X`
+ * and abandons the whole load on the first undefined type, so every one of
+ * these must be registered as a placeholder before the XML is read. Types are
+ * deduplicated by type *and* shape: one type used both as a statement and as a
+ * value needs two distinct definitions.
+ */
+export function missingDefinitions(
+  shapes: readonly BlockShape[],
+  isDefined: (type: string) => boolean
+): BlockShape[] {
+  const seen = new Set<string>();
+  const out: BlockShape[] = [];
+  for (const shape of shapes) {
+    if (!shape.type || isDefined(shape.type)) continue;
+    const key = `${shape.type}\0${shape.shape}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(shape);
+  }
+  return out;
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Dropdown option sets                                                       */
 /* -------------------------------------------------------------------------- */
@@ -81,7 +114,12 @@ const FIELD_DEFAULTS: Record<string, string[]> = {
   TIME_MACHINE_ENABLED: ['TRUE', 'FALSE'],
   RESTARTONERROR: ['TRUE', 'FALSE'],
   BBRESULT_LIST: ['upper', 'middle', 'lower'],
-  MACDFIELDS_LIST: ['MACD', 'SIGNAL', 'HISTOGRAM']
+  MACDFIELDS_LIST: ['MACD', 'SIGNAL', 'HISTOGRAM'],
+  // DBot's own `config.lists` values, in its order.
+  NOTIFICATION_TYPE: ['success', 'info', 'warn', 'error'],
+  NOTIFICATION_SOUND: ['silent', 'announcement', 'earned-money', 'job-done', 'error', 'severe-error'],
+  CHECK_RESULT: ['win', 'loss'],
+  DETAIL_INDEX: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11']
 };
 
 /** Default options for a field name, exported so tests can assert coverage. */
@@ -145,8 +183,11 @@ export interface DbotBlockDecl {
   layout?: { label: string; fields?: string[]; inputs?: string[] }[];
   /** False for expression blocks (they emit a value, not a stack). */
   stack?: boolean;
-  /** Blockly output type for expression blocks. */
-  output?: string;
+  /**
+   * Blockly output type for expression blocks. `null` means "any type", which
+   * is what DBot uses for `read_details` — it can yield a number or a string.
+   */
+  output?: string | null;
 }
 
 /**
@@ -337,6 +378,98 @@ export const DBOT_DECLS: DbotBlockDecl[] = [
     role: 'exit',
     fields: []
   },
+  // DBot's after-purchase readers. Their interpreter handlers are faithful, so
+  // the editor declares them exactly as DBot does — a dropdown for the one field,
+  // and a value output — rather than showing them as unrecognised placeholders.
+  {
+    type: 'contract_check_result',
+    label: 'Last trade result is',
+    role: 'exit',
+    fields: ['CHECK_RESULT'],
+    stack: false,
+    output: 'Boolean'
+  },
+  {
+    type: 'read_details',
+    label: 'Contract details',
+    role: 'exit',
+    fields: ['DETAIL_INDEX'],
+    stack: false,
+    output: null
+  },
+  // Shape is DBot's own (`Timeout/timeout.js`): a `TIMEOUTSTACK` statement and a
+  // `SECONDS` value input — the seconds are an expression, not a fixed field, so
+  // a strategy may read the delay from a variable.
+  {
+    type: 'timeout',
+    label: 'Delayed run',
+    role: 'flow',
+    fields: [],
+    inputs: [
+      { name: 'TIMEOUTSTACK', kind: 'statement' },
+      { name: 'SECONDS', kind: 'value' }
+    ],
+    layout: [
+      { label: 'Run the blocks inside', inputs: ['TIMEOUTSTACK'] },
+      { label: 'after (seconds)', inputs: ['SECONDS'] }
+    ]
+  },
+  // Read-only expressions and side-effecting statements the engine executes but
+  // that had no declaration. Each shape below is copied from the corresponding
+  // block in `deriv-app`'s `bot-skeleton`; without them Blockly refuses to load
+  // any strategy that contains one.
+  {
+    type: 'notify',
+    label: 'Notify',
+    role: 'exit',
+    fields: ['NOTIFICATION_TYPE', 'NOTIFICATION_SOUND'],
+    inputs: [{ name: 'MESSAGE', kind: 'value' }],
+    layout: [
+      {
+        label: 'Notify',
+        fields: ['NOTIFICATION_TYPE', 'NOTIFICATION_SOUND'],
+        inputs: ['MESSAGE']
+      }
+    ]
+  },
+  {
+    type: 'total_profit',
+    label: 'Total profit/loss',
+    role: 'exit',
+    fields: [],
+    stack: false,
+    output: 'Number'
+  },
+  {
+    type: 'lastDigitList',
+    label: 'Last digits list',
+    role: 'entry',
+    fields: [],
+    stack: false,
+    output: 'Array'
+  },
+  {
+    type: 'ticks',
+    label: 'Ticks list',
+    role: 'entry',
+    fields: [],
+    stack: false,
+    output: 'Array'
+  },
+  {
+    type: 'sell_at_market',
+    label: 'Sell at market price',
+    role: 'exit',
+    fields: []
+  },
+  {
+    type: 'sell_price',
+    label: 'Sell profit/loss',
+    role: 'exit',
+    fields: [],
+    stack: false,
+    output: 'Number'
+  },
   {
     type: 'sma_statement',
     label: 'Simple moving average',
@@ -463,7 +596,7 @@ export function declToJson(decl: DbotBlockDecl, observed: Map<string, Set<string
   }
 
   if (decl.stack === false) {
-    json.output = decl.output ?? 'Boolean';
+    json.output = decl.output === undefined ? 'Boolean' : decl.output;
   } else {
     json.previousStatement = null;
     json.nextStatement = null;
