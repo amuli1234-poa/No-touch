@@ -143,6 +143,7 @@ export const ROLE_STYLE: Record<string, string> = {
   variable: 'variable_blocks',
   purchase: 'entry_blocks',
   flow: 'logic_blocks',
+  utility: 'logic_blocks',
   unsupported: 'unknown_blocks'
 };
 
@@ -158,6 +159,7 @@ export const ROLE_CATEGORY: Record<string, string> = {
   variable: 'variable_category',
   purchase: 'entry_category',
   flow: 'logic_category',
+  utility: 'logic_category',
   unsupported: 'logic_category'
 };
 
@@ -303,6 +305,18 @@ export const DBOT_DECLS: DbotBlockDecl[] = [
     ]
   },
   {
+    // DBot defines this as a literal alias of `trade_definition_tradeoptions`,
+    // so it has the same slots; only the label differs.
+    type: 'trade_definition_tradeoptions_payout',
+    label: 'Trade options (payout)',
+    role: 'stake',
+    fields: ['DURATIONTYPE_LIST', 'CURRENCY_LIST'],
+    inputs: [
+      { name: 'DURATION', kind: 'value' },
+      { name: 'AMOUNT', kind: 'value' }
+    ]
+  },
+  {
     type: 'trade_definition_restartbuysell',
     label: 'Restart on buy/sell',
     role: 'trade-definition',
@@ -349,6 +363,22 @@ export const DBOT_DECLS: DbotBlockDecl[] = [
     fields: [],
     stack: false,
     output: 'Number'
+  },
+  {
+    type: 'tick_string',
+    label: 'Last tick (text)',
+    role: 'entry',
+    fields: [],
+    stack: false,
+    output: 'String'
+  },
+  {
+    type: 'ticks_string',
+    label: 'Ticks list (text)',
+    role: 'entry',
+    fields: [],
+    stack: false,
+    output: 'String'
   },
   {
     type: 'during_purchase',
@@ -441,12 +471,29 @@ export const DBOT_DECLS: DbotBlockDecl[] = [
     output: 'Number'
   },
   {
+    type: 'total_profit_string',
+    label: 'Total profit/loss (text)',
+    role: 'exit',
+    fields: [],
+    stack: false,
+    output: 'String'
+  },
+  {
     type: 'lastDigitList',
     label: 'Last digits list',
     role: 'entry',
     fields: [],
     stack: false,
     output: 'Array'
+  },
+  {
+    // DBot's own list block (not stock Blockly): one value per statement slot,
+    // stacked to build a list literal.
+    type: 'lists_statement',
+    label: 'List item',
+    role: 'utility',
+    fields: [],
+    inputs: [{ name: 'VALUE', kind: 'value' }]
   },
   {
     type: 'ticks',

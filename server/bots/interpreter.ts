@@ -162,6 +162,12 @@ export interface ScheduledTimeout {
   delayMs: number;
   /** The stack to run once the delay elapses. */
   stack: TreeNode | null;
+  /**
+   * The rest of the enclosing statement chain, which DBot runs *after* the
+   * delayed stack. Kept separate rather than linked onto `stack` so the
+   * parsed tree is never mutated.
+   */
+  continuation: TreeNode | null;
 }
 
 /** Outcome of running a stack of statements. */
@@ -321,7 +327,7 @@ const VALUE_BLOCKS: Record<string, (node: TreeNode, ctx: TickContext) => Value> 
  * `purchase` or `trade_again` ran: DBot ends the whole strategy there, so every
  * enclosing loop and procedure must stop too.
  */
-type FlowSignal = 'normal' | 'break' | 'continue' | 'return' | 'halt';
+type FlowSignal = 'normal' | 'break' | 'continue' | 'return' | 'halt' | 'suspend';
 
 interface StatementContext {
   ctx: TickContext;
@@ -453,10 +459,15 @@ const STATEMENT_BLOCKS: Record<string, (node: TreeNode, sc: StatementContext) =>
     const seconds = toNumber(evaluateInput(node, 'SECONDS', sc.ctx));
     // DBot's generator defaults a missing SECONDS input to 1.
     const safeSeconds = Number.isFinite(seconds) && seconds >= 0 ? seconds : 1;
+    // DBot compiles this block to `sleep(n); <TIMEOUTSTACK>; <following blocks>`:
+    // everything after the timeout waits, not just the nested stack.
     sc.outcome.timeouts.push({
       delayMs: safeSeconds * 1000,
-      stack: inputBlock(node, 'TIMEOUTSTACK')
+      stack: inputBlock(node, 'TIMEOUTSTACK'),
+      continuation: node.next
     });
+    // The caller must stop walking this chain — see `executeStack`.
+    sc.flow = 'suspend';
   },
 
   /* -------------------------- loops and flow ---------------------------- */
@@ -548,21 +559,45 @@ export function isValueBlock(type: string): boolean {
  *     a bare `check_direction` with a `next` block — does not, and stays with the
  *     plan evaluator that already models it.
  *
- *  2. The stack must contain a `controls_if`, i.e. an actual decision. A stack
- *     that is only `purchase` buys on every tick. DBot allows that, but
- *     WickSentinel has always refused an unconditional strategy, and silently
- *     starting to trade one would change how existing bots behave.
+ *  2. Somewhere in the entry stack there must be a `controls_if`, i.e. an actual
+ *     decision. A stack that is only `purchase` buys on every tick. DBot allows
+ *     that, but WickSentinel has always refused an unconditional strategy, and
+ *     silently starting to trade one would change how existing bots behave.
+ *
+ * The decision is searched for recursively, not just along the top-level chain:
+ * a real strategy may wrap its entry logic in `timeout` or a loop, and refusing
+ * those because the `controls_if` sits one level deeper would reject a program
+ * the interpreter can genuinely run.
  */
 export function isDbProgram(tree: BlockTree): boolean {
   const before = findTopLevel(tree, 'before_purchase');
-  let node = before ? inputBlock(before, 'BEFOREPURCHASE_STACK') : null;
+  const stack = before ? inputBlock(before, 'BEFOREPURCHASE_STACK') : null;
+  if (!stack) return false;
   let hasDecision = false;
-  while (node) {
+  for (const node of walkStack(stack)) {
     if (isValueBlock(node.type)) return false;
     if (node.type === 'controls_if') hasDecision = true;
-    node = node.next;
   }
   return hasDecision;
+}
+
+/**
+ * Every statement block reachable from a stack, following nested statement
+ * inputs as well as the `<next>` chain.
+ *
+ * Value inputs are not descended into: a `controls_if` condition is a value
+ * expression, and counting one there would call a strategy "programmatic" for a
+ * decision it never actually makes in statement position.
+ */
+function* walkStack(stack: TreeNode | null): Generator<TreeNode> {
+  let node = stack;
+  while (node) {
+    yield node;
+    for (const input of node.inputs) {
+      if (input.kind === 'statement') yield* walkStack(input.block);
+    }
+    node = node.next;
+  }
 }
 
 /* --------------------------- run state bridge --------------------------- */
@@ -763,6 +798,46 @@ export function executeStack(
   ctx.procedures = sc.procedures;
 
   runNestedStack(stack, sc);
+  return { ...outcome, variables: ctx.variables };
+}
+
+/**
+ * Runs a `timeout` block's delayed work once its delay has elapsed.
+ *
+ * DBot compiles `timeout` to `sleep(n); <TIMEOUTSTACK>; <rest of the chain>`, so
+ * the strategy is paused for the delay and then resumes from inside the block.
+ * The caller owns the waiting; this only replays what was captured.
+ *
+ * A second `timeout` reached in either part simply queues another deferral on
+ * the returned outcome, and the caller schedules that in turn.
+ */
+export function runDeferredTimeout(
+  timeout: ScheduledTimeout,
+  ctx: TickContext,
+  tree: BlockTree | null = null
+): ExecutionResult {
+  const outcome: StackOutcome = {
+    purchase: null,
+    tradeAgain: false,
+    timeouts: [],
+    notifications: [],
+    sellRequest: null
+  };
+  const sc: StatementContext = {
+    ctx,
+    outcome,
+    flow: 'normal',
+    returnValue: null,
+    procedures: collectProcedures(tree),
+    callDepth: 0
+  };
+  ctx.procedures = sc.procedures;
+
+  runNestedStack(timeout.stack, sc);
+  // A nested timeout inside the delayed stack owns the continuation itself.
+  if (sc.flow === 'normal' && outcome.purchase === null && !outcome.tradeAgain) {
+    runNestedStack(timeout.continuation, sc);
+  }
   return { ...outcome, variables: ctx.variables };
 }
 
@@ -1410,8 +1485,10 @@ function runLoopBody(body: TreeNode | null, sc: StatementContext): FlowSignal {
   const inner: StatementContext = { ...sc, flow: 'normal' };
   runNestedStack(body, inner);
   // `break` and `continue` belong to this loop and are consumed here, so the
-  // outer context stays `normal`. Only `halt` and `return` outlive the loop.
-  if (inner.flow === 'halt' || inner.flow === 'return') {
+  // outer context stays `normal`. Only `halt`, `return` and `suspend` outlive
+  // the loop — a `timeout` inside the body pauses the whole strategy, not one
+  // iteration.
+  if (inner.flow === 'halt' || inner.flow === 'return' || inner.flow === 'suspend') {
     sc.flow = inner.flow;
     sc.returnValue = inner.returnValue;
   } else {
@@ -1444,7 +1521,7 @@ function executeRepeat(node: TreeNode, sc: StatementContext): void {
       sc.flow = 'normal';
       return;
     }
-    if (signal === 'halt' || signal === 'return') return;
+    if (signal === 'halt' || signal === 'return' || signal === 'suspend') return;
   }
 }
 
@@ -1472,7 +1549,7 @@ function executeWhileUntil(node: TreeNode, sc: StatementContext): void {
       sc.flow = 'normal';
       return;
     }
-    if (signal === 'halt' || signal === 'return') return;
+    if (signal === 'halt' || signal === 'return' || signal === 'suspend') return;
   }
 }
 
@@ -1507,7 +1584,7 @@ function executeFor(node: TreeNode, sc: StatementContext): void {
       sc.flow = 'normal';
       return;
     }
-    if (signal === 'halt' || signal === 'return') return;
+    if (signal === 'halt' || signal === 'return' || signal === 'suspend') return;
     // Guard against a step that cannot make progress (by rounds to 0 at i).
     if (!Number.isFinite(i)) return;
   }
@@ -1537,7 +1614,7 @@ function executeForEach(node: TreeNode, sc: StatementContext): void {
       sc.flow = 'normal';
       return;
     }
-    if (signal === 'halt' || signal === 'return') return;
+    if (signal === 'halt' || signal === 'return' || signal === 'suspend') return;
   }
 }
 
@@ -1582,8 +1659,8 @@ function executeProcedureCall(node: TreeNode, sc: StatementContext, wantsReturn:
   if (inner.flow === 'return') result = inner.returnValue;
   else if (def.hasReturn) result = evaluateInput(def.node, 'RETURN', sc.ctx);
 
-  // A purchase inside a procedure still ends the strategy.
-  if (inner.flow === 'halt') sc.flow = 'halt';
+  // A purchase inside a procedure still ends the strategy; a timeout pauses it.
+  if (inner.flow === 'halt' || inner.flow === 'suspend') sc.flow = inner.flow;
 
   for (const [key, value] of saved) {
     if (value === undefined) sc.ctx.variables.delete(key);

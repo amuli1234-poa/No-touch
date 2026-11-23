@@ -49,18 +49,20 @@ import {
   runBeforePurchase,
   runDuringPurchase,
   runInitialization,
+  runDeferredTimeout,
   runTickAnalysis,
   saveVariables,
   UnsupportedBlockError,
   type ContractFacts,
   type OpenContractFacts,
+  type ScheduledTimeout,
   type TickContext
 } from './interpreter.js';
 import { contractFacts, isSettled, totalProfitOf } from './contractFacts.js';
-import { findTopLevel, type BlockTree } from './tree.js';
+import { findTopLevel, stackToXml, xmlToStack, type BlockTree } from './tree.js';
 import { DIGIT_PREDICTION_TYPES } from '../execution/types.js';
 import type { ContractRecord, DerivContractType } from '../execution/types.js';
-import type { BotRunEvent, BotRunRecord, BotRunStatus } from './runTypes.js';
+import type { BotRunEvent, BotRunRecord, BotRunStatus, PendingDeferral } from './runTypes.js';
 import { emptyCounters } from './runTypes.js';
 import { loadBotTree } from './service.js';
 import type { ImportedBotRecord } from './types.js';
@@ -313,7 +315,8 @@ export async function startBotRun(
     timeframe: plan.timeframe,
     lastTickKey: null,
     lastTickAt: startedAt,
-    variables: {}
+    variables: {},
+    pendingDeferral: null
   };
 
   // DBot runs `INITIALIZATION` once before its tick loop. Doing it here means the
@@ -440,6 +443,13 @@ function interpretTick(
 
   run.variables = saveVariables(result.variables);
 
+  // A `timeout` block pauses the strategy. Record what to resume and when, then
+  // report no entry this tick: DBot would not have reached `purchase` either.
+  if (result.timeouts.length > 0) {
+    const waiting = recordDeferral(deps, run, 'entry', result.timeouts[0]);
+    return { kind: 'no_entry', reason: waiting };
+  }
+
   if (result.purchase === null) {
     const detail =
       result.notifications.length > 0
@@ -448,36 +458,146 @@ function interpretTick(
     return { kind: 'no_entry', reason: detail };
   }
 
+  return verdictForPurchase(tree, ctx, result.purchase);
+}
+
+/**
+ * Records a `timeout`'s deferred work on the run, and describes the pause.
+ *
+ * Shared by every phase that can hit a `timeout`, so the three things a
+ * deferral must carry — when to wake, which phase to wake into, and what to run
+ * — can never be recorded inconsistently.
+ */
+function recordDeferral(
+  deps: BotRunDeps,
+  run: BotRunRecord,
+  phase: PendingDeferral['phase'],
+  timeout: ScheduledTimeout
+): string {
+  run.pendingDeferral = {
+    dueAt: (deps.now ?? Date.now)() + timeout.delayMs,
+    phase,
+    stackXml: stackToXml(timeout.stack),
+    continuationXml: stackToXml(timeout.continuation)
+  };
+  return `The strategy is waiting ${Math.round(timeout.delayMs / 1000)}s in a timeout block.`;
+}
+
+/**
+ * Replays the work a `timeout` block deferred, once its delay has elapsed.
+ *
+ * DBot's `sleep(n)` returns and execution continues *inside* the block, so the
+ * nested stack runs first and the rest of the original chain after it. The
+ * deferral is cleared before anything runs: if the resumed stack schedules
+ * another timeout, that one must be the run's only pending work, and if it
+ * throws, the run must not re-enter the same broken deferral on every tick.
+ */
+function resumeDeferral(
+  deps: BotRunDeps,
+  store: Store,
+  user: UserRecord,
+  run: BotRunRecord,
+  bot: ImportedBotRecord
+): EvaluationVerdict {
+  const deferral = run.pendingDeferral;
+  run.pendingDeferral = null;
+  if (!deferral) return { kind: 'no_entry', reason: 'There was no deferred work to resume.' };
+
+  let tree: BlockTree;
+  try {
+    tree = loadBotTree(bot).tree;
+  } catch {
+    return { kind: 'ineligible', reason: 'The saved strategy could not be read.' };
+  }
+
+  const facts = lastSettledContract(store, user.id, run);
+  const ctx: TickContext = {
+    ticks: deps.market.getTicks(run.symbol),
+    variables: loadVariables(run.variables),
+    totalProfit: totalProfitOf(store.listContracts(user.id), runIntentIds(store, user.id, run)),
+    lastContract: facts
+  };
+
+  let result;
+  try {
+    result = runDeferredTimeout(
+      {
+        delayMs: 0,
+        stack: xmlToStack(deferral.stackXml),
+        continuation: xmlToStack(deferral.continuationXml)
+      },
+      ctx,
+      tree
+    );
+  } catch (err) {
+    if (err instanceof UnsupportedBlockError) {
+      throw new BotRunError(
+        'strategy_not_runnable',
+        `The strategy uses a block this build cannot execute: ${err.blockType}.`,
+        422,
+        [err.message]
+      );
+    }
+    throw err;
+  }
+
+  run.variables = saveVariables(result.variables);
+
+  // The resumed work may itself have hit a `timeout`; queue it in turn.
+  if (result.timeouts.length > 0) {
+    const waiting = recordDeferral(deps, run, 'entry', result.timeouts[0]);
+    return { kind: 'no_entry', reason: waiting };
+  }
+
+  if (result.purchase === null) {
+    return { kind: 'no_entry', reason: 'The strategy resumed from a timeout without reaching purchase.' };
+  }
+
+  return verdictForPurchase(tree, ctx, result.purchase);
+}
+
+/**
+ * Turns a purchase decision into an entry verdict, or explains why it is not one.
+ *
+ * Shared by the normal tick path and the deferred-resume path so a purchase
+ * reached after a `timeout` is validated exactly as strictly as one reached
+ * directly — the same family check and the same digit-prediction requirement.
+ */
+function verdictForPurchase(
+  tree: BlockTree,
+  ctx: TickContext,
+  purchase: string
+): EvaluationVerdict {
   // The contract family follows the type the program actually bought.
-  const family = CONTRACT_TYPE_FAMILY[result.purchase as DerivContractType];
+  const family = CONTRACT_TYPE_FAMILY[purchase as DerivContractType];
   if (!family) {
     throw new BotRunError(
       'strategy_not_runnable',
-      `The strategy buys "${result.purchase}", which this build cannot place.`,
+      `The strategy buys "${purchase}", which this build cannot place.`,
       422,
-      [`Unsupported purchase contract type: ${result.purchase}`]
+      [`Unsupported purchase contract type: ${purchase}`]
     );
   }
 
   // A digit contract needs a prediction, and a program may have derived it into
   // a variable. Placing the trade without one would submit a contract the
   // strategy never asked for, so an unreadable digit declines this entry.
-  const digit = DIGIT_PREDICTION_TYPES.has(result.purchase as DerivContractType)
+  const digit = DIGIT_PREDICTION_TYPES.has(purchase as DerivContractType)
     ? resolveDigitPrediction(tree, ctx)
     : null;
-  if (DIGIT_PREDICTION_TYPES.has(result.purchase as DerivContractType) && digit === null) {
+  if (DIGIT_PREDICTION_TYPES.has(purchase as DerivContractType) && digit === null) {
     return {
       kind: 'no_entry',
-      reason: `The strategy bought ${result.purchase} but its digit prediction could not be resolved.`
+      reason: `The strategy bought ${purchase} but its digit prediction could not be resolved.`
     };
   }
 
   return {
     kind: 'entry',
-    direction: directionForContract(result.purchase as DerivContractType),
-    contractType: result.purchase as DerivContractType,
+    direction: directionForContract(purchase as DerivContractType),
+    contractType: purchase as DerivContractType,
     ...(digit === null ? {} : { digit }),
-    reason: `The strategy's program reached purchase for ${result.purchase}.`
+    reason: `The strategy's program reached purchase for ${purchase}.`
   };
 }
 
@@ -728,7 +848,7 @@ function settleAfterPurchase(
   run: BotRunRecord,
   bot: ImportedBotRecord,
   now: number
-): 'continue' | 'stop' {
+): 'continue' | 'stop' | 'waiting' {
   if (run.lastContractId === null) return 'continue';
   if (run.afterPurchaseFor === run.lastContractId) return 'continue';
 
@@ -771,7 +891,97 @@ function settleAfterPurchase(
     pushEvent(run, { at: now, kind: 'notify', detail: note.message });
   }
 
+  // DBot compiles `timeout` to `sleep(n); <stack>; <rest>`, and `after_purchase`
+  // is ordinary code, so a delay there pauses the decision to trade again. The
+  // run must wait rather than treat "no trade_again yet" as a refusal: stopping
+  // would end a strategy that only asked to pause between contracts.
+  if (result.timeouts.length > 0) {
+    recordDeferral(deps, run, 'after_purchase', result.timeouts[0]);
+    return 'waiting';
+  }
+
   return result.tradeAgain ? 'continue' : 'stop';
+}
+
+/**
+ * Resumes an `after_purchase` stack that paused in a `timeout` block.
+ *
+ * Mirrors `resumeDeferral`, but the outcome that matters here is `trade_again`:
+ * reaching it keeps the run alive, and not reaching it stops the run, exactly as
+ * if the stack had run without a delay.
+ */
+async function resumeAfterPurchaseDeferral(
+  deps: BotRunDeps,
+  store: Store,
+  user: UserRecord,
+  run: BotRunRecord,
+  bot: ImportedBotRecord,
+  now: number
+): Promise<'continue' | 'stop' | 'waiting'> {
+  const deferral = run.pendingDeferral;
+  run.pendingDeferral = null;
+  if (!deferral) return 'continue';
+
+  let tree: BlockTree;
+  try {
+    tree = loadBotTree(bot).tree;
+  } catch {
+    return 'stop';
+  }
+
+  const contract = run.lastContractId === null
+    ? null
+    : store.getContract(user.id, String(run.lastContractId));
+
+  const ctx: TickContext = {
+    ticks: deps.market.getTicks(run.symbol),
+    variables: loadVariables(run.variables),
+    totalProfit: totalProfitOf(store.listContracts(user.id), runIntentIds(store, user.id, run)),
+    lastContract:
+      contract && isSettled(contract)
+        ? contractFacts(contract, store.getTradeIntent(user.id, contract.intentId))
+        : null
+  };
+
+  let result;
+  try {
+    result = runDeferredTimeout(
+      {
+        delayMs: 0,
+        stack: xmlToStack(deferral.stackXml),
+        continuation: xmlToStack(deferral.continuationXml)
+      },
+      ctx,
+      tree
+    );
+  } catch (err) {
+    if (err instanceof UnsupportedBlockError) {
+      throw new BotRunError(
+        'strategy_not_runnable',
+        `The strategy's after-purchase blocks cannot be executed: ${err.blockType}.`,
+        422,
+        [err.message]
+      );
+    }
+    throw err;
+  }
+
+  run.variables = saveVariables(result.variables);
+  for (const note of result.notifications) {
+    pushEvent(run, { at: now, kind: 'notify', detail: note.message });
+  }
+
+  // A further delay in the resumed work queues another pause.
+  if (result.timeouts.length > 0) {
+    recordDeferral(deps, run, 'after_purchase', result.timeouts[0]);
+    return 'waiting';
+  }
+
+  if (!result.tradeAgain) return 'stop';
+
+  // The stack asked to trade again. Starting the next contract's decision is the
+  // entry path's job, so hand control back and let the tick proceed.
+  return 'continue';
 }
 
 /** Intent ids that belong to this run, so profit is not pooled across runs. */
@@ -798,7 +1008,7 @@ function lastSettledContract(
 
 export interface TickResult {
   run: BotRunRecord;
-  verdict: 'entry' | 'no_entry' | 'insufficient' | 'ineligible' | 'skipped' | 'stopped';
+  verdict: 'entry' | 'no_entry' | 'insufficient' | 'ineligible' | 'skipped' | 'stopped' | 'waiting';
   reason: string | null;
   contractId: number | null;
 }
@@ -889,7 +1099,16 @@ export async function tickBotRun(
       await duringPurchaseStep(deps, user, run, bot, accessToken, now());
     }
 
-    const settlement = settleAfterPurchase(deps, store, user, run, bot, now());
+    // A run paused in an `after_purchase` timeout must resume there. Resuming
+    // first means the entry gate below never mistakes that pause for a paused
+    // entry decision, which would leave the run waiting on the wrong phase.
+    const settlement =
+      run.pendingDeferral?.phase === 'after_purchase'
+        ? now() < run.pendingDeferral.dueAt
+          ? 'waiting'
+          : await resumeAfterPurchaseDeferral(deps, store, user, run, bot, now())
+        : settleAfterPurchase(deps, store, user, run, bot, now());
+
     if (settlement === 'stop') {
       const stopped = await stopBotRun(
         deps,
@@ -899,6 +1118,20 @@ export async function tickBotRun(
         'the strategy chose not to trade again'
       );
       return { run: stopped, verdict: 'stopped', reason: 'trade again declined', contractId: null };
+    }
+
+    // Still inside the delay: the run waits, and must not evaluate an entry.
+    if (settlement === 'waiting') {
+      run.counters.ticks += 1;
+      run.lastTickKey = tickKey ?? null;
+      run.lastTickAt = now();
+      await store.putBotRun(run);
+      return {
+        run,
+        verdict: 'waiting',
+        reason: 'the strategy is paused in an after-purchase timeout block',
+        contractId: null
+      };
     }
   }
 
@@ -936,11 +1169,34 @@ export async function tickBotRun(
     return { run, verdict: 'insufficient', reason: 'no fresh price', contractId: null };
   }
 
-  const ticks = deps.market.getTicks(plan.symbol);
-  const verdict =
-    plan.engine === 'interpreter'
-      ? interpretTick(deps, store, user, run, bot, ticks)
-      : evaluateStrategy({ plan, ticks });
+  // A strategy paused inside a `timeout` block must resume there, not start a
+  // fresh entry decision. DBot's `sleep(n)` blocks the whole strategy, so while
+  // a deferral is pending nothing else may run — in particular no purchase.
+  let verdict: EvaluationVerdict;
+  if (plan.engine === 'interpreter' && run.pendingDeferral?.phase === 'entry') {
+    if (now() < run.pendingDeferral.dueAt) {
+      run.counters.ticks += 1;
+      run.lastTickKey = tickKey ?? null;
+      run.lastTickAt = now();
+      await store.putBotRun(run);
+      return {
+        run,
+        verdict: 'waiting',
+        reason: 'the strategy is paused in a timeout block',
+        contractId: null
+      };
+    }
+    // The delay has elapsed, so replay the deferred work. Whatever it reaches —
+    // a purchase, a further timeout, or neither — flows through the same paths
+    // below as a normal tick, so no purchase can bypass the gateway.
+    verdict = resumeDeferral(deps, store, user, run, bot);
+  } else {
+    const ticks = deps.market.getTicks(plan.symbol);
+    verdict =
+      plan.engine === 'interpreter'
+        ? interpretTick(deps, store, user, run, bot, ticks)
+        : evaluateStrategy({ plan, ticks });
+  }
 
   run.counters.ticks += 1;
   run.lastEvaluationAt = now();

@@ -357,3 +357,71 @@ test('the shipped Digit_Differs_AI export declares every block it uses', () => {
     'these blocks are executed but undeclared, so Blockly would throw "Invalid block definition"'
   );
 });
+
+/**
+ * The general form of the same bug, checked against the server itself.
+ *
+ * The test above pins one file. This one asks the server which blocks it can
+ * execute, then requires the editor to declare every one of them (or to get it
+ * from stock Blockly). That makes the two registries a single source of truth: a
+ * block added to the interpreter without a matching declaration fails here,
+ * instead of throwing `Invalid block definition` on a customer's import.
+ *
+ * The stock list is kept small and explicit because Blockly cannot be loaded
+ * under Node (it needs a DOM), so the real registry is not available here. It
+ * only has to cover the standard blocks the server actually executes; anything
+ * else it misses is a DBot block, which must be declared anyway.
+ */
+test('every block the server can execute is declared or is a stock Blockly block', async () => {
+  const { supportedBlockTypes } = await import('../../../../server/bots/blocks');
+  const declared = new Set(DBOT_DECLS.map((decl) => decl.type));
+  const stock = new Set([
+    'controls_flow_statements',
+    'controls_for',
+    'controls_forEach',
+    'controls_if',
+    'controls_repeat',
+    'controls_repeat_ext',
+    'controls_whileUntil',
+    'lists_create_with',
+    'lists_getIndex',
+    'lists_indexOf',
+    'lists_isEmpty',
+    'lists_length',
+    'logic_boolean',
+    'logic_compare',
+    'logic_negate',
+    'logic_null',
+    'logic_operation',
+    'logic_ternary',
+    'math_arithmetic',
+    'math_change',
+    'math_constant',
+    'math_constrain',
+    'math_modulo',
+    'math_number',
+    'math_round',
+    'math_single',
+    'procedures_callnoreturn',
+    'procedures_callreturn',
+    'procedures_defnoreturn',
+    'procedures_defreturn',
+    'procedures_ifreturn',
+    'text',
+    'text_isEmpty',
+    'text_join',
+    'text_length',
+    'variables_get',
+    'variables_set'
+  ]);
+
+  const missing = supportedBlockTypes()
+    .filter((type) => !declared.has(type) && !stock.has(type))
+    .sort();
+
+  assert.deepEqual(
+    missing,
+    [],
+    'the server can execute these blocks but the editor would throw "Invalid block definition" for them'
+  );
+});

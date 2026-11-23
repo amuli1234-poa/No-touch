@@ -47,6 +47,30 @@ export interface BotRunCounters {
   skipped: number;
 }
 
+/**
+ * A `timeout` block's deferred work, waiting on the run's clock.
+ *
+ * The stack is held as XML rather than as a live tree because the run record is
+ * persisted between ticks; re-parsing it on resume is what keeps the deferral
+ * valid across a store round-trip.
+ */
+export interface PendingDeferral {
+  /** When the delay elapses, as an epoch millisecond timestamp. */
+  dueAt: number;
+  /**
+   * Which lifecycle phase paused.
+   *
+   * A `timeout` in `before_purchase` pauses the entry decision; one in
+   * `after_purchase` pauses the decision to trade again. They resume into
+   * different places, so the phase has to be persisted with the work.
+   */
+  phase: 'entry' | 'after_purchase';
+  /** The `TIMEOUTSTACK` body, serialised as a standalone XML fragment. */
+  stackXml: string | null;
+  /** The rest of the statement chain, to run after the stack. */
+  continuationXml: string | null;
+}
+
 export interface BotRunRecord {
   runId: string;
   botId: string;
@@ -111,6 +135,18 @@ export interface BotRunRecord {
    * run survives a store round-trip.
    */
   variables: Record<string, JsonValue>;
+  /**
+   * Work a `timeout` block deferred, waiting for its delay to elapse.
+   *
+   * DBot pauses the strategy at a `timeout` and resumes inside the block once
+   * `sleep(n)` returns. The tick loop is this build's only clock, so the run
+   * records what to resume and when, and refuses to evaluate anything else
+   * until the deferral has run. Null when nothing is waiting.
+   *
+   * Held on the run for the same isolation reason as `variables`: one run's
+   * pending work must never be visible to another.
+   */
+  pendingDeferral: PendingDeferral | null;
 }
 
 /** Fields a client may see. Identical to the record today, but explicit. */

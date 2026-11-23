@@ -442,6 +442,31 @@ export function treeToXml(tree: BlockTree): string {
   return `${lines.join('\n')}\n`;
 }
 
+/**
+ * Serialises one statement chain (a block and its `<next>` siblings) as a
+ * standalone XML fragment.
+ *
+ * Used to persist a `timeout` block's deferred work on the run record between
+ * ticks. Returns null for an empty chain, so the caller can store the absence
+ * rather than an empty `<xml>` shell.
+ */
+export function stackToXml(stack: TreeNode | null): string | null {
+  if (!stack) return null;
+  return `${writeBlock(stack, '')}\n`;
+}
+
+/**
+ * Parses a fragment written by `stackToXml` back into a statement chain.
+ *
+ * The fragment is a bare `<block>` element rather than an `<xml>` document, so
+ * it is wrapped before parsing and unwrapped after.
+ */
+export function xmlToStack(fragment: string | null): TreeNode | null {
+  if (!fragment) return null;
+  const tree = xmlToTree(`<xml>${fragment}</xml>`);
+  return tree.blocks[0] ?? null;
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Traversal helpers                                                          */
 /* -------------------------------------------------------------------------- */
