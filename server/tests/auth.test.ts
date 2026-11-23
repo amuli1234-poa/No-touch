@@ -27,6 +27,8 @@ interface FakeDeriv {
   userinfoBehaviour: 'ok' | 'unauthorized';
   accountsBehaviour: 'ok' | 'forbidden' | 'unauthorized';
   accountsData: { account_id: string; account_type: string; currency?: string; status?: string }[];
+  otpBehaviour: 'ok' | 'unauthorized';
+  lastOtpAccountId: string | null;
   lastTokenRequest: Record<string, string> | null;
   tokenRequestCount: number;
 }
@@ -42,6 +44,8 @@ async function startFakeDeriv(): Promise<FakeDeriv> {
       { account_id: 'VRTC90001', account_type: 'demo', currency: 'USD', status: 'active' },
       { account_id: 'CR90002', account_type: 'real', currency: 'USD', status: 'active' }
     ],
+    otpBehaviour: 'ok',
+    lastOtpAccountId: null,
     lastTokenRequest: null,
     tokenRequestCount: 0
   };
@@ -95,6 +99,19 @@ async function startFakeDeriv(): Promise<FakeDeriv> {
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ data: state.accountsData }));
+        return;
+      }
+
+      const otpMatch = url.pathname.match(/^\/trading\/v1\/options\/accounts\/([^/]+)\/otp$/);
+      if (otpMatch) {
+        state.lastOtpAccountId = decodeURIComponent(otpMatch[1]);
+        if (state.otpBehaviour === 'unauthorized' || !req.headers.authorization) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ errors: [{ code: 'Unauthorized' }] }));
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ data: { url: `wss://fake.derivws.test/ws/${state.lastOtpAccountId}?otp=abc` } }));
         return;
       }
 
@@ -545,6 +562,160 @@ test('15. Revoked Deriv authorization invalidates the application session', asyn
     // The application session is gone.
     assert.equal((await get(app.base, '/auth/session', cj)).status, 401);
     assert.equal(app.store.countActiveSessions(), 0);
+  } finally {
+    await app.close();
+    await deriv.close();
+  }
+});
+
+/* ------------------- bot app single sign-on (shared session) ----------- */
+
+test('16. Bot app sees the WickSentinel session and mints a socket for an owned account', async () => {
+  const deriv = await startFakeDeriv();
+  const app = await startApp(deriv);
+  const cj = jar();
+  try {
+    const start = await get(app.base, '/auth/start?mode=login', cj);
+    const state = new URL(start.headers.get('location')!).searchParams.get('state')!;
+    await get(app.base, `/auth/deriv/callback?code=C&state=${state}`, cj);
+
+    // The bot app asks the same origin who is signed in.
+    const sessionRes = await get(app.base, '/api/bot/session', cj);
+    assert.equal(sessionRes.status, 200);
+    const session = await sessionRes.json();
+    assert.equal(session.authenticated, true);
+    assert.equal(session.accounts.length, 2);
+    assert.equal(session.defaultAccountId, 'VRTC90001', 'demo account is preferred');
+    assert.equal(session.tokenExpiresAt > Date.now(), true);
+
+    // It never receives the Deriv access token.
+    assert.equal(JSON.stringify(session).includes('ory_at_test_token'), false);
+
+    const wsRes = await fetch(`${app.base}/api/bot/ws-url`, {
+      method: 'POST',
+      headers: { Cookie: cj.header(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountId: 'VRTC90001' })
+    });
+    assert.equal(wsRes.status, 200);
+    const ws = await wsRes.json();
+    assert.match(ws.url, /^wss:\/\/fake\.derivws\.test\//);
+    assert.equal(ws.accountId, 'VRTC90001');
+    assert.equal(deriv.lastOtpAccountId, 'VRTC90001');
+  } finally {
+    await app.close();
+    await deriv.close();
+  }
+});
+
+test('17. Bot app endpoints refuse anonymous callers', async () => {
+  const deriv = await startFakeDeriv();
+  const app = await startApp(deriv);
+  try {
+    const anon = jar();
+    const sessionRes = await get(app.base, '/api/bot/session', anon);
+    assert.equal(sessionRes.status, 200);
+    assert.equal((await sessionRes.json()).authenticated, false);
+
+    const wsRes = await fetch(`${app.base}/api/bot/ws-url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountId: 'VRTC90001' })
+    });
+    assert.equal(wsRes.status, 401);
+    assert.equal(deriv.lastOtpAccountId, null, 'no socket minted without a session');
+  } finally {
+    await app.close();
+    await deriv.close();
+  }
+});
+
+test('18. Bot app cannot mint a socket for an account it does not own', async () => {
+  const deriv = await startFakeDeriv();
+  const app = await startApp(deriv);
+  const cj = jar();
+  try {
+    const start = await get(app.base, '/auth/start?mode=login', cj);
+    const state = new URL(start.headers.get('location')!).searchParams.get('state')!;
+    await get(app.base, `/auth/deriv/callback?code=C&state=${state}`, cj);
+
+    // `CR99999` is not in this session's account set.
+    const res = await fetch(`${app.base}/api/bot/ws-url`, {
+      method: 'POST',
+      headers: { Cookie: cj.header(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountId: 'CR99999' })
+    });
+    assert.equal(res.status, 400);
+    assert.equal((await res.json()).error, 'no_account');
+    assert.equal(deriv.lastOtpAccountId, null, 'nothing minted for an unowned account');
+  } finally {
+    await app.close();
+    await deriv.close();
+  }
+});
+
+test('19. Bot app falls back to the default account when none is named', async () => {
+  const deriv = await startFakeDeriv();
+  const app = await startApp(deriv);
+  const cj = jar();
+  try {
+    const start = await get(app.base, '/auth/start?mode=login', cj);
+    const state = new URL(start.headers.get('location')!).searchParams.get('state')!;
+    await get(app.base, `/auth/deriv/callback?code=C&state=${state}`, cj);
+
+    const res = await fetch(`${app.base}/api/bot/ws-url`, {
+      method: 'POST',
+      headers: { Cookie: cj.header(), 'Content-Type': 'application/json' },
+      body: '{}'
+    });
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).accountId, 'VRTC90001');
+  } finally {
+    await app.close();
+    await deriv.close();
+  }
+});
+
+test('20. A revoked Deriv token makes the bot app socket request fail closed', async () => {
+  const deriv = await startFakeDeriv();
+  const app = await startApp(deriv);
+  const cj = jar();
+  try {
+    const start = await get(app.base, '/auth/start?mode=login', cj);
+    const state = new URL(start.headers.get('location')!).searchParams.get('state')!;
+    await get(app.base, `/auth/deriv/callback?code=C&state=${state}`, cj);
+
+    deriv.otpBehaviour = 'unauthorized';
+    const res = await fetch(`${app.base}/api/bot/ws-url`, {
+      method: 'POST',
+      headers: { Cookie: cj.header(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountId: 'VRTC90001' })
+    });
+    assert.equal(res.status, 401);
+  } finally {
+    await app.close();
+    await deriv.close();
+  }
+});
+
+test('21. Sign-in returns to the page that started it, and only same-origin paths are honoured', async () => {
+  const deriv = await startFakeDeriv();
+  const app = await startApp(deriv);
+  try {
+    const loginWith = async (returnTo: string) => {
+      const cj = jar();
+      const start = await get(app.base, `/auth/start?mode=login&returnTo=${encodeURIComponent(returnTo)}`, cj);
+      const state = new URL(start.headers.get('location')!).searchParams.get('state')!;
+      const cb = await get(app.base, `/auth/deriv/callback?code=C&state=${state}`, cj);
+      return cb.headers.get('location');
+    };
+
+    assert.equal(await loginWith('/bot/'), 'http://localhost:8787/bot/');
+    assert.equal(await loginWith('/app'), 'http://localhost:8787/app');
+
+    // Absolute and protocol-relative targets are dropped, not followed.
+    assert.equal(await loginWith('https://evil.example/steal'), 'http://localhost:8787/app');
+    assert.equal(await loginWith('//evil.example/steal'), 'http://localhost:8787/app');
+    assert.equal(await loginWith('/\\evil.example'), 'http://localhost:8787/app');
   } finally {
     await app.close();
     await deriv.close();

@@ -112,6 +112,12 @@ export interface OAuthTransaction {
   codeVerifier: string;
   redirectUri: string;
   mode: 'login' | 'signup';
+  /**
+   * Same-origin path to return to after sign-in (e.g. `/bot/`). Validated as a
+   * relative path when the transaction is created, so it can never become an
+   * open redirect.
+   */
+  returnTo?: string;
   createdAt: number;
   /** Set when the transaction is used, so a duplicate callback cannot replay it. */
   consumedAt: number | null;

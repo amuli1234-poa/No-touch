@@ -208,6 +208,35 @@ export async function resolveIdentity(
   };
 }
 
+/**
+ * Mints a short-lived, single-use authenticated WebSocket URL for one account.
+ *
+ * The bot app needs an authorised WebSocket to trade. Fetching it in the browser
+ * would require handing the OAuth access token to the page, which contradicts the
+ * "token never reaches the browser" invariant this backend maintains. So the
+ * exchange happens here and only the resulting OTP URL — scoped to one account
+ * and expiring in minutes — is returned.
+ */
+export async function fetchOtpWebSocketUrl(
+  cfg: ServerConfig,
+  accessToken: string,
+  accountId: string
+): Promise<string> {
+  const res = await fetch(
+    `${cfg.deriv.apiBaseUrl}/trading/v1/options/accounts/${encodeURIComponent(accountId)}/otp`,
+    { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' } }
+  );
+  if (!res.ok) {
+    throw new DerivRequestError(res.status, 'otp_failed', 'Could not open a trading session for this account.');
+  }
+  const json: any = await res.json();
+  const url = json?.data?.url ?? json?.url;
+  if (typeof url !== 'string' || url === '') {
+    throw new DerivRequestError(502, 'otp_missing_url', 'Deriv did not return a WebSocket URL.');
+  }
+  return url;
+}
+
 /** Best-effort RFC 7009 token revocation when the user logs out. */
 export async function revokeToken(cfg: ServerConfig, accessToken: string): Promise<void> {
   try {

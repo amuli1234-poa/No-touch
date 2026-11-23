@@ -9,6 +9,7 @@ import {
 import type { AuthConfig } from '@/external/deriv-core';
 import { getInitialLanguage } from '@deriv-com/translations';
 import { DerivWSAccountsService } from '@/services/derivws-accounts.service';
+import { getWickSentinelWebSocketUrl } from '@/services/wicksentinel-sso';
 import brandConfig from '../../../../../brand.config.json';
 
 // =============================================================================
@@ -65,13 +66,23 @@ const getDefaultServerURL = () => {
 };
 
 /**
- * Gets the WebSocket URL using the authenticated flow
- * 1. Get access token from auth_info (localStorage via vendored deriv-core)
- * 2. Fetch OTP WebSocket URL from DerivWSAccountsService
+ * Gets the WebSocket URL using the authenticated flow.
+ *
+ * A WickSentinel session takes precedence: the trader is already signed in on
+ * the parent app, so the server mints the authenticated socket for them and no
+ * second Deriv login is needed. Only when there is no such session does the bot
+ * app fall back to its own OAuth token.
  *
  * @returns Promise with WebSocket URL or fallback to default server
  */
 export const getSocketURL = async (): Promise<string> => {
+    try {
+        const ssoUrl = await getWickSentinelWebSocketUrl();
+        if (ssoUrl) return ssoUrl;
+    } catch (error) {
+        console.error('[WickSentinelSSO] Error resolving session WebSocket URL:', error);
+    }
+
     try {
         const authInfo = getAuthInfo();
         if (!authInfo || !authInfo.access_token) {

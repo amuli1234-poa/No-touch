@@ -16,6 +16,10 @@ import MenuItems from './menu-items';
 import MobileMenu from './mobile-menu';
 import './header.scss';
 
+// Where WickSentinel sends the trader back after sign-in. The bot app is mounted
+// at this path, so a login started here returns here.
+const BOT_PATH = '/bot/';
+
 const AppHeader = observer(() => {
     const { isDesktop } = useDevice();
     const { isAuthorizing, activeLoginid, setIsAuthorizing, authData } = useApiBase();
@@ -84,6 +88,13 @@ const AppHeader = observer(() => {
     }, [isAuthorizing, activeLoginid, setIsAuthorizing, authTimeout, isOAuthPending]);
 
     const handleSignup = useCallback(async () => {
+        // Without a local Deriv OAuth app id this build cannot run its own OAuth
+        // flow. Defer to WickSentinel, which owns the login for this deployment,
+        // and come back to the bot page afterwards.
+        if (!process.env.NEXT_PUBLIC_DERIV_APP_ID) {
+            window.location.assign(`/auth/start?mode=signup&returnTo=${encodeURIComponent(BOT_PATH)}`);
+            return;
+        }
         try {
             setIsAuthorizing(true);
             const oauthUrl = await generateOAuthURL('registration');
@@ -100,6 +111,10 @@ const AppHeader = observer(() => {
     }, [setIsAuthorizing]);
 
     const handleLogin = useCallback(async () => {
+        if (!process.env.NEXT_PUBLIC_DERIV_APP_ID) {
+            window.location.assign(`/auth/start?mode=login&returnTo=${encodeURIComponent(BOT_PATH)}`);
+            return;
+        }
         try {
             // Set authorizing state immediately when login is clicked
             setIsAuthorizing(true);
@@ -169,16 +184,15 @@ const AppHeader = observer(() => {
                 !isOAuthPending &&
                 ((!is_account_regenerating && !isAuthorizing && !activeLoginid) || authTimeout)
             ) {
-                // Disable auth buttons until the OAuth app id is configured, so the
-                // click handlers (which would otherwise log "Failed to generate OAuth
-                // URL") never fire. The env-not-set toast explains why.
-                const isAuthConfigured = Boolean(process.env.NEXT_PUBLIC_DERIV_APP_ID);
+                // Auth buttons used to be disabled without a local OAuth app id.
+                // They now always work: with no app id they hand off to
+                // WickSentinel's own Deriv login, which owns this deployment.
                 return (
                     <div className='auth-actions'>
-                        <Button tertiary disabled={!isAuthConfigured} onClick={handleLogin}>
+                        <Button tertiary onClick={handleLogin}>
                             <Localize i18n_default_text='Log in' />
                         </Button>
-                        <Button primary_light disabled={!isAuthConfigured} onClick={handleSignup}>
+                        <Button primary_light onClick={handleSignup}>
                             <Localize i18n_default_text='Sign up' />
                         </Button>
                     </div>
