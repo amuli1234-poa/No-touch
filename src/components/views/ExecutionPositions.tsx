@@ -51,6 +51,7 @@ export function ExecutionPositions() {
   const [closeError, setCloseError] = useState<string | null>(null);
   const [historyHiddenBefore, setHistoryHiddenBefore] = useState<number | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [deleteHistoryConfirm, setDeleteHistoryConfirm] = useState(false);
   const inFlight = useRef(false);
   const mounted = useRef(false);
   const historyStorageKey =
@@ -177,6 +178,7 @@ export function ExecutionPositions() {
       title="Account positions"
       subtitle="Live and settled profit/loss from your Deriv contracts. Demo and Real are kept separate."
       icon={<DollarSign className="w-4 h-4" />}
+      className="@container min-w-0"
       right={
         <div className="flex items-center gap-2">
           <div className="inline-flex rounded-md border border-line bg-panel p-0.5">
@@ -252,14 +254,47 @@ export function ExecutionPositions() {
         </div>
       )}
 
+      {deleteHistoryConfirm && tab === 'closed' && (
+        <div
+          role="group"
+          aria-label="Confirm deleting closed positions from history"
+          className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-warn/30 bg-warn/10 px-3 py-2"
+        >
+          <p className="text-[12px] text-ink">
+            Remove all currently closed positions from this history view, across DEMO and REAL accounts? Server
+            contract and ledger records are retained for risk controls and audit, and can be restored here.
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                hideClosedHistory();
+                setDeleteHistoryConfirm(false);
+              }}
+              disabled={!historyStorageKey}
+              className="rounded-md border border-bear/30 bg-bear/10 px-2.5 py-1.5 text-[11px] font-bold text-bear hover:bg-bear/20 disabled:opacity-50 cursor-pointer"
+            >
+              Confirm delete
+            </button>
+            <button
+              type="button"
+              onClick={() => setDeleteHistoryConfirm(false)}
+              className="rounded-md border border-line bg-surface px-2.5 py-1.5 text-[11px] font-bold text-muted hover:bg-elevated cursor-pointer"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {summaries.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 mb-4">
+        <div className="grid grid-cols-1 @md:grid-cols-2 @3xl:grid-cols-3 gap-3 mb-4">
           {summaries.map((summary) => (
-            <Card key={`${summary.accountId}:${summary.currency}`} className="p-3">
+            <Card key={`${summary.accountId}:${summary.currency}`} className="p-3 min-w-0 @container">
               <div className="text-[12px] font-bold text-ink truncate">
                 Account {summary.accountId} · {summary.currency}
               </div>
-              <div className="grid grid-cols-2 gap-2 mt-2">
+              <div className="grid grid-cols-1 @sm:grid-cols-2 gap-2 mt-2">
                 <StatTile
                   label="Open P/L"
                   value={summary.openCount === 0 ? '—' : formatPnl(summary.openProfit, summary.currency)}
@@ -316,11 +351,11 @@ export function ExecutionPositions() {
           {tab === 'closed' && modeContracts.some((contract) => contract.status !== 'open') && (
             <button
               type="button"
-              onClick={hideClosedHistory}
+              onClick={() => setDeleteHistoryConfirm(true)}
               disabled={!historyStorageKey}
-              className="rounded-md border border-line bg-surface px-2 py-1 text-[11px] font-semibold text-muted hover:bg-elevated disabled:opacity-50 cursor-pointer"
+              className="rounded-md border border-bear/30 bg-bear/10 px-2 py-1 text-[11px] font-semibold text-bear hover:bg-bear/20 disabled:opacity-50 cursor-pointer"
             >
-              <span>Hide closed history</span>
+              <span>Delete closed history</span>
             </button>
           )}
           {tab === 'closed' && hiddenClosedCount > 0 && (

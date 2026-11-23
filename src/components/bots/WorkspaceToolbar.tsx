@@ -13,6 +13,8 @@ import {
   ZoomOut,
   Maximize2,
   Eraser,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen
 } from 'lucide-react';
@@ -47,6 +49,8 @@ export interface WorkspaceToolbarProps {
   onZoomOut: () => void;
   onZoomFit: () => void;
   onResetWorkspace: () => void;
+  toolboxOpen: boolean;
+  onToggleToolbox: () => void;
   /** Whether the configuration rail is showing; drives the labelled toggle. */
   railOpen: boolean;
   onToggleRail: () => void;
@@ -75,6 +79,8 @@ export function WorkspaceToolbar({
   onZoomOut,
   onZoomFit,
   onResetWorkspace,
+  toolboxOpen,
+  onToggleToolbox,
   railOpen,
   onToggleRail
 }: WorkspaceToolbarProps) {
@@ -202,10 +208,28 @@ export function WorkspaceToolbar({
 
       <button
         type="button"
+        onClick={onToggleToolbox}
+        disabled={!editorReady}
+        aria-expanded={toolboxOpen}
+        aria-label={toolboxOpen ? 'Hide the block toolbox' : 'Show the block toolbox'}
+        title={toolboxOpen ? 'Hide the block toolbox' : 'Show the block toolbox'}
+        className={`${iconButton} px-2`}
+      >
+        {toolboxOpen ? (
+          <PanelLeftClose className="w-3.5 h-3.5" aria-hidden="true" />
+        ) : (
+          <PanelLeftOpen className="w-3.5 h-3.5" aria-hidden="true" />
+        )}
+        <span className="hidden xl:inline">{toolboxOpen ? 'Hide toolbox' : 'Show toolbox'}</span>
+      </button>
+
+      <button
+        type="button"
         onClick={onToggleRail}
         aria-expanded={railOpen}
+        aria-label={railOpen ? 'Hide the configuration panel' : 'Show the configuration panel'}
         title={railOpen ? 'Hide the configuration panel' : 'Show the configuration panel'}
-        className={`${iconButton} hidden lg:inline-flex`}
+        className={`${iconButton} px-2`}
       >
         {railOpen ? (
           <PanelRightClose className="w-3.5 h-3.5" aria-hidden="true" />

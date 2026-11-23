@@ -111,6 +111,45 @@ const FALLING_CALL_BOT = RISING_CALL_BOT.replace(
   '<field name="CHECK_DIRECTION">fall</field>'
 );
 
+const LEGACY_DIGIT_DIFF_BOT = `<xml xmlns="http://www.w3.org/1999/xhtml" collection="false">
+  <block type="trade" id="trade" x="0" y="0">
+    <field name="MARKET_LIST">volidx</field>
+    <field name="SUBMARKET_LIST">random_index</field>
+    <field name="SYMBOL_LIST">R_50</field>
+    <field name="TRADETYPECAT_LIST">digits</field>
+    <field name="TRADETYPE_LIST">matchesdiffers</field>
+    <field name="TYPE_LIST">DIGITDIFF</field>
+    <field name="CANDLEINTERVAL_LIST">60</field>
+    <statement name="SUBMARKET">
+      <block type="tradeOptions" id="trade_options">
+        <field name="DURATIONTYPE_LIST">t</field>
+        <field name="CURRENCY_LIST">USD</field>
+        <value name="DURATION">
+          <shadow type="math_number"><field name="NUM">1</field></shadow>
+        </value>
+        <value name="AMOUNT">
+          <shadow type="math_number"><field name="NUM">0.35</field></shadow>
+        </value>
+        <value name="PREDICTION">
+          <block type="last_digit"/>
+        </value>
+      </block>
+    </statement>
+  </block>
+  <block type="before_purchase" id="before_purchase" x="0" y="700">
+    <statement name="BEFOREPURCHASE_STACK">
+      <block type="purchase"><field name="PURCHASE_LIST">DIGITDIFF</field></block>
+    </statement>
+  </block>
+</xml>`;
+
+const LEGACY_COMPLEX_DIGIT_DIFF_BOT = LEGACY_DIGIT_DIFF_BOT
+  .replace('<block type="last_digit"/>', '<block type="variables_get"><field name="VAR">Current Prediction</field></block>')
+  .replace(
+    '<block type="purchase"><field name="PURCHASE_LIST">DIGITDIFF</field></block>',
+    '<block type="controls_if"><statement name="DO0"><block type="purchase"><field name="PURCHASE_LIST">DIGITDIFF</field></block></statement></block>'
+  );
+
 /** A strategy that sells before expiry, which this build does not honour. */
 const EARLY_SELL_BOT = RISING_CALL_BOT.replace(
   '<statement name="DURING_PURCHASE_STACK"></statement>',
@@ -342,6 +381,48 @@ test('plan: refuses a strategy with no entry condition', () => {
   const planned = planStrategy(xmlToTree(noCondition));
   assert.equal(planned.ok, false);
   assert.match(planned.reasons.join(' '), /no entry condition/);
+});
+
+test('plan: supports a simple legacy DIGITDIFF bot with an explicit last-digit prediction', () => {
+  const planned = planStrategy(xmlToTree(LEGACY_DIGIT_DIFF_BOT));
+  assert.equal(planned.ok, true, planned.reasons.join(' '));
+  const plan = planned.plan!;
+  assert.equal(plan.symbol, 'R_50');
+  assert.equal(plan.contractType, 'DIGITDIFF');
+  assert.equal(plan.contractFamily, 'digits');
+  assert.equal(plan.direction, 'NONE');
+  assert.equal(plan.dynamicDigit, true);
+  assert.equal(plan.stake, 0.35);
+  assert.equal(plan.duration, 1);
+  assert.equal(plan.durationUnit, 't');
+  assert.deepEqual(plan.conditions, [{ kind: 'digit_prediction', contractType: 'DIGITDIFF' }]);
+});
+
+test('plan: refuses legacy digit strategies with unmodelled variables or branching', () => {
+  const planned = planStrategy(xmlToTree(LEGACY_COMPLEX_DIGIT_DIFF_BOT));
+  assert.equal(planned.ok, false);
+  assert.ok(planned.unsupported.includes('controls_if'));
+  assert.ok(planned.reasons.some((reason) => reason.includes('variables_get')));
+});
+
+test('evaluate: legacy DIGITDIFF resolves the latest digit for the barrier', () => {
+  const plan = planStrategy(xmlToTree(LEGACY_DIGIT_DIFF_BOT)).plan!;
+  const verdict = evaluateStrategy({
+    plan,
+    ticks: [{ symbol: 'R_50', quote: 123.4, bid: null, ask: null, epoch: 1, pipSize: 2 }]
+  });
+  assert.equal(verdict.kind, 'entry');
+  assert.equal((verdict as { digit: number }).digit, 0);
+});
+
+test('evaluate: a legacy digit bot waits when the latest tick has no pip size', () => {
+  const plan = planStrategy(xmlToTree(LEGACY_DIGIT_DIFF_BOT)).plan!;
+  const verdict = evaluateStrategy({
+    plan,
+    ticks: [{ symbol: 'R_50', quote: 123.4, bid: null, ask: null, epoch: 1, pipSize: null }]
+  });
+  assert.equal(verdict.kind, 'insufficient');
+  assert.match(verdict.reason, /pip size/);
 });
 
 test('evaluate: rising ticks satisfy a rise condition; falling ticks do not', () => {

@@ -121,6 +121,8 @@ async function parseError(res: Response): Promise<BotApiError> {
   } catch {
     // A non-JSON error body leaves the defaults in place.
   }
+  if (code !== 'request_failed') message = `${message} (${code}, HTTP ${res.status})`;
+  else if (res.status) message = `${message} (HTTP ${res.status})`;
   return new BotApiError(code, message, res.status, existingBotId);
 }
 
@@ -325,9 +327,15 @@ export interface BotEditorPayload {
   /** Block types this build cannot interpret, for placeholder definitions. */
   unknownBlocks: {
     type: string;
+    shape: 'stack' | 'value';
     fields: { name: string }[];
     inputs: { name: string; kind: 'value' | 'statement' }[];
   }[];
+  executionEligibility?: {
+    runnable: boolean;
+    reasons: string[];
+    unsupported: string[];
+  };
   compatibility: CompatibilityLevel;
   compatibilityReason: string;
   status: BotRecord['status'];

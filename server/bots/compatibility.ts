@@ -118,7 +118,11 @@ export function evaluateCompatibility(
       details: ['The strategy configures a contract type that contradicts its own trade definition.']
     };
   }
-  if (DIGIT_PREDICTION_TYPES.has(plan.contractType) && plan.digit === null) {
+  if (
+    DIGIT_PREDICTION_TYPES.has(plan.contractType) &&
+    plan.digit === null &&
+    !plan.dynamicDigit
+  ) {
     return {
       state: 'invalid',
       reason: 'The strategy buys a digit contract but names no digit.',

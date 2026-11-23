@@ -18,7 +18,14 @@ import 'blockly/blocks';
 // only locale this app ships.
 import * as EnMessages from 'blockly/msg/en';
 
-import { registerStrategyBlocks, registerUnknownBlocks, strategyToolbox } from './blocks';
+import {
+  isUnknownBlockType,
+  originalBlockType,
+  registerStrategyBlocks,
+  registerUnknownBlocks,
+  strategyToolbox,
+  unknownBlockType
+} from './blocks';
 import { strategyTheme } from './theme';
 import type { UnknownBlockSeed } from './types';
 
@@ -26,6 +33,7 @@ export interface MountOptions {
   xml: string;
   unknownBlocks: UnknownBlockSeed[];
   readOnly?: boolean;
+  toolboxVisible?: boolean;
   onChange: (xml: string) => void;
 }
 
@@ -40,6 +48,8 @@ export interface EditorControls {
   zoomIn: () => void;
   zoomOut: () => void;
   zoomToFit: () => void;
+  setToolboxVisible: (visible: boolean) => void;
+  resize: () => void;
   /** Empties the canvas. The caller decides whether that is confirmed. */
   clear: () => void;
   canUndo: () => boolean;
@@ -51,6 +61,16 @@ export interface MountedEditor {
   dispose: () => void;
 }
 
+function restoreOriginalTypes(root: Element): void {
+  const nodes = [root, ...Array.from(root.querySelectorAll('block, shadow'))];
+  for (const node of nodes) {
+    const type = node.getAttribute('type');
+    if (type && isUnknownBlockType(type)) {
+      node.setAttribute('type', originalBlockType(type));
+    }
+  }
+}
+
 /**
  * Injects a Blockly workspace into `host`, loads the strategy, and reports
  * user edits through `onChange`.
@@ -59,17 +79,41 @@ export function mountEditor(host: Element, options: MountOptions): MountedEditor
   // The module's type carries a synthetic `default` that is not a message, so
   // it has to be narrowed to the plain string map `setLocale` expects.
   Blockly.setLocale(EnMessages as unknown as Record<string, string>);
-  registerStrategyBlocks();
+  let root: Element | null = null;
+  const observed = new Map<string, Set<string>>();
+  if (options.xml.trim()) {
+    const doc = new DOMParser().parseFromString(options.xml, 'text/xml');
+    if (doc.querySelector('parsererror')) {
+      throw new Error('The strategy XML could not be read by the editor.');
+    }
+    root = doc.documentElement;
+    if (!root || root.nodeName !== 'xml') {
+      throw new Error('The strategy XML has no <xml> root element.');
+    }
+    for (const field of Array.from(root.querySelectorAll('field[name]'))) {
+      const name = field.getAttribute('name');
+      if (!name) continue;
+      let values = observed.get(name);
+      if (!values) {
+        values = new Set<string>();
+        observed.set(name, values);
+      }
+      values.add(field.textContent ?? '');
+    }
+  }
+  registerStrategyBlocks(observed);
   registerUnknownBlocks(options.unknownBlocks);
 
+  const toolbox = strategyToolbox() as never;
   const ws = Blockly.inject(host, {
     theme: strategyTheme,
-    toolbox: strategyToolbox() as never,
+    toolbox: options.toolboxVisible === false ? undefined : toolbox,
+    toolboxPosition: 'left',
     readOnly: Boolean(options.readOnly),
     renderer: 'zelos',
     grid: { spacing: 24, length: 2, colour: '#1a2438', snap: true },
     zoom: {
-      controls: true,
+      controls: false,
       wheel: true,
       startScale: 0.85,
       maxScale: 2,
@@ -80,16 +124,17 @@ export function mountEditor(host: Element, options: MountOptions): MountedEditor
     trashcan: !options.readOnly
   });
 
-  if (options.xml.trim()) {
-    const doc = new DOMParser().parseFromString(options.xml, 'text/xml');
-    if (doc.querySelector('parsererror')) {
-      ws.dispose();
-      throw new Error('The strategy XML could not be read by the editor.');
-    }
-    const root = doc.documentElement;
-    if (!root || root.nodeName !== 'xml') {
-      ws.dispose();
-      throw new Error('The strategy XML has no <xml> root element.');
+  if (root) {
+    const placeholderTypes = new Set(
+      options.unknownBlocks.map((block) => `${block.type}\0${block.shape}`)
+    );
+    const nodes = [root, ...Array.from(root.querySelectorAll('block, shadow'))];
+    for (const node of nodes) {
+      const type = node.getAttribute('type');
+      const shape = node.parentElement?.nodeName === 'value' ? 'value' : 'stack';
+      if (type && placeholderTypes.has(`${type}\0${shape}`)) {
+        node.setAttribute('type', unknownBlockType(type, shape));
+      }
     }
     Blockly.Xml.domToWorkspace(root, ws);
   }
@@ -100,11 +145,16 @@ export function mountEditor(host: Element, options: MountOptions): MountedEditor
   // signal — it marked an untouched strategy as having unsaved changes. Compare
   // against the canonical form of what was just loaded instead: only a real
   // difference is a user edit.
-  const baseline = Blockly.Xml.domToPrettyText(Blockly.Xml.workspaceToDom(ws));
+  const serializeWorkspace = () => {
+    const dom = Blockly.Xml.workspaceToDom(ws);
+    restoreOriginalTypes(dom);
+    return Blockly.Xml.domToPrettyText(dom);
+  };
+  const baseline = serializeWorkspace();
   const listener = (event: Blockly.Events.Abstract) => {
     if (event.isUiEvent) return;
     if (event.type === Blockly.Events.VIEWPORT_CHANGE) return;
-    const next = Blockly.Xml.domToPrettyText(Blockly.Xml.workspaceToDom(ws));
+    const next = serializeWorkspace();
     if (next === baseline) return;
     options.onChange(next);
   };
@@ -116,6 +166,13 @@ export function mountEditor(host: Element, options: MountOptions): MountedEditor
     zoomIn: () => ws.zoomCenter(1),
     zoomOut: () => ws.zoomCenter(-1),
     zoomToFit: () => ws.zoomToFit(),
+    setToolboxVisible: (visible) => {
+      const currentToolbox = ws.getToolbox();
+      if (!currentToolbox) throw new Error('The Blockly toolbox is unavailable.');
+      currentToolbox.setVisible(visible);
+      Blockly.svgResize(ws);
+    },
+    resize: () => Blockly.svgResize(ws),
     clear: () => {
       // Cleared through the same event path as a manual delete, so the caller's
       // change handler observes the emptied workspace and can mark it dirty.

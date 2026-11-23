@@ -790,3 +790,141 @@
     overflow-x: clip;
   }
 }
+
+.bot-panel-section {
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  border-radius: 0.75rem;
+  background: var(--color-surface);
+}
+
+.bot-panel-section > summary {
+  display: flex;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  color: var(--color-ink);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  list-style: none;
+}
+
+.bot-panel-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.bot-panel-section[open] > summary {
+  border-bottom: 1px solid var(--color-line);
+}
+
+.bot-panel-section[open] .bot-panel-section__chevron {
+  transform: rotate(180deg);
+}
+
+.bot-panel-section__content {
+  padding: 0.75rem;
+}
+
+.bot-blockly-host .blocklyToolbox {
+  border-right: 1px solid #202c3d;
+  box-sizing: border-box;
+}
+
+.bot-blockly-host .blocklyToolboxCategoryGroup {
+  padding: 0.375rem 0.25rem;
+}
+
+.bot-blockly-host .blocklyToolboxCategory {
+  display: flex;
+  min-height: 2rem;
+  align-items: center;
+  margin: 0.125rem 0.375rem;
+  border-left-width: 3px !important;
+  border-radius: 0.5rem;
+}
+
+.bot-blockly-host .blocklyTreeRowContentContainer {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0 0.375rem;
+}
+
+.bot-blockly-host .blocklyToolboxCategoryLabel {
+  color: #cbd5e1;
+  font-family: 'Plus Jakarta Sans', Inter, system-ui, sans-serif;
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.bot-blockly-host .blocklyToolboxCategory:hover,
+.bot-blockly-host .blocklyToolboxCategorySelected {
+  background: rgba(40, 120, 208, 0.16);
+}
+
+.bot-blockly-host .blocklyToolboxCategorySelected .blocklyToolboxCategoryLabel {
+  color: #c8e1fa;
+}
+
+.bot-blockly-host .ws-blockly-category-icon {
+  display: inline-flex;
+  width: 1.125rem;
+  height: 1.125rem;
+  align-items: center;
+  justify-content: center;
+  margin: 0 0.375rem 0 0.125rem;
+  border-radius: 0.375rem;
+  background: rgba(40, 120, 208, 0.12);
+  color: #9cc9f2;
+  font: 700 0.6875rem/1 'Plus Jakarta Sans', Inter, system-ui, sans-serif;
+}
+
+.bot-blockly-host .ws-blockly-category-icon--trade::before {
+  content: '⇄';
+}
+
+.bot-blockly-host .ws-blockly-category-icon--market::before {
+  content: '⌖';
+}
+
+.bot-blockly-host .ws-blockly-category-icon--options::before {
+  content: '⚙';
+}
+
+.bot-blockly-host .ws-blockly-category-icon--contract::before {
+  content: '◇';
+}
+
+.bot-blockly-host .ws-blockly-category-icon--entry::before {
+  content: '›';
+}
+
+.bot-blockly-host .ws-blockly-category-icon--exit::before {
+  content: '↩';
+}
+
+.bot-blockly-host .ws-blockly-category-icon--indicator::before {
+  content: 'ƒ';
+}
+
+.bot-blockly-host .ws-blockly-category-icon--logic::before {
+  content: '∧';
+}
+
+.bot-blockly-host .ws-blockly-category-icon--math::before {
+  content: '±';
+}
+
+.bot-blockly-host .ws-blockly-category-icon--variables::before {
+  content: 'x';
+}
+
+.bot-blockly-host .blocklyText,
+.bot-blockly-host .blocklyDropdownText {
+  font-family: 'Plus Jakarta Sans', Inter, system-ui, sans-serif;
+  font-weight: 600;
+}

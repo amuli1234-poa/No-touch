@@ -32,6 +32,7 @@ import {
   type XmlElement,
   type XmlLimits
 } from './xml.js';
+import { blockSpec } from './blocks.js';
 
 /** A `<field name="X">value</field>`. */
 export interface TreeField {
@@ -385,36 +386,75 @@ export function annotateUnknown(tree: BlockTree, isKnown: (type: string) => bool
 }
 
 /**
- * The distinct unknown block types in a tree, with their field and input
- * names, so the editor can build a placeholder definition for each before
- * Blockly loads the XML.
+ * The distinct block types without an editable Blockly definition, with their
+ * field, input and connection shapes, so the editor can register loss-preserving placeholders.
  */
 export function collectUnknownBlocks(
   tree: BlockTree
-): { type: string; fields: { name: string }[]; inputs: { name: string; kind: 'value' | 'statement' }[] }[] {
-  const byType = new Map<
-    string,
-    { type: string; fields: { name: string }[]; inputs: { name: string; kind: 'value' | 'statement' }[] }
-  >();
-  for (const node of walkTree(tree)) {
-    if (!node.unknown) continue;
-    const existing = byType.get(node.type);
-    const fields = node.fields.map((f) => ({ name: f.name }));
-    const inputs = node.inputs.map((i) => ({ name: i.name, kind: i.kind }));
+): {
+  type: string;
+  shape: 'stack' | 'value';
+  fields: { name: string }[];
+  inputs: { name: string; kind: 'value' | 'statement' }[];
+}[] {
+  type Seed = {
+    type: string;
+    shape: 'stack' | 'value';
+    fields: { name: string }[];
+    inputs: { name: string; kind: 'value' | 'statement' }[];
+  };
+  const byTypeAndShape = new Map<string, Seed>();
+  const add = (
+    type: string,
+    shape: Seed['shape'],
+    fields: { name: string }[],
+    inputs: { name: string; kind: 'value' | 'statement' }[]
+  ) => {
+    const key = `${type}\0${shape}`;
+    const existing = byTypeAndShape.get(key);
     if (!existing) {
-      byType.set(node.type, { type: node.type, fields, inputs });
-      continue;
+      byTypeAndShape.set(key, { type, shape, fields, inputs });
+      return;
     }
-    // The same type can appear with different fields across a file; union them
-    // so one definition can render every occurrence.
+    // One placeholder definition must cover every occurrence of this type and shape.
     for (const field of fields) {
-      if (!existing.fields.some((f) => f.name === field.name)) existing.fields.push(field);
+      if (!existing.fields.some((item) => item.name === field.name)) existing.fields.push(field);
     }
     for (const input of inputs) {
-      if (!existing.inputs.some((i) => i.name === input.name)) existing.inputs.push(input);
+      if (!existing.inputs.some((item) => item.name === input.name && item.kind === input.kind)) {
+        existing.inputs.push(input);
+      }
     }
-  }
-  return [...byType.values()];
+  };
+  const visit = (node: TreeNode, shape: Seed['shape']) => {
+    if (node.unknown || blockSpec(node.type)?.supported === false) {
+      add(
+        node.type,
+        shape,
+        node.fields.map((field) => ({ name: field.name })),
+        node.inputs.map((input) => ({ name: input.name, kind: input.kind }))
+      );
+    }
+    for (const input of node.inputs) {
+      if (input.shadow && blockSpec(input.shadow.type)?.supported !== true) {
+        add(
+          input.shadow.type,
+          'value',
+          input.shadow.fields.map((field) => ({ name: field.name })),
+          []
+        );
+      }
+      if (input.block) visit(input.block, input.kind === 'value' ? 'value' : 'stack');
+    }
+    for (const shadow of node.shadows) {
+      if (blockSpec(shadow.type)?.supported !== true) {
+        add(shadow.type, 'stack', shadow.fields.map((field) => ({ name: field.name })), []);
+      }
+    }
+    if (node.next) visit(node.next, 'stack');
+  };
+  for (const node of tree.blocks) visit(node, 'stack');
+  return [...byTypeAndShape.values()];
 }
 
 /** Every node in the tree, depth-first, including `<next>` chains. */

@@ -22,6 +22,7 @@ import { Card, EmptyState, StatusPill } from '../ui/primitives';
 import { BotImporter } from '../bots/BotImporter';
 import { ExecutionRail } from '../bots/ExecutionRail';
 import { TradingConfigPanel } from '../bots/TradingConfigPanel';
+import { unsupportedBlockDetails } from '../bots/unsupportedBlocks';
 import { WorkspaceToolbar } from '../bots/WorkspaceToolbar';
 import { StrategyWorkspace, type EditorControls } from '../bots/editor/StrategyWorkspace';
 import { readStrategyConfig } from '../bots/strategyConfig';
@@ -173,6 +174,7 @@ function StrategyEditor({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const [controls, setControls] = useState<EditorControls | null>(null);
+  const [toolboxOpen, setToolboxOpen] = useState(true);
   // The rail is a side panel on desktop and an overlay on small screens, where
   // it would otherwise cover the canvas the moment the bot opens.
   const [railOpen, setRailOpen] = useState(
@@ -239,8 +241,17 @@ function StrategyEditor({
     }
   }, [botId, onClose]);
 
-  const unknownTypes = payload?.unknownBlocks.length ?? 0;
-  const unknownNodes = useMemo(() => (payload ? countUnknownNodes(payload) : 0), [payload]);
+  const executionEligibility = payload?.executionEligibility ?? {
+    runnable: false,
+    reasons: ['Bot execution details are unavailable. Restart the server to load the latest bot support.'],
+    unsupported: []
+  };
+  const unsupportedTypes = executionEligibility.unsupported;
+  const unsupportedBlocks = useMemo(
+    () => (payload ? unsupportedBlockDetails(payload.tree, unsupportedTypes) : []),
+    [payload, unsupportedTypes]
+  );
+  const unsupportedCount = unsupportedBlocks.reduce((sum, block) => sum + block.count, 0);
 
   // The configuration readout is derived from the strategy tree, so it only
   // reflects saved state. While the canvas is dirty the rail says so rather
@@ -278,8 +289,8 @@ function StrategyEditor({
     ? [
         `Revision ${revision}`,
         payload.edited ? 'edited' : 'original file',
-        unknownTypes > 0
-          ? `${unknownTypes} unsupported block type${unknownTypes === 1 ? '' : 's'}`
+        unsupportedTypes.length > 0
+          ? `${unsupportedTypes.length} unsupported block type${unsupportedTypes.length === 1 ? '' : 's'}`
           : null
       ]
         .filter(Boolean)
@@ -308,6 +319,14 @@ function StrategyEditor({
         onZoomOut={() => controls?.zoomOut()}
         onZoomFit={() => controls?.zoomToFit()}
         onResetWorkspace={() => controls?.clear()}
+        toolboxOpen={toolboxOpen}
+        onToggleToolbox={() =>
+          setToolboxOpen((open) => {
+            const next = !open;
+            controls?.setToolboxVisible(next);
+            return next;
+          })
+        }
         railOpen={railOpen}
         onToggleRail={() => setRailOpen((v) => !v)}
       />
@@ -319,14 +338,35 @@ function StrategyEditor({
         </div>
       )}
 
-      {unknownNodes > 0 && (
-        <div className="flex items-start gap-2 px-4 py-2 bg-warning/10 border-b border-warning/30 text-[11px] text-warning shrink-0">
+      {unsupportedBlocks.length > 0 && (
+        <div className="flex items-start gap-2 px-3 py-1.5 bg-warning/10 border-b border-warning/30 text-[10.5px] text-warning shrink-0">
           <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" aria-hidden="true" />
-          <span>
-            {unknownNodes} block{unknownNodes === 1 ? '' : 's'} in this strategy cannot be
-            interpreted. They are shown read-only and kept exactly as imported, but the strategy
-            cannot be executed until they are removed.
-          </span>
+          <div className="min-w-0">
+            <p>
+              {unsupportedCount || unsupportedBlocks.length} block
+              {(unsupportedCount || unsupportedBlocks.length) === 1 ? '' : 's'} cannot be faithfully
+              executed. All imported blocks remain visible and preserved.
+            </p>
+            <details className="mt-0.5">
+              <summary className="cursor-pointer font-semibold">
+                Technical details ({unsupportedBlocks.length} block types)
+              </summary>
+              <ul className="mt-1 grid gap-0.5 break-words sm:grid-cols-2">
+                {unsupportedBlocks.map((block) => (
+                  <li key={block.type}>
+                    <span className="font-semibold">{block.category}</span>
+                    {' · '}
+                    {block.name}
+                    <code className="ml-1 text-warning/80">{block.type}</code>
+                    {block.count > 0 && ` ×${block.count}`}
+                  </li>
+                ))}
+              </ul>
+              {executionEligibility.reasons.length > 0 && (
+                <p className="mt-1 break-words">{executionEligibility.reasons.join(' ')}</p>
+              )}
+            </details>
+          </div>
         </div>
       )}
 
@@ -338,6 +378,7 @@ function StrategyEditor({
               key={`${botId}:${revision}`}
               xml={xml}
               unknownBlocks={payload.unknownBlocks}
+              toolboxVisible={toolboxOpen}
               onChange={handleChange}
               onReady={setControls}
             />
@@ -351,10 +392,13 @@ function StrategyEditor({
             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10">
               <div className="pointer-events-auto flex items-start gap-2 px-3 py-1.5 border-t border-line bg-surface/95 backdrop-blur-sm text-[10.5px] text-muted">
                 <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 shrink-0 text-warning" aria-hidden="true" />
-                <span className="truncate">
-                  <strong className="text-ink capitalize">{payload.compatibility}</strong> —{' '}
-                  {payload.compatibilityReason}
-                </span>
+                <details className="min-w-0">
+                  <summary className="cursor-pointer">
+                    <strong className="text-ink capitalize">{payload.compatibility}</strong> —
+                    compatibility details
+                  </summary>
+                  <p className="mt-1 break-words text-faint">{payload.compatibilityReason}</p>
+                </details>
               </div>
             </div>
           )}
@@ -373,6 +417,7 @@ function StrategyEditor({
             <ExecutionRail
               botId={botId}
               dirty={dirty}
+              executionEligibility={executionEligibility}
               symbol={config?.symbol ?? null}
               contractType={config?.contractType ?? null}
             />
@@ -419,17 +464,4 @@ function StrategyEditor({
       )}
     </div>
   );
-}
-
-/** Counts nodes the server flagged as unknown, for the editor banner. */
-function countUnknownNodes(payload: BotEditorPayload): number {
-  let count = 0;
-  const walk = (node: BotEditorPayload['tree']['blocks'][number] | null) => {
-    if (!node) return;
-    if (node.unknown) count += 1;
-    if (node.next) walk(node.next);
-    for (const input of node.inputs) walk(input.block);
-  };
-  for (const block of payload.tree.blocks) walk(block);
-  return count;
 }

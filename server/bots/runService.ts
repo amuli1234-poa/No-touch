@@ -457,6 +457,10 @@ export async function tickBotRun(
   const account = user.accounts.find((a) => a.accountId === run.accountId);
   const currency = plan.currency ?? account?.currency ?? 'USD';
   const stake = plan.stake ?? 1;
+  const digit =
+    verdict.kind === 'entry' && typeof verdict.digit === 'number'
+      ? verdict.digit
+      : plan.digit;
 
   const auto = await deps.runner.runForBot({
     user,
@@ -473,7 +477,7 @@ export async function tickBotRun(
         cancellation: null,
         stopLoss: null,
         takeProfit: null,
-        digit: plan.digit,
+        digit,
         barrier: plan.barrier,
         growthRate: null
       }

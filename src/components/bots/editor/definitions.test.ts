@@ -14,6 +14,13 @@ import {
   unknownToJson
 } from './definitions';
 
+function messageArgs(json: Record<string, unknown>): { type: string; name?: string }[] {
+  return Object.keys(json)
+    .filter((key) => /^args\d+$/.test(key))
+    .sort((a, b) => Number(a.slice(4)) - Number(b.slice(4)))
+    .flatMap((key) => json[key] as { type: string; name?: string }[]);
+}
+
 /**
  * Block-definition tests.
  *
@@ -34,7 +41,7 @@ test('every DBot declaration has a unique block type', () => {
 test('every declared field is either a dropdown or a variable field', () => {
   for (const decl of DBOT_DECLS) {
     const json = declToJson(decl, new Map());
-    const args = json.args0 as { type: string; name?: string }[];
+    const args = messageArgs(json);
     for (const field of decl.fields) {
       const arg = args.find((a) => a.name === field);
       assert.ok(arg, `${decl.type} is missing a field for ${field}`);
@@ -45,6 +52,17 @@ test('every declared field is either a dropdown or a variable field', () => {
       }
     }
   }
+});
+
+test('positive-number blocks keep a numeric editor for their literal', () => {
+  const json = declToJson(DBOT_DECLS.find((decl) => decl.type === 'math_number_positive')!, new Map());
+  const args = json.args0 as { type: string; name?: string; value?: number }[];
+  assert.deepEqual(args.find((arg) => arg.name === 'NUM'), {
+    type: 'field_number',
+    name: 'NUM',
+    value: 0
+  });
+  assert.equal(json.output, 'Number');
 });
 
 test('every field has default dropdown options', () => {
@@ -85,7 +103,7 @@ test('stack blocks get previous and next connections; expression blocks get outp
   const stackJson = declToJson(stack, new Map());
   assert.equal(stackJson.previousStatement, null);
   assert.equal(stackJson.nextStatement, null);
-  assert.equal(stackJson.output, null);
+  assert.equal(stackJson.output, undefined);
 
   const expression = DBOT_DECLS.find((d) => d.type === 'check_direction')!;
   const exprJson = declToJson(expression, new Map());
@@ -93,25 +111,47 @@ test('stack blocks get previous and next connections; expression blocks get outp
   assert.equal(exprJson.previousStatement, undefined);
 });
 
-test('statement inputs become statement sockets', () => {
+test('statement inputs become Blockly statement sockets', () => {
   const json = declToJson(DBOT_DECLS.find((d) => d.type === 'before_purchase')!, new Map());
   const args = json.args0 as { type: string; name?: string }[];
   const input = args.find((a) => a.name === 'BEFOREPURCHASE_STACK')!;
-  assert.equal(input.type, 'statement');
+  assert.equal(input.type, 'input_statement');
 });
 
-test('value inputs become value sockets', () => {
+test('legacy trade fields render in labeled rows instead of one oversized strip', () => {
+  const trade = DBOT_DECLS.find((decl) => decl.type === 'trade')!;
+  const json = declToJson(trade, new Map());
+  const rows = [0, 1, 2, 3, 4, 5].map(
+    (index) => json[`args${index}`] as { name: string; text?: string }[]
+  );
+
+  assert.deepEqual(rows.map((args) => args[0].text), [
+    'Market',
+    'Contract',
+    'Candle interval',
+    'Trade options',
+    'Initialization',
+    'Submarket settings'
+  ]);
+  for (const field of trade.fields) {
+    assert.ok(messageArgs(json).some((arg) => arg.name === field), `${field} must stay editable`);
+  }
+});
+
+test('value inputs become Blockly value sockets', () => {
   const json = declToJson(DBOT_DECLS.find((d) => d.type === 'trade_definition_tradeoptions')!, new Map());
   const args = json.args0 as { type: string; name?: string }[];
-  assert.equal(args.find((a) => a.name === 'DURATION')!.type, 'value');
-  assert.equal(args.find((a) => a.name === 'AMOUNT')!.type, 'value');
+  assert.equal(args.find((a) => a.name === 'DURATION')!.type, 'input_value');
+  assert.equal(args.find((a) => a.name === 'AMOUNT')!.type, 'input_value');
 });
 
 test('unknown block types are namespaced and reversible', () => {
-  const generated = unknownBlockType('future_block');
-  assert.ok(generated.startsWith(UNKNOWN_BLOCK_PREFIX));
-  assert.equal(isUnknownBlockType(generated), true);
-  assert.equal(originalBlockType(generated), 'future_block');
+  for (const shape of ['stack', 'value'] as const) {
+    const generated = unknownBlockType('future_block', shape);
+    assert.ok(generated.startsWith(UNKNOWN_BLOCK_PREFIX));
+    assert.equal(isUnknownBlockType(generated), true);
+    assert.equal(originalBlockType(generated), 'future_block');
+  }
   assert.equal(isUnknownBlockType('purchase'), false);
   assert.equal(originalBlockType('purchase'), 'purchase');
 });
@@ -123,7 +163,7 @@ test('an unknown block placeholder preserves every field and input', () => {
   const args = json.args0 as { type: string; name?: string }[];
   const fieldNames = args.filter((a) => a.type === 'field_input').map((a) => a.name);
   assert.deepEqual(fieldNames, ['KEEP', 'ALSO']);
-  assert.ok(args.some((a) => a.type === 'statement' && a.name === 'STACK'));
+  assert.ok(args.some((a) => a.type === 'input_statement' && a.name === 'STACK'));
   // Read-only: an unknown block must not be editable into something else.
   for (const arg of args) {
     if (arg.type === 'field_input') {
@@ -132,10 +172,22 @@ test('an unknown block placeholder preserves every field and input', () => {
   }
 });
 
-test('an unknown block placeholder keeps its children attachable', () => {
+test('a stack placeholder keeps its statement children attachable', () => {
   const json = unknownToJson('future_block', [], [{ name: 'BODY', kind: 'statement' }]);
   assert.equal(json.previousStatement, null);
   assert.equal(json.nextStatement, null);
+  assert.equal(json.output, undefined);
+  const args = json.args0 as { type: string; name?: string }[];
+  assert.equal(args.find((arg) => arg.name === 'BODY')?.type, 'input_statement');
+});
+
+test('a value placeholder has an output connection, not stack connections', () => {
+  const json = unknownToJson('future_value', [], [{ name: 'ARG', kind: 'value' }], 'value');
+  assert.equal(json.output, null);
+  assert.equal(json.previousStatement, undefined);
+  assert.equal(json.nextStatement, undefined);
+  const args = json.args0 as { type: string; name?: string }[];
+  assert.equal(args.find((arg) => arg.name === 'ARG')?.type, 'input_value');
 });
 
 test('every declaration carries a tooltip and a style', () => {
@@ -155,14 +207,19 @@ test('no definition sets both colour and style, which Blockly rejects', () => {
   }
 });
 
-test('message0 references each arg exactly once, in order', () => {
-  // Blockly throws "Message index %1 duplicated" during inject when message0
+test('every message row references each argument exactly once, in order', () => {
+  // Blockly throws "Message index %1 duplicated" during inject when a message
   // repeats an index, which takes the whole editor down.
   for (const json of [...DBOT_DECLS.map((decl) => declToJson(decl, new Map())), unknownToJson('future_block', ['A'], [])]) {
-    const message = String(json.message0);
-    const args = json.args0 as unknown[];
-    const indices = [...message.matchAll(/%(\d+)/g)].map((m) => Number(m[1]));
-    assert.deepEqual(indices, args.map((_, i) => i + 1), `${String(json.type)} message indices`);
+    const messageKeys = Object.keys(json)
+      .filter((key) => /^message\d+$/.test(key))
+      .sort((a, b) => Number(a.slice(7)) - Number(b.slice(7)));
+    for (const key of messageKeys) {
+      const suffix = key.slice(7);
+      const args = json[`args${suffix}`] as unknown[];
+      const indices = [...String(json[key]).matchAll(/%(\d+)/g)].map((m) => Number(m[1]));
+      assert.deepEqual(indices, args.map((_, i) => i + 1), `${String(json.type)} ${key} indices`);
+    }
   }
 });
 

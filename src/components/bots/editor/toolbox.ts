@@ -23,6 +23,9 @@ import { DBOT_DECLS } from './definitions';
  * they render and are preserved — they are simply not offered for new work.
  */
 export const EXECUTABLE_BLOCKS: ReadonlySet<string> = new Set([
+  'trade',
+  'tradeOptions',
+  'last_digit',
   'trade_definition',
   'trade_definition_market',
   'trade_definition_tradetype',
@@ -50,6 +53,7 @@ interface ToolboxCategory {
   kind: 'category';
   name: string;
   categorystyle: string;
+  cssconfig: { icon: string };
   expanded: boolean;
   contents: { kind: 'block'; type: string }[];
 }
@@ -63,12 +67,14 @@ export function strategyToolbox(): StrategyToolbox {
   const category = (
     name: string,
     style: string,
+    icon: string,
     types: string[],
     expanded = false
   ): ToolboxCategory => ({
     kind: 'category',
     name,
     categorystyle: style,
+    cssconfig: { icon: `ws-blockly-category-icon ws-blockly-category-icon--${icon}` },
     expanded,
     contents: types
       .filter((type) => EXECUTABLE_BLOCKS.has(type))
@@ -80,16 +86,21 @@ export function strategyToolbox(): StrategyToolbox {
   return {
     kind: 'categoryToolbox',
     contents: [
-      category('Trade', 'trade_category', pick('trade-definition'), true),
-      category('Market', 'market_category', pick('market'), true),
-      category('Trade options', 'stake_category', pick('stake')),
-      category('Contract', 'contract_category', pick('contract')),
-      category('Entry conditions', 'entry_category', [...pick('entry'), ...pick('purchase')]),
-      category('Exit conditions', 'exit_category', pick('exit')),
-      category('Indicators', 'indicator_category', pick('indicator')),
-      category('Logic', 'logic_category', ['logic_compare']),
-      category('Mathematics', 'math_category', ['math_number']),
-      category('Variables', 'variable_category', ['variables_get'])
+      category('Trade', 'trade_category', 'trade', pick('trade-definition'), true),
+      category('Market', 'market_category', 'market', pick('market'), true),
+      category('Trade options', 'stake_category', 'options', pick('stake')),
+      category('Contract', 'contract_category', 'contract', pick('contract')),
+      category(
+        'Entry conditions',
+        'entry_category',
+        'entry',
+        [...pick('entry'), ...pick('purchase')]
+      ),
+      category('Exit conditions', 'exit_category', 'exit', pick('exit')),
+      category('Indicators', 'indicator_category', 'indicator', pick('indicator')),
+      category('Logic', 'logic_category', 'logic', ['logic_compare']),
+      category('Mathematics', 'math_category', 'math', ['math_number']),
+      category('Variables', 'variable_category', 'variables', ['variables_get'])
     ].filter((c) => c.contents.length > 0)
   };
 }

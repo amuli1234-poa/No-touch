@@ -33,7 +33,7 @@ import { fieldValue, findTopLevel, walkTree } from './tree.js';
 
 export type EvaluationVerdict =
   /** `NONE` when the strategy's family is chosen by prediction, not direction. */
-  | { kind: 'entry'; direction: 'RISE' | 'FALL' | 'NONE'; reason: string }
+  | { kind: 'entry'; direction: 'RISE' | 'FALL' | 'NONE'; reason: string; digit?: number }
   | { kind: 'no_entry'; reason: string }
   | { kind: 'insufficient'; reason: string }
   | { kind: 'ineligible'; reason: string };
@@ -48,6 +48,7 @@ export type CompareOp = 'EQ' | 'NEQ' | 'LT' | 'LTE' | 'GT' | 'GTE';
 
 export type PlanCondition =
   | { kind: 'direction'; direction: 'RISE' | 'FALL' }
+  | { kind: 'digit_prediction'; contractType: DerivContractType }
   | { kind: 'compare'; op: CompareOp; left: Operand; right: Operand };
 
 /** An indicator the strategy computes each tick, keyed by its variable name. */
@@ -68,6 +69,8 @@ export interface StrategyPlan {
   direction: 'RISE' | 'FALL' | 'NONE';
   /** Predicted digit, when the strategy names one. */
   digit: number | null;
+  /** True for legacy digit strategies whose prediction is resolved from the latest tick. */
+  dynamicDigit: boolean;
   /** Barrier price as written, for barrier families. */
   barrier: string | null;
   /** Conditions evaluated each tick, in document order; all must hold. */
@@ -101,6 +104,9 @@ export interface PlanResult {
  * approximated.
  */
 export const EXECUTABLE = new Set([
+  'trade',
+  'tradeOptions',
+  'last_digit',
   'trade_definition',
   'trade_definition_market',
   'trade_definition_tradetype',
@@ -179,7 +185,9 @@ const CONTRACT_TYPES = new Set<string>(Object.keys(CONTRACT_TYPE_FAMILY));
  * trade the author did not write.
  */
 function readDigitPrediction(all: TreeNode[]): number | null {
-  const options = all.find((n) => n.type === 'trade_definition_tradeoptions');
+  const options = all.find((n) =>
+    n.type === 'tradeOptions' || n.type === 'trade_definition_tradeoptions'
+  );
   if (!options) return null;
   const input = options.inputs.find((i) => i.name === 'BARRIER' || i.name === 'PREDICTION');
   const block = input?.block;
@@ -198,7 +206,9 @@ function readDigitPrediction(all: TreeNode[]): number | null {
  * it to a number here would lose the sign convention the author relied on.
  */
 function readBarrier(all: TreeNode[]): string | null {
-  const options = all.find((n) => n.type === 'trade_definition_tradeoptions');
+  const options = all.find((n) =>
+    n.type === 'tradeOptions' || n.type === 'trade_definition_tradeoptions'
+  );
   if (!options) return null;
   const input = options.inputs.find((i) => i.name === 'BARRIER');
   const block = input?.block;
@@ -217,11 +227,21 @@ function inputNumber(node: TreeNode | null | undefined, inputName: string): numb
   if (!node) return null;
   const input = node.inputs.find((i) => i.name === inputName);
   const block = input?.block;
-  if (!block) return null;
-  const field = block.fields.find((f) => f.name === 'NUM');
-  if (!field) return null;
-  const num = Number(field.value);
-  return Number.isFinite(num) ? num : null;
+  if (block) {
+    const field = block.fields.find((f) => f.name === 'NUM');
+    if (field) {
+      const num = Number(field.value);
+      if (Number.isFinite(num)) return num;
+    }
+  }
+  // Legacy exports keep the configured value in a shadow beside a variables_get.
+  // It is a real fallback, not an invented default.
+  const shadowField = input?.shadow?.fields.find((f) => f.name === 'NUM');
+  if (shadowField) {
+    const num = Number(shadowField.value);
+    if (Number.isFinite(num)) return num;
+  }
+  return null;
 }
 
 /** The block connected to a statement input, when present. */
@@ -292,10 +312,19 @@ function resolveOperand(
  */
 export function planStrategy(tree: BlockTree): PlanResult {
   const reasons: string[] = [];
+  const all = walkTree(tree);
+  const legacyTrade = findTopLevel(tree, 'trade');
+  const legacyDigit = legacyTrade !== null && all.some((n) =>
+    n.type === 'trade' && (
+      fieldValue(n, 'TYPE_LIST')?.startsWith('DIGIT') === true
+    )
+  );
 
-  const unsupported = [
-    ...new Set(walkTree(tree).filter((n) => !EXECUTABLE.has(n.type)).map((n) => n.type))
-  ];
+  const unsupportedTypes = all.filter((n) => !EXECUTABLE.has(n.type)).map((n) => n.type);
+  if (legacyDigit && all.some((node) => node.type === 'variables_get')) {
+    unsupportedTypes.push('variables_get');
+  }
+  const unsupported = [...new Set(unsupportedTypes)];
   if (unsupported.length > 0) {
     const named = unsupported
       .map((type) => (UNSUPPORTED_REASONS[type] ? `${type} (${UNSUPPORTED_REASONS[type]})` : type))
@@ -303,18 +332,22 @@ export function planStrategy(tree: BlockTree): PlanResult {
     reasons.push(`The strategy uses blocks this build cannot execute: ${named}.`);
   }
 
-  const all = walkTree(tree);
-
   // Market and contract configuration come from the trade definition.
-  const definition = findTopLevel(tree, 'trade_definition');
+  const definition = findTopLevel(tree, legacyDigit ? 'trade' : 'trade_definition');
   const marketBlock = all.find((n) => n.type === 'trade_definition_market');
-  const symbol = fieldValue(marketBlock, 'SYMBOL_LIST') ?? fieldValue(definition, 'SYMBOL_LIST');
+  const symbol =
+    fieldValue(marketBlock, 'SYMBOL_LIST') ??
+    fieldValue(definition, 'SYMBOL_LIST') ??
+    null;
 
   const contractBlock = all.find((n) => n.type === 'trade_definition_contracttype');
-  const contractTypeRaw = fieldValue(contractBlock, 'TYPE_LIST') ?? '';
+  const contractTypeRaw =
+    (legacyDigit ? fieldValue(definition, 'TYPE_LIST') : fieldValue(contractBlock, 'TYPE_LIST')) ?? '';
 
   const candleBlock = all.find((n) => n.type === 'trade_definition_candleinterval');
-  const candleInterval = fieldValue(candleBlock, 'CANDLEINTERVAL_LIST');
+  const candleInterval =
+    (legacyDigit ? fieldValue(definition, 'CANDLEINTERVAL_LIST') : fieldValue(candleBlock, 'CANDLEINTERVAL_LIST')) ??
+    null;
 
   if (!symbol) reasons.push('The strategy does not name a trading symbol.');
   if (!contractTypeRaw) {
@@ -326,7 +359,9 @@ export function planStrategy(tree: BlockTree): PlanResult {
   }
 
   // Trade options: stake, currency, duration.
-  const options = all.find((n) => n.type === 'trade_definition_tradeoptions');
+  const options = all.find((n) =>
+    legacyDigit ? n.type === 'tradeOptions' : n.type === 'trade_definition_tradeoptions'
+  );
   const stake = options ? inputNumber(options, 'AMOUNT') : null;
   const duration = options ? inputNumber(options, 'DURATION') : null;
   const currency = options ? fieldValue(options, 'CURRENCY_LIST') : null;
@@ -398,6 +433,16 @@ export function planStrategy(tree: BlockTree): PlanResult {
     }
   }
 
+  // Legacy digit exports resolve their prediction through a variable or from
+  // the latest digit. WickSentinel supports the deterministic tick-path here;
+  // control-flow and martingale branches are not silently interpreted.
+  if (legacyDigit) {
+    const contractType = contractTypeRaw as DerivContractType;
+    if (CONTRACT_TYPES.has(contractType)) {
+      conditions.push({ kind: 'digit_prediction', contractType });
+    }
+  }
+
   // A strategy with no entry condition cannot decide when to trade. Refusing is
   // the honest answer: "always trade" is not what an empty stack means.
   if (conditions.length === 0) {
@@ -423,6 +468,13 @@ export function planStrategy(tree: BlockTree): PlanResult {
   const contractType = contractTypeRaw as DerivContractType;
   const baseFamily = CONTRACT_TYPE_FAMILY[contractType];
   const digit = DIGIT_PREDICTION_TYPES.has(contractType) ? readDigitPrediction(all) : null;
+  const predictionOptions = all.find((n) =>
+    legacyDigit ? n.type === 'tradeOptions' : n.type === 'trade_definition_tradeoptions'
+  );
+  const dynamicDigit =
+    legacyDigit &&
+    DIGIT_PREDICTION_TYPES.has(contractType) &&
+    predictionOptions?.inputs.find((input) => input.name === 'PREDICTION')?.block?.type === 'last_digit';
   const barrier = readBarrier(all);
 
   // A CALL/PUT strategy that configures a barrier is a Higher/Lower strategy:
@@ -432,7 +484,7 @@ export function planStrategy(tree: BlockTree): PlanResult {
   const contractFamily: ContractFamily =
     baseFamily === 'rise_fall' && barrier !== null ? 'higher_lower' : baseFamily;
 
-  if (DIGIT_PREDICTION_TYPES.has(contractType) && digit === null) {
+  if (DIGIT_PREDICTION_TYPES.has(contractType) && digit === null && !dynamicDigit) {
     reasons.push('The strategy buys a digit contract but names no digit prediction.');
   }
   if (contractFamily === 'higher_lower' && barrier === null) {
@@ -459,6 +511,7 @@ export function planStrategy(tree: BlockTree): PlanResult {
       contractFamily,
       direction,
       digit,
+      dynamicDigit,
       barrier,
       conditions,
       indicators: [...indicators.values()],
@@ -522,6 +575,11 @@ function compare(left: number, op: CompareOp, right: number): boolean {
     default:
       return false;
   }
+}
+
+function lastQuoteDigit(quote: number, pipSize: number): number {
+  const scale = 10 ** pipSize;
+  return Math.round(Math.abs(quote) * scale) % 10;
 }
 
 /* ------------------------------- evaluation ------------------------------- */
@@ -594,6 +652,13 @@ export function evaluateStrategy(input: EvaluateInput): EvaluationVerdict {
       continue;
     }
 
+    if (condition.kind === 'digit_prediction') {
+      // Legacy digit strategies name the predicted digit through their trade
+      // options. WickSentinel resolves it from the latest tick and returns it
+      // with the entry verdict so the adapter builds the exact barrier.
+      continue;
+    }
+
     const left = valueOf(condition.left);
     const right = valueOf(condition.right);
     if (left === null || right === null) {
@@ -606,6 +671,21 @@ export function evaluateStrategy(input: EvaluateInput): EvaluationVerdict {
 
   if (failures.length > 0) {
     return { kind: 'no_entry', reason: failures.join('; ') };
+  }
+  if (plan.dynamicDigit) {
+    const pipSize = ticks[ticks.length - 1].pipSize;
+    if (pipSize === null || !Number.isInteger(pipSize) || pipSize < 0) {
+      return {
+        kind: 'insufficient',
+        reason: 'The latest tick has no valid pip size, so its last digit cannot be resolved.'
+      };
+    }
+    return {
+      kind: 'entry',
+      direction: plan.direction,
+      digit: lastQuoteDigit(last, pipSize),
+      reason: `All ${plan.conditions.length} entry condition(s) satisfied; dynamic digit resolved from the latest tick.`
+    };
   }
   return {
     kind: 'entry',

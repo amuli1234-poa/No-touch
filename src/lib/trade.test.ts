@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  automaticTradingDisabledMessage,
   closeExecutionContract,
   fetchExecutionContracts,
   fetchScannerStatus,
@@ -260,6 +261,14 @@ test('fetchScannerStatus surfaces the automatic-trading switch and its reason', 
   } finally {
     restore();
   }
+});
+
+test('automatic trading disabled reasons explain the operator action', () => {
+  assert.match(automaticTradingDisabledMessage('execution_disabled'), /ALLOW_EXECUTION/);
+  assert.match(automaticTradingDisabledMessage('demo_execution_disabled'), /ALLOW_DEMO_EXECUTION/);
+  assert.match(automaticTradingDisabledMessage('automatic_disabled'), /ALLOW_AUTOMATIC_TRADING/);
+  assert.match(automaticTradingDisabledMessage('automatic_disabled'), /DEMO-only/);
+  assert.match(automaticTradingDisabledMessage(null), /Contact the operator/);
 });
 
 test('fetchScannerStatus defaults automatic trading to on when the server omits the field', async () => {

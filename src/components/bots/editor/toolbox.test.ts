@@ -53,3 +53,28 @@ test('no toolbox category is empty', () => {
   const empty = toolbox.contents.filter((c) => c.contents.length === 0).map((c) => c.name);
   assert.deepEqual(empty, []);
 });
+
+test('toolbox exposes the requested categories with category icons', () => {
+  const toolbox = strategyToolbox() as {
+    contents: { name: string; cssconfig: { icon: string } }[];
+  };
+  assert.deepEqual(
+    toolbox.contents.map((category) => category.name),
+    [
+      'Trade',
+      'Market',
+      'Trade options',
+      'Contract',
+      'Entry conditions',
+      'Exit conditions',
+      'Indicators',
+      'Logic',
+      'Mathematics',
+      'Variables'
+    ]
+  );
+  assert.ok(
+    toolbox.contents.every((category) => category.cssconfig.icon.startsWith('ws-blockly-category-icon')),
+    'category icons must be styled without adding placeholder blocks'
+  );
+});

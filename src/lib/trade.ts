@@ -494,6 +494,19 @@ export interface ScannerStatus {
   }>;
 }
 
+export function automaticTradingDisabledMessage(reason: ScannerStatus['reason']): string {
+  switch (reason) {
+    case 'execution_disabled':
+      return "Automatic trading is unavailable because the server's master execution switch (ALLOW_EXECUTION) is off.";
+    case 'demo_execution_disabled':
+      return 'Automatic trading is unavailable because demo execution is off (ALLOW_DEMO_EXECUTION).';
+    case 'automatic_disabled':
+      return 'Automatic trading is disabled on this server (ALLOW_AUTOMATIC_TRADING). An operator must enable it and restart the backend. Automatic trading is DEMO-only in this build.';
+    default:
+      return 'Automatic trading is unavailable on this server. Contact the operator for details.';
+  }
+}
+
 /** The automatic scanner's status for the signed-in user. */
 export async function fetchScannerStatus(): Promise<ScannerStatus | null> {
   try {

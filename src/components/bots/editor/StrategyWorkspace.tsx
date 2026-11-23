@@ -31,6 +31,8 @@ export interface StrategyWorkspaceProps {
    * save would delete them.
    */
   unknownBlocks: UnknownBlockSeed[];
+  /** Whether Blockly should render its toolbox on the left. */
+  toolboxVisible: boolean;
   /** Called with Blockly's XML whenever the user changes the strategy. */
   onChange: (xml: string) => void;
   /** Read-only mode, for a bot that cannot be edited. */
@@ -42,6 +44,7 @@ export interface StrategyWorkspaceProps {
 export function StrategyWorkspace({
   xml,
   unknownBlocks,
+  toolboxVisible,
   onChange,
   readOnly,
   onReady
@@ -60,6 +63,11 @@ export function StrategyWorkspace({
     if (!host) return;
     let disposed = false;
     let mounted: MountedEditor | null = null;
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => mounted?.controls.resize())
+        : null;
+    resizeObserver?.observe(host);
 
     (async () => {
       try {
@@ -68,6 +76,7 @@ export function StrategyWorkspace({
         mounted = runtime.mountEditor(host, {
           xml,
           unknownBlocks,
+          toolboxVisible,
           readOnly,
           onChange: (next) => onChangeRef.current(next)
         });
@@ -76,6 +85,7 @@ export function StrategyWorkspace({
           mounted = null;
           return;
         }
+        mounted.controls.resize();
         setReady(true);
         onReadyRef.current?.(mounted.controls);
       } catch (err) {
@@ -87,6 +97,7 @@ export function StrategyWorkspace({
 
     return () => {
       disposed = true;
+      resizeObserver?.disconnect();
       onReadyRef.current?.(null);
       mounted?.dispose();
       mounted = null;
@@ -106,7 +117,7 @@ export function StrategyWorkspace({
 
   return (
     <div className="relative h-full w-full">
-      <div ref={hostRef} className="h-full w-full" />
+      <div ref={hostRef} className="bot-blockly-host h-full w-full" />
       {!ready && (
         <div className="absolute inset-0 flex items-center justify-center bg-surface-deepest/70">
           <p className="text-xs text-muted">Loading editor…</p>

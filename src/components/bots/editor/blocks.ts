@@ -35,15 +35,32 @@ export {
 export type { DbotBlockDecl, InputKind } from './definitions';
 
 let registered = false;
+const registeredFieldValues = new Map<string, Set<string>>();
+const placeholderMutations = new WeakMap<Blockly.Block, Element>();
 
 /**
  * Registers every block definition. Idempotent: Blockly throws on a duplicate
  * type and React can mount the editor more than once.
  */
-export function registerStrategyBlocks(): void {
-  if (registered) return;
+export function registerStrategyBlocks(observed = new Map<string, Set<string>>()): void {
+  let changed = !registered;
+  for (const [field, values] of observed) {
+    let known = registeredFieldValues.get(field);
+    if (!known) {
+      known = new Set<string>();
+      registeredFieldValues.set(field, known);
+    }
+    for (const value of values) {
+      if (known.has(value)) continue;
+      known.add(value);
+      changed = true;
+    }
+  }
+  if (!changed) return;
+  Blockly.common.defineBlocksWithJsonArray(
+    DBOT_DECLS.map((decl) => declToJson(decl, registeredFieldValues))
+  );
   registered = true;
-  Blockly.common.defineBlocksWithJsonArray(DBOT_DECLS.map((decl) => declToJson(decl, new Map())));
 }
 
 /**
@@ -53,21 +70,38 @@ export function registerStrategyBlocks(): void {
  * being opened. Each type is defined once.
  */
 export function registerUnknownBlocks(
-  blocks: { type: string; fields: { name: string }[]; inputs: { name: string; kind: InputKind }[] }[]
+  blocks: {
+    type: string;
+    shape: 'stack' | 'value';
+    fields: { name: string }[];
+    inputs: { name: string; kind: InputKind }[];
+  }[]
 ): void {
   const seen = new Set<string>();
   for (const block of blocks) {
-    if (!block.type || seen.has(block.type)) continue;
-    seen.add(block.type);
-    const placeholder = unknownBlockType(block.type);
+    const key = `${block.type}\0${block.shape}`;
+    if (!block.type || seen.has(key)) continue;
+    seen.add(key);
+    const placeholder = unknownBlockType(block.type, block.shape);
     if (Blockly.Blocks[placeholder]) continue;
     Blockly.common.defineBlocksWithJsonArray([
       unknownToJson(
         block.type,
         block.fields.map((f) => f.name),
-        block.inputs.map((i) => ({ name: i.name, kind: i.kind }))
+        block.inputs.map((i) => ({ name: i.name, kind: i.kind })),
+        block.shape
       )
     ]);
+    const definition = Blockly.Blocks[placeholder];
+    definition.domToMutation = function (this: Blockly.Block, mutation: Element): void {
+      placeholderMutations.set(this, mutation.cloneNode(true) as Element);
+    };
+    definition.mutationToDom = function (this: Blockly.Block): Element {
+      const mutation = placeholderMutations.get(this);
+      return mutation
+        ? (mutation.cloneNode(true) as Element)
+        : Blockly.utils.xml.createElement('mutation');
+    };
   }
 }
 

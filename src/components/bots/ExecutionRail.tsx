@@ -13,6 +13,7 @@ import {
 import { useAuth } from '../../lib/auth';
 import { useBotRun, type BotRun, type BotRunStatus } from '../../lib/bots';
 import { fetchExecutionContracts, type ExecutionContract } from '../../lib/trade';
+import { PanelSection } from './PanelSection';
 
 /**
  * EXECUTION RAIL — run this strategy on a real Deriv DEMO account.
@@ -55,6 +56,12 @@ export interface ExecutionRailProps {
   botId: string;
   /** Disabled while the editor has unsaved changes, so a run is never ambiguous. */
   dirty: boolean;
+  /** Server-side strategy plan; false means execution would not match the XML. */
+  executionEligibility: {
+    runnable: boolean;
+    reasons: string[];
+    unsupported: string[];
+  };
   /** The symbol the strategy trades, for the summary line. */
   symbol: string | null;
   contractType: string | null;
@@ -66,7 +73,13 @@ function money(value: number | null, currency: string): string {
   return `${sign}${value.toFixed(2)} ${currency}`;
 }
 
-export function ExecutionRail({ botId, dirty, symbol, contractType }: ExecutionRailProps) {
+export function ExecutionRail({
+  botId,
+  dirty,
+  executionEligibility,
+  symbol,
+  contractType
+}: ExecutionRailProps) {
   const auth = useAuth();
   const { run, error, busy, lastVerdict, start, stop } = useBotRun(botId);
   const [maxEntries, setMaxEntries] = useState(1);
@@ -85,7 +98,13 @@ export function ExecutionRail({ botId, dirty, symbol, contractType }: ExecutionR
   }, [accountId, demoAccounts]);
 
   const active = run?.runtimeStatus === 'running' || run?.runtimeStatus === 'stopping';
-  const canStart = !active && !busy && !dirty && accountId !== '' && auth.status === 'authenticated';
+  const canStart =
+    executionEligibility.runnable &&
+    !active &&
+    !busy &&
+    !dirty &&
+    accountId !== '' &&
+    auth.status === 'authenticated';
 
   const loadContracts = useCallback(async () => {
     if (auth.status !== 'authenticated') return;
@@ -123,7 +142,7 @@ export function ExecutionRail({ botId, dirty, symbol, contractType }: ExecutionR
   const currency = relevant[0]?.currency ?? demoAccounts[0]?.currency ?? 'USD';
 
   return (
-    <section aria-label="Bot execution" className="flex flex-col gap-3 p-3">
+    <section aria-label="Bot execution" className="flex flex-col gap-2 p-2.5">
       <header className="flex items-center gap-2">
         <Radio className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
         <h2 className="text-[11px] font-bold uppercase tracking-widest text-muted">Execution</h2>
@@ -140,6 +159,23 @@ export function ExecutionRail({ botId, dirty, symbol, contractType }: ExecutionR
         </div>
       )}
 
+      {!executionEligibility.runnable && (
+        <div
+          role="status"
+          className="rounded-lg border border-warning/30 bg-warning/10 px-2.5 py-2 text-[10.5px] text-warning"
+        >
+          <p className="font-bold">This strategy is not executable yet.</p>
+          <details className="mt-1">
+            <summary className="cursor-pointer font-semibold">Why Run is disabled</summary>
+            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+              {executionEligibility.reasons.map((reason) => (
+                <li key={reason}>{reason}</li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      )}
+
       {auth.status === 'authenticated' && demoAccounts.length === 0 && (
         <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-2.5 py-2 text-[11px] text-warning">
           <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" aria-hidden="true" />
@@ -147,161 +183,151 @@ export function ExecutionRail({ botId, dirty, symbol, contractType }: ExecutionR
         </div>
       )}
 
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => void start(accountId, maxEntries)}
+          disabled={!canStart}
+          title={
+            auth.status !== 'authenticated'
+              ? 'Sign in with Deriv to run this strategy'
+              : demoAccounts.length === 0
+                ? 'Link a Deriv demo account to run this strategy'
+                : dirty
+                  ? 'Save your changes before running the strategy'
+                  : executionEligibility.runnable
+                    ? 'Run this strategy on your Deriv demo account'
+                    : executionEligibility.reasons[0] ?? 'This strategy cannot run yet'
+          }
+          className="flex-1 inline-flex items-center justify-center gap-1.5 h-9 rounded-lg bg-accent text-white text-xs font-bold hover:bg-accent-strong transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+        >
+          <Play className="w-4 h-4" aria-hidden="true" />
+          Run bot
+        </button>
+        <button
+          type="button"
+          onClick={() => void stop()}
+          disabled={!active || busy || auth.status !== 'authenticated'}
+          title={active ? 'Stop this bot run' : 'No bot run is active'}
+          className="flex-1 inline-flex items-center justify-center gap-1.5 h-9 rounded-lg bg-danger text-white text-xs font-bold hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+        >
+          <CircleStop className="w-4 h-4" aria-hidden="true" />
+          Stop bot
+        </button>
+        {run && (
+          <span
+            className={`inline-flex items-center px-2 py-1 rounded-full border text-[10.5px] font-bold uppercase tracking-wide ${STATUS_STYLE[run.runtimeStatus]}`}
+          >
+            {run.runtimeStatus}
+          </span>
+        )}
+      </div>
+
       {auth.status === 'authenticated' && demoAccounts.length > 0 && (
         <>
-          {/* Account + stake ------------------------------------------------ */}
-          <div className="rounded-xl border border-line bg-surface/60 p-2.5 space-y-2">
-            <label className="block">
-              <span className="block text-[10px] uppercase tracking-wide text-faint font-semibold mb-1">
-                Demo account
-              </span>
-              {demoAccounts.length > 1 ? (
-                <select
-                  aria-label="Demo account"
-                  value={accountId}
-                  onChange={(e) => setAccountId(e.target.value)}
+          <PanelSection title="Account information" icon={<Wallet className="h-3.5 w-3.5 text-accent" />} defaultOpen>
+            <div className="space-y-2">
+              <label className="block">
+                <span className="block text-[10px] uppercase tracking-wide text-faint font-semibold mb-1">
+                  Demo account
+                </span>
+                {demoAccounts.length > 1 ? (
+                  <select
+                    aria-label="Demo account"
+                    value={accountId}
+                    onChange={(e) => setAccountId(e.target.value)}
+                    disabled={active}
+                    className="w-full px-2 py-1.5 rounded-lg border border-line bg-canvas text-[11px] text-ink disabled:opacity-50 cursor-pointer"
+                  >
+                    {demoAccounts.map((a) => (
+                      <option key={a.accountId} value={a.accountId}>
+                        {a.accountId}
+                        {a.currency ? ` · ${a.currency}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="text-[11.5px] text-ink font-medium">
+                    {demoAccounts[0].accountId}
+                    {demoAccounts[0].currency ? ` · ${demoAccounts[0].currency}` : ''}
+                  </p>
+                )}
+              </label>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="min-w-0">
+                  <span className="block text-[10px] uppercase tracking-wide text-faint font-semibold mb-1">
+                    Market
+                  </span>
+                  <p className="text-[11.5px] text-ink font-medium truncate">{symbol ?? '—'}</p>
+                </div>
+                <div className="min-w-0">
+                  <span className="block text-[10px] uppercase tracking-wide text-faint font-semibold mb-1">
+                    Contract
+                  </span>
+                  <p className="text-[11.5px] text-ink font-medium truncate">{contractType ?? '—'}</p>
+                </div>
+              </div>
+
+              <label className="flex items-center justify-between gap-2">
+                <span className="text-[10px] uppercase tracking-wide text-faint font-semibold">
+                  Max entries
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={maxEntries}
                   disabled={active}
-                  className="w-full px-2 py-1.5 rounded-lg border border-line bg-canvas text-[11px] text-ink disabled:opacity-50 cursor-pointer"
-                >
-                  {demoAccounts.map((a) => (
-                    <option key={a.accountId} value={a.accountId}>
-                      {a.accountId}
-                      {a.currency ? ` · ${a.currency}` : ''}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <p className="text-[11.5px] text-ink font-medium">
-                  {demoAccounts[0].accountId}
-                  {demoAccounts[0].currency ? ` · ${demoAccounts[0].currency}` : ''}
-                </p>
-              )}
-            </label>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <span className="block text-[10px] uppercase tracking-wide text-faint font-semibold mb-1">
-                  Market
-                </span>
-                <p className="text-[11.5px] text-ink font-medium truncate">{symbol ?? '—'}</p>
-              </div>
-              <div>
-                <span className="block text-[10px] uppercase tracking-wide text-faint font-semibold mb-1">
-                  Contract
-                </span>
-                <p className="text-[11.5px] text-ink font-medium truncate">{contractType ?? '—'}</p>
-              </div>
+                  onChange={(e) => setMaxEntries(Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
+                  className="w-16 px-2 py-1 rounded-lg border border-line bg-canvas text-[11px] text-ink disabled:opacity-50"
+                />
+              </label>
             </div>
-
-            <label className="flex items-center justify-between gap-2">
-              <span className="text-[10px] uppercase tracking-wide text-faint font-semibold">
-                Max entries
-              </span>
-              <input
-                type="number"
-                min={1}
-                max={20}
-                value={maxEntries}
-                disabled={active}
-                onChange={(e) => setMaxEntries(Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
-                className="w-16 px-2 py-1 rounded-lg border border-line bg-canvas text-[11px] text-ink disabled:opacity-50"
-              />
-            </label>
-          </div>
-
-          {/* Run / Stop ----------------------------------------------------- */}
-          <div className="flex items-center gap-2">
-            {active ? (
-              <button
-                type="button"
-                onClick={() => void stop()}
-                disabled={busy}
-                className="flex-1 inline-flex items-center justify-center gap-1.5 h-9 rounded-lg bg-danger text-white text-xs font-bold hover:opacity-90 transition-opacity disabled:opacity-40 cursor-pointer"
-              >
-                <CircleStop className="w-4 h-4" aria-hidden="true" />
-                Stop bot
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void start(accountId, maxEntries)}
-                disabled={!canStart}
-                title={
-                  dirty
-                    ? 'Save your changes before running the strategy'
-                    : 'Run this strategy on your Deriv demo account'
-                }
-                className="flex-1 inline-flex items-center justify-center gap-1.5 h-9 rounded-lg bg-accent text-white text-xs font-bold hover:bg-accent-strong transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-              >
-                <Play className="w-4 h-4" aria-hidden="true" />
-                Run bot
-              </button>
-            )}
-            {run && (
-              <span
-                className={`inline-flex items-center px-2 py-1 rounded-full border text-[10.5px] font-bold uppercase tracking-wide ${STATUS_STYLE[run.runtimeStatus]}`}
-              >
-                {run.runtimeStatus}
-              </span>
-            )}
-          </div>
+          </PanelSection>
 
           {dirty && !active && (
-            <p className="text-[10.5px] text-warning leading-relaxed">
-              Save your changes first. Running uses the saved strategy, so unsaved edits would not be
-              the strategy that trades.
+            <p className="rounded-lg border border-warning/30 bg-warning/10 px-2.5 py-2 text-[10.5px] text-warning leading-relaxed">
+              Save changes before running. The server executes the saved strategy.
             </p>
           )}
 
-          <p className="text-[10.5px] leading-relaxed text-faint">
-            Runs on Deriv <strong className="text-muted">demo</strong> only. Each tick is
-            evaluated from this browser tab, so the bot stops advancing if the tab closes; reopening
-            the editor resumes the run it finds still active. Pause is not offered because the
-            runtime has no suspended state.
+          <p className="px-1 text-[10px] leading-relaxed text-faint">
+            DEMO only. Keep this browser tab open while the bot is running.
           </p>
 
-          {error && (
-            <div className="flex items-start gap-2 rounded-lg bg-danger/10 border border-danger/30 px-2.5 py-2 text-[11px] text-danger">
-              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" aria-hidden="true" />
-              <span>{error.message}</span>
-            </div>
-          )}
+          <PanelSection title="Run statistics" icon={<Activity className="h-3.5 w-3.5 text-accent" />} defaultOpen={Boolean(run)}>
+            {run ? (
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-1.5">
+                  <Stat label="Entries" value={`${run.counters.entries}/${run.maxEntries}`} />
+                  <Stat label="Ticks" value={String(run.counters.ticks)} />
+                  <Stat label="Signals" value={String(run.counters.signals)} />
+                  <Stat
+                    label="Refused"
+                    value={String(run.counters.rejected)}
+                    tone={run.counters.rejected > 0 ? 'text-warning' : undefined}
+                  />
+                </div>
+                {lastVerdict && !active && (
+                  <p className="text-[10.5px] text-muted">
+                    Last evaluation: {VERDICT_LABEL[lastVerdict] ?? lastVerdict}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="text-[10.5px] text-faint">Run counters appear here when a bot starts.</p>
+            )}
+          </PanelSection>
 
-          {run?.error && (
-            <div className="flex items-start gap-2 rounded-lg bg-danger/10 border border-danger/30 px-2.5 py-2 text-[11px] text-danger">
-              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" aria-hidden="true" />
-              <span>{run.error}</span>
-            </div>
-          )}
-
-          {/* Counters ------------------------------------------------------- */}
-          {run && (
-            <div className="grid grid-cols-2 gap-1.5">
-              <Stat label="Entries" value={`${run.counters.entries}/${run.maxEntries}`} />
-              <Stat label="Ticks" value={String(run.counters.ticks)} />
-              <Stat label="Signals" value={String(run.counters.signals)} />
-              <Stat
-                label="Refused"
-                value={String(run.counters.rejected)}
-                tone={run.counters.rejected > 0 ? 'text-warning' : undefined}
-              />
-            </div>
-          )}
-
-          {/* Positions ------------------------------------------------------ */}
-          <div className="pt-2 border-t border-line space-y-2">
-            <div className="flex items-center gap-1.5">
-              <Wallet className="w-3.5 h-3.5 text-muted" aria-hidden="true" />
-              <h3 className="text-[10.5px] font-bold uppercase tracking-widest text-muted">
-                Positions
-              </h3>
-              <span className="ml-auto text-[10.5px] text-faint">
-                {openContracts.length} open
-              </span>
-            </div>
+          <PanelSection title={`Trade history · ${openContracts.length} open`} icon={<Wallet className="h-3.5 w-3.5 text-accent" />}>
+            <div className="space-y-2">
 
             {contractsError && (
-              <p className="text-[10.5px] text-warning leading-relaxed">{contractsError}</p>
+              <details className="text-[10.5px] text-warning">
+                <summary className="cursor-pointer">Trade history is unavailable</summary>
+                <p className="mt-1 break-words">{contractsError}</p>
+              </details>
             )}
 
             {!contractsError && relevant.length === 0 && (
@@ -371,17 +397,13 @@ export function ExecutionRail({ botId, dirty, symbol, contractType }: ExecutionR
                 </a>
               </>
             )}
-          </div>
+            </div>
 
-          {/* Run log -------------------------------------------------------- */}
-          {run && run.events.length > 0 && (
-            <div className="pt-2 border-t border-line">
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <Activity className="w-3.5 h-3.5 text-muted" aria-hidden="true" />
-                <h3 className="text-[10.5px] font-bold uppercase tracking-widest text-muted">
+            {run && run.events.length > 0 && (
+              <details className="mt-2 border-t border-line pt-2">
+                <summary className="cursor-pointer text-[10.5px] font-semibold text-muted">
                   Run log
-                </h3>
-              </div>
+                </summary>
               <ol
                 aria-label="Run log"
                 className="max-h-32 overflow-y-auto space-y-0.5 text-[10px] text-muted font-mono"
@@ -398,13 +420,19 @@ export function ExecutionRail({ botId, dirty, symbol, contractType }: ExecutionR
                     </li>
                   ))}
               </ol>
-            </div>
-          )}
+              </details>
+            )}
+          </PanelSection>
 
-          {lastVerdict && !active && (
-            <p className="text-[10.5px] text-muted">
-              Last evaluation: {VERDICT_LABEL[lastVerdict] ?? lastVerdict}
-            </p>
+          {(error || run?.error) && (
+            <div className="rounded-lg border border-danger/30 bg-danger/10 px-2.5 py-2 text-[10.5px] text-danger">
+              <p className="font-semibold">The last run encountered an error.</p>
+              <details className="mt-1">
+                <summary className="cursor-pointer font-semibold">Technical details</summary>
+                {error && <p className="mt-1 break-words">{error.message}</p>}
+                {run?.error && <p className="mt-1 break-words">{run.error}</p>}
+              </details>
+            </div>
           )}
         </>
       )}

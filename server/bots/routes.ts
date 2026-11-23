@@ -83,6 +83,7 @@ function fail(res: Response, e: unknown): void {
     });
     return;
   }
+  console.error('[bots/import] Request failed:', e);
   res.status(500).json({ error: 'internal_error', message: 'The import could not be completed.' });
 }
 
@@ -294,6 +295,7 @@ export function createBotsRouter(ctx: SessionContext, store: Store, runtime?: Bo
     try {
       const loaded = loadBotTree(bot);
       const unknownBlocks = collectUnknownBlocks(loaded.tree);
+      const executionPlan = planStrategy(loaded.tree);
       res.json({
         botId: bot.id,
         name: bot.name,
@@ -302,6 +304,11 @@ export function createBotsRouter(ctx: SessionContext, store: Store, runtime?: Bo
         xml: loaded.xml,
         tree: loaded.tree,
         unknownBlocks,
+        executionEligibility: {
+          runnable: executionPlan.ok,
+          reasons: executionPlan.reasons,
+          unsupported: executionPlan.unsupported
+        },
         compatibility: bot.compatibility,
         compatibilityReason: bot.compatibilityReason,
         status: bot.status
@@ -422,7 +429,12 @@ export function createBotsRouter(ctx: SessionContext, store: Store, runtime?: Bo
       });
       return;
     }
-    res.status(500).json({ error: 'internal_error', message: 'The run could not be completed.' });
+    console.error('[bots/run] Request failed:', e);
+    const detail = !ctx.cfg.isProduction && e instanceof Error ? e.message : null;
+    res.status(500).json({
+      error: 'internal_error',
+      message: detail ? `The run could not be completed: ${detail}` : 'The run could not be completed.'
+    });
   }
 
   /** The session's sealed Deriv token, or null when absent or expired. */

@@ -51,13 +51,25 @@ function fieldValue(block: XmlElement, name: string): string | null {
 function valueNumber(block: XmlElement, name: string): number | null {
   const value = childElements(block, 'value').find((v) => v.attrs.name === name);
   if (!value) return null;
-  const inner =
-    childElements(value, 'block')[0] ?? childElements(value, 'shadow')[0] ?? null;
-  if (!inner) return null;
-  const num = fieldValue(inner, 'NUM');
-  if (num === null) return null;
-  const parsed = Number(num);
-  return Number.isFinite(parsed) ? parsed : null;
+  const inner = childElements(value, 'block')[0] ?? null;
+  if (inner) {
+    const num = fieldValue(inner, 'NUM');
+    if (num !== null) {
+      const parsed = Number(num);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  // Legacy tradeOptions wraps a variables_get in a fixed-value shadow.
+  // The shadow is a valid configured fallback, especially for stake.
+  const shadow = childElements(value, 'shadow')[0] ?? null;
+  if (shadow) {
+    const num = fieldValue(shadow, 'NUM');
+    if (num !== null) {
+      const parsed = Number(num);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return null;
 }
 
 /** Every block element in the document, in document order. */
@@ -218,6 +230,17 @@ function readTradeDefinition(blocks: XmlElement[], warnings: BotWarning[]): Trad
   for (const block of blocks) {
     const type = block.attrs.type ?? '';
     switch (type) {
+      case 'trade': {
+        market.market = fieldValue(block, 'MARKET_LIST');
+        market.submarket = fieldValue(block, 'SUBMARKET_LIST');
+        market.symbol = fieldValue(block, 'SYMBOL_LIST');
+        market.candleInterval = fieldValue(block, 'CANDLEINTERVAL_LIST');
+        contract.tradeTypeCategory = fieldValue(block, 'TRADETYPECAT_LIST');
+        contract.tradeType = fieldValue(block, 'TRADETYPE_LIST');
+        const contractType = fieldValue(block, 'TYPE_LIST');
+        if (contractType) contract.contractTypes.push(contractType);
+        break;
+      }
       case 'trade_definition_market': {
         market.market = fieldValue(block, 'MARKET_LIST');
         market.submarket = fieldValue(block, 'SUBMARKET_LIST');
@@ -247,6 +270,25 @@ function readTradeDefinition(blocks: XmlElement[], warnings: BotWarning[]): Trad
           warnings.push({
             code: 'stake_unreadable',
             message: 'The stake amount could not be read from the trade options block.'
+          });
+        }
+        if (stake.duration === null) {
+          warnings.push({
+            code: 'duration_unreadable',
+            message: 'The contract duration could not be read from the trade options block.'
+          });
+        }
+        break;
+      }
+      case 'tradeOptions': {
+        stake.currency = fieldValue(block, 'CURRENCY_LIST');
+        stake.durationUnit = fieldValue(block, 'DURATIONTYPE_LIST');
+        stake.amount = valueNumber(block, 'AMOUNT');
+        stake.duration = valueNumber(block, 'DURATION');
+        if (stake.amount === null) {
+          warnings.push({
+            code: 'stake_unreadable',
+            message: 'The stake is supplied dynamically by a variable and could not be read as a fixed number.'
           });
         }
         if (stake.duration === null) {
@@ -417,7 +459,8 @@ export function analyzeDbotXml(source: string, opts: AnalyzeOptions = {}): BotAn
   }
 
   const warnings: BotWarning[] = [];
-  const isDbot = root.attrs.is_dbot === 'true';
+  const presentForDbotMarker = new Set(allBlocks(root).map((b) => b.attrs.type ?? ''));
+  const isDbot = root.attrs.is_dbot === 'true' || presentForDbotMarker.has('trade');
 
   if (!isDbot) {
     warnings.push({
@@ -446,15 +489,18 @@ export function analyzeDbotXml(source: string, opts: AnalyzeOptions = {}): BotAn
   }
 
   const present = new Set(inventory.map((i) => i.type));
-  const missingMandatory = ['trade_definition', 'purchase', 'before_purchase'].filter(
-    (t) => !present.has(t)
-  );
+  const hasTradeDefinition = present.has('trade_definition') || present.has('trade');
+  const missingMandatory = [
+    ...(!hasTradeDefinition ? ['trade_definition'] : []),
+    ...(!present.has('purchase') ? ['purchase'] : []),
+    ...(!present.has('before_purchase') ? ['before_purchase'] : [])
+  ];
 
   const { market, contract, stake } = readTradeDefinition(blocks, warnings);
   const indicators = readIndicators(blocks, warnings);
   const { entry: entryConditions, exit: exitConditions } = readConditions(blocks);
 
-  if (!present.has('trade_definition')) {
+  if (!hasTradeDefinition) {
     errors.push({
       code: 'missing_trade_definition',
       message: 'No trade_definition block: the market, contract type and stake are undefined.'

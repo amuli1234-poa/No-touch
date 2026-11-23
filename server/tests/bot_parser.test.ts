@@ -157,6 +157,50 @@ test('reports the full block inventory with counts', () => {
   assert.ok(bot.blockInventory.some((b) => b.type === 'trade_definition'));
 });
 
+test('recognizes a legacy Deriv trade block and legacy tradeOptions block', () => {
+  const legacy = `<xml xmlns="http://www.w3.org/1999/xhtml" collection="false">
+  <variables></variables>
+  <block type="trade" id="trade" x="0" y="0">
+    <field name="MARKET_LIST">volidx</field>
+    <field name="SUBMARKET_LIST">random_index</field>
+    <field name="SYMBOL_LIST">R_50</field>
+    <field name="TRADETYPECAT_LIST">digits</field>
+    <field name="TRADETYPE_LIST">matchesdiffers</field>
+    <field name="TYPE_LIST">DIGITDIFF</field>
+    <field name="CANDLEINTERVAL_LIST">60</field>
+    <statement name="SUBMARKET">
+      <block type="tradeOptions">
+        <field name="DURATIONTYPE_LIST">t</field>
+        <field name="CURRENCY_LIST">USD</field>
+        <value name="DURATION">
+          <shadow type="math_number"><field name="NUM">1</field></shadow>
+        </value>
+      </block>
+    </statement>
+  </block>
+  <block type="before_purchase">
+    <statement name="BEFOREPURCHASE_STACK">
+      <block type="purchase"><field name="PURCHASE_LIST">DIGITDIFF</field></block>
+    </statement>
+  </block>
+  <block type="after_purchase">
+    <statement name="AFTERPURCHASE_STACK"><block type="trade_again"></block></statement>
+  </block>
+</xml>`;
+
+  const result = analyzeDbotXml(legacy, { filename: 'digit-differs.xml' });
+  assert.notEqual(result.compatibility, 'invalid');
+  assert.ok(result.bot);
+  assert.equal(result.bot.isDbot, true);
+  assert.equal(result.bot.market.symbol, 'R_50');
+  assert.equal(result.bot.market.candleInterval, '60');
+  assert.equal(result.bot.contract.tradeTypeCategory, 'digits');
+  assert.deepEqual(result.bot.contract.contractTypes, ['DIGITDIFF']);
+  assert.equal(result.bot.stake.currency, 'USD');
+  assert.equal(result.bot.stake.duration, 1);
+  assert.equal(result.bot.stake.durationUnit, 't');
+});
+
 /* ----------------------------- invalid XML ------------------------------ */
 
 test('rejects malformed XML', () => {

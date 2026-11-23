@@ -36,7 +36,7 @@ export const strategyTheme = Blockly.Theme.defineTheme('wicksentinel-strategy', 
   name: 'wicksentinel-strategy',
   base: Blockly.Themes.Classic,
   blockStyles: {
-    trade_blocks: { colourPrimary: '#2878d0', colourSecondary: '#3a8fe0', colourTertiary: '#1d5fa8' },
+    trade_blocks: { colourPrimary: '#2469a8', colourSecondary: '#327bb8', colourTertiary: '#1b4e80' },
     market_blocks: { colourPrimary: '#2c8fb8', colourSecondary: '#3aa3cc', colourTertiary: '#216f92' },
     contract_blocks: { colourPrimary: '#2aa39b', colourSecondary: '#38b8af', colourTertiary: '#1f807a' },
     stake_blocks: { colourPrimary: '#25b887', colourSecondary: '#31cc99', colourTertiary: '#1c9169' },

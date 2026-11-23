@@ -18,6 +18,7 @@ import { startDerivAuth, useAuth } from '../../lib/auth';
 import { useBalances, formatMoney, pickAccount, refreshBalances } from '../../lib/balances';
 import {
   DEFAULT_DURATION_BOUNDS,
+  automaticTradingDisabledMessage,
   fetchExecutionPreferences,
   MULTIPLIERS_ENABLED,
   placeTrade,
@@ -489,11 +490,23 @@ export function TradeView() {
                 active={mode === 'automatic'}
                 icon={<Bot className="w-3.5 h-3.5" />}
                 label="Automatic"
-                hint={automaticEnabled ? 'Scanner trades for you' : 'Disabled on this server'}
+                hint={
+                  !authenticated
+                    ? 'Sign in to enable'
+                    : automaticEnabled
+                      ? 'Scanner trades for you'
+                      : 'Disabled by server'
+                }
                 onClick={() => onModeChange('automatic')}
                 disabled={!authenticated || saving || !automaticEnabled}
               />
             </div>
+
+            {authenticated && scanner && !automaticEnabled && (
+              <p role="status" className="mt-2 text-[11px] text-muted leading-snug">
+                {automaticTradingDisabledMessage(scanner.reason)}
+              </p>
+            )}
 
             {mode === 'automatic' && (
               <div className="mt-2.5 flex items-start gap-2 rounded-lg border border-line-soft bg-panel px-2.5 py-2">

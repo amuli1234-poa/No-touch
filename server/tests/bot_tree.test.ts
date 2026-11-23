@@ -16,6 +16,7 @@ import { test } from 'node:test';
 
 import {
   annotateUnknown,
+  collectUnknownBlocks,
   countBlocks,
   fieldValue,
   findTopLevel,
@@ -227,6 +228,55 @@ test('marks known blocks as known and unknown blocks as unknown', () => {
   for (const node of walkTree(tree)) {
     assert.notEqual(node.unknown, true, `${node.type} should be known`);
   }
+});
+
+test('collects placeholders for recognized DBot blocks with unsupported semantics', () => {
+  const tree = xmlToTree(`<xml is_dbot="true">
+    <block type="read_details">
+      <field name="DETAIL">entry_spot</field>
+      <value name="CONTRACT_ID"><shadow type="future_number"><field name="NUM">1</field></shadow></value>
+    </block>
+  </xml>`);
+  annotateUnknown(tree, isKnownBlock);
+
+  assert.equal(tree.blocks[0].unknown, undefined);
+  const placeholders = collectUnknownBlocks(tree);
+  assert.deepEqual(placeholders, [
+    {
+      type: 'read_details',
+      shape: 'stack',
+      fields: [{ name: 'DETAIL' }],
+      inputs: [{ name: 'CONTRACT_ID', kind: 'value' }]
+    },
+    {
+      type: 'future_number',
+      shape: 'value',
+      fields: [{ name: 'NUM' }],
+      inputs: []
+    }
+  ]);
+});
+
+test('creates separate placeholders when one unsupported type is used as both stack and value', () => {
+  const tree = xmlToTree(`<xml is_dbot="true">
+    <block type="trade">
+      <statement name="INITIALIZATION">
+        <block type="future_logic"><field name="MODE">a</field></block>
+      </statement>
+      <value name="AMOUNT">
+        <block type="future_logic"><field name="MODE">b</field></block>
+      </value>
+    </block>
+  </xml>`);
+  annotateUnknown(tree, isKnownBlock);
+
+  assert.deepEqual(
+    collectUnknownBlocks(tree).map(({ type, shape }) => ({ type, shape })),
+    [
+      { type: 'future_logic', shape: 'stack' },
+      { type: 'future_logic', shape: 'value' }
+    ]
+  );
 });
 
 test('rejects a document whose root is not <xml>', () => {

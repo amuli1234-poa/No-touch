@@ -33,13 +33,16 @@ export function isUnknownBlockType(type: string): boolean {
 }
 
 /** Stable Blockly block type for an unrecognised DBot block type. */
-export function unknownBlockType(dbotType: string): string {
-  return `${UNKNOWN_BLOCK_PREFIX}${dbotType}`;
+export function unknownBlockType(dbotType: string, shape: 'stack' | 'value' = 'stack'): string {
+  return `${UNKNOWN_BLOCK_PREFIX}${shape}__${dbotType}`;
 }
 
 /** Recovers the original DBot type from a generated placeholder type. */
 export function originalBlockType(type: string): string {
-  return isUnknownBlockType(type) ? type.slice(UNKNOWN_BLOCK_PREFIX.length) : type;
+  if (!isUnknownBlockType(type)) return type;
+  const suffix = type.slice(UNKNOWN_BLOCK_PREFIX.length);
+  const separator = suffix.indexOf('__');
+  return separator < 0 ? suffix : suffix.slice(separator + 2);
 }
 
 export type InputKind = 'statement' | 'value';
@@ -132,10 +135,14 @@ export interface DbotBlockDecl {
   /** Registry role, which picks the colour. */
   role: string;
   fields: string[];
+  /** Numeric fields use Blockly's number editor instead of a dropdown. */
+  numberFields?: string[];
   /** Plain text on the block, with no input. */
   text?: string[];
   /** Statement/value inputs, in the order they appear on the block. */
   inputs?: { name: string; kind: InputKind }[];
+  /** Optional labelled rows for blocks with many fields. */
+  layout?: { label: string; fields?: string[]; inputs?: string[] }[];
   /** False for expression blocks (they emit a value, not a stack). */
   stack?: boolean;
   /** Blockly output type for expression blocks. */
@@ -148,6 +155,66 @@ export interface DbotBlockDecl {
  * `blockly/blocks`.
  */
 export const DBOT_DECLS: DbotBlockDecl[] = [
+  {
+    type: 'math_number_positive',
+    label: 'Positive number',
+    role: 'logic',
+    fields: [],
+    numberFields: ['NUM'],
+    stack: false,
+    output: 'Number'
+  },
+  {
+    type: 'trade',
+    label: 'Legacy trade definition',
+    role: 'trade-definition',
+    fields: [
+      'MARKET_LIST',
+      'SUBMARKET_LIST',
+      'SYMBOL_LIST',
+      'TRADETYPECAT_LIST',
+      'TRADETYPE_LIST',
+      'TYPE_LIST',
+      'CANDLEINTERVAL_LIST',
+      'TIME_MACHINE_ENABLED',
+      'RESTARTONERROR'
+    ],
+    layout: [
+      { label: 'Market', fields: ['MARKET_LIST', 'SUBMARKET_LIST', 'SYMBOL_LIST'] },
+      {
+        label: 'Contract',
+        fields: ['TRADETYPECAT_LIST', 'TRADETYPE_LIST', 'TYPE_LIST']
+      },
+      { label: 'Candle interval', fields: ['CANDLEINTERVAL_LIST'] },
+      { label: 'Trade options', fields: ['TIME_MACHINE_ENABLED', 'RESTARTONERROR'] },
+      { label: 'Initialization', inputs: ['INITIALIZATION'] },
+      { label: 'Submarket settings', inputs: ['SUBMARKET'] }
+    ],
+    inputs: [
+      { name: 'INITIALIZATION', kind: 'statement' },
+      { name: 'SUBMARKET', kind: 'statement' }
+    ]
+  },
+  {
+    type: 'tradeOptions',
+    label: 'Legacy trade options',
+    role: 'stake',
+    fields: ['DURATIONTYPE_LIST', 'CURRENCY_LIST'],
+    inputs: [
+      { name: 'DURATION', kind: 'value' },
+      { name: 'AMOUNT', kind: 'value' },
+      { name: 'PREDICTION', kind: 'value' }
+    ]
+  },
+  {
+    type: 'last_digit',
+    label: 'Last tick digit',
+    role: 'entry',
+    fields: [],
+    text: ['last tick digit'],
+    stack: false,
+    output: 'Number'
+  },
   {
     type: 'trade_definition',
     label: 'Trade definition',
@@ -325,6 +392,13 @@ function dropdownArg(name: string, extraValues: Iterable<string>): Record<string
   };
 }
 
+function inputArg(input: { name: string; kind: InputKind }): Record<string, unknown> {
+  return {
+    type: input.kind === 'value' ? 'input_value' : 'input_statement',
+    name: input.name
+  };
+}
+
 /**
  * Builds the JSON definition for one DBot block.
  *
@@ -332,37 +406,67 @@ function dropdownArg(name: string, extraValues: Iterable<string>): Record<string
  * dropdown never coerces a value the file actually uses.
  */
 export function declToJson(decl: DbotBlockDecl, observed: Map<string, Set<string>>): Record<string, unknown> {
-  const args: Record<string, unknown>[] = [];
+  const fieldArgs = new Map<string, Record<string, unknown>>();
   for (const field of decl.fields) {
     if (field === 'VARIABLE') {
-      args.push({ type: 'field_variable', name: 'VARIABLE' });
+      fieldArgs.set(field, { type: 'field_variable', name: 'VARIABLE' });
       continue;
     }
-    args.push(dropdownArg(field, observed.get(field) ?? []));
+    fieldArgs.set(field, dropdownArg(field, observed.get(field) ?? []));
   }
-  for (const text of decl.text ?? []) args.push(labelArg(text));
-  for (const input of decl.inputs ?? []) {
-    args.push({ type: input.kind, name: input.name });
+  for (const field of decl.numberFields ?? []) {
+    fieldArgs.set(field, { type: 'field_number', name: field, value: 0 });
   }
+  const inputArgs = new Map(
+    (decl.inputs ?? []).map((input) => [input.name, inputArg(input)])
+  );
+  const textArgs = (decl.text ?? []).map(labelArg);
 
   // `style` alone drives the colour: the theme's `blockStyles` map owns every
   // hue, and Blockly throws if a definition sets both `colour` and `style`.
   const json: Record<string, unknown> = {
     type: decl.type,
-    message0: args.map((_, i) => `%${i + 1}`).join(' '),
-    args0: args,
     tooltip: decl.label,
     helpUrl: '',
     style: ROLE_STYLE[decl.role] ?? 'trade_blocks',
     category: ROLE_CATEGORY[decl.role] ?? 'trade_category'
   };
 
+  if (decl.layout) {
+    for (const [index, row] of decl.layout.entries()) {
+      const getField = (name: string) => {
+        const arg = fieldArgs.get(name);
+        if (!arg) throw new Error(`${decl.type} layout references missing field "${name}".`);
+        return arg;
+      };
+      const getInput = (name: string) => {
+        const arg = inputArgs.get(name);
+        if (!arg) throw new Error(`${decl.type} layout references missing input "${name}".`);
+        return arg;
+      };
+      const args = [
+        labelArg(row.label),
+        ...(row.fields ?? []).map(getField),
+        ...(row.inputs ?? []).map(getInput)
+      ];
+      json[`message${index}`] = args.map((_, argIndex) => `%${argIndex + 1}`).join(' ');
+      json[`args${index}`] = args;
+    }
+  } else {
+    const args = [
+      ...fieldArgs.values(),
+      ...textArgs,
+      ...inputArgs.values()
+    ];
+    json.message0 = args.map((_, i) => `%${i + 1}`).join(' ');
+    json.args0 = args;
+  }
+
   if (decl.stack === false) {
     json.output = decl.output ?? 'Boolean';
   } else {
     json.previousStatement = null;
     json.nextStatement = null;
-    json.output = null;
   }
   return json;
 }
@@ -382,20 +486,21 @@ export function dbotDeclarations(): readonly DbotBlockDecl[] {
 export function unknownToJson(
   dbotType: string,
   fields: string[],
-  inputs: { name: string; kind: InputKind }[]
+  inputs: { name: string; kind: InputKind }[],
+  shape: 'stack' | 'value' = 'stack'
 ): Record<string, unknown> {
   const args: Record<string, unknown>[] = [
     labelArg(`Unknown block: ${dbotType}`),
     ...fields.map((name) => ({ type: 'field_input', name, text: '', disabled: true })),
-    ...inputs.map((input) => ({ type: input.kind, name: input.name }))
+    ...inputs.map(inputArg)
   ];
   return {
-    type: unknownBlockType(dbotType),
+    type: unknownBlockType(dbotType, shape),
     message0: args.map((_, i) => `%${i + 1}`).join(' '),
     args0: args,
-    previousStatement: null,
-    nextStatement: null,
-    output: null,
+    ...(shape === 'stack'
+      ? { previousStatement: null, nextStatement: null }
+      : { output: null }),
     style: 'unknown_blocks',
     category: 'logic_category',
     tooltip: `No-touch cannot interpret "${dbotType}". It is shown unchanged and blocks execution.`,

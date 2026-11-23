@@ -13,6 +13,7 @@ import {
 } from '../../lib/bots';
 import { readStrategyConfig } from './strategyConfig';
 import { STATE_COPY } from './compatibilityCopy';
+import { PanelSection } from './PanelSection';
 
 /**
  * TRADING CONFIGURATION — what this strategy actually trades.
@@ -114,38 +115,47 @@ export function TradingConfigPanel({ botId, payload, dirty }: TradingConfigPanel
         : null;
 
   return (
-    <section aria-label="Trading configuration" className="flex flex-col gap-3 p-3">
-      <header className="flex items-center gap-2">
-        <Settings2 className="w-3.5 h-3.5 text-accent" aria-hidden="true" />
-        <h2 className="text-[11px] font-bold uppercase tracking-widest text-muted">
-          Trading configuration
-        </h2>
-      </header>
+    <section aria-label="Trading configuration" className="flex flex-col gap-2 p-2.5">
+      <PanelSection title="Strategy information" icon={<Settings2 className="h-3.5 w-3.5 text-accent" />} defaultOpen>
+        <dl>
+          <Row label="Strategy" value={payload.name} />
+          <Row label="Status" value={payload.status} />
+          <Row label="Revision" value={String(payload.revision)} />
+          <Row label="Compatibility" value={payload.compatibility} />
+        </dl>
+      </PanelSection>
 
-      <div className="rounded-xl border border-line bg-surface/60 px-3 py-1">
+      <PanelSection title="Market selection" defaultOpen>
         <dl>
           <Row label="Symbol" value={config.symbol} />
           <Row label="Market" value={config.market} />
           <Row label="Submarket" value={config.submarket} />
+          <Row
+            label="Candle interval"
+            value={config.candleInterval ? `${config.candleInterval}s` : null}
+          />
+        </dl>
+      </PanelSection>
+
+      <PanelSection title="Contract configuration">
+        <dl>
           <Row label="Contract" value={config.contractType} />
           <Row label="Trade type" value={config.tradeType} />
           <Row label="Prediction" value={config.prediction} />
-          <Row label="Stake" value={config.stake ? `${config.stake} ${config.currency ?? ''}`.trim() : null} />
+          <Row
+            label="Stake"
+            value={config.stake ? `${config.stake} ${config.currency ?? ''}`.trim() : null}
+          />
           <Row label="Duration" value={config.duration} />
-          <Row label="Candle interval" value={config.candleInterval ? `${config.candleInterval}s` : null} />
           <Row label="Restart on error" value={config.restartOnError} />
         </dl>
-      </div>
+        <p className="mt-2 text-[10px] leading-relaxed text-faint">
+          These values come from the strategy&rsquo;s blocks. Edit them in the toolbox so the XML
+          remains the source of truth.
+        </p>
+      </PanelSection>
 
-      <p className="text-[10.5px] leading-relaxed text-faint">
-        These values come from the strategy&rsquo;s own blocks. Change them on the canvas — the
-        Trade, Market and Trade options categories — so the blocks stay the single source of truth.
-      </p>
-
-      <div className="pt-2 border-t border-line">
-        <h3 className="text-[10.5px] font-bold uppercase tracking-widest text-muted mb-2">
-          Contract availability
-        </h3>
+      <PanelSection title="Contract availability">
 
         {catalogError && (
           <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-2.5 py-2 text-[11px] text-warning">
@@ -240,7 +250,7 @@ export function TradingConfigPanel({ botId, payload, dirty }: TradingConfigPanel
             )}
           </div>
         )}
-      </div>
+      </PanelSection>
     </section>
   );
 }

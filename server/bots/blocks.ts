@@ -54,6 +54,36 @@ const DBOT_PREFIX = 'https://deriv.com/dbot';
  */
 const SUPPORTED: Record<string, BlockSpec> = {
   /* ------------------------- trade definition ------------------------- */
+  // Legacy Deriv DBot export format. New exports split these fields across
+  // trade_definition_* blocks; older exports keep them on one `trade` block.
+  trade: {
+    supported: true,
+    role: 'trade-definition',
+    label: 'Trade definition',
+    fields: [
+      'MARKET_LIST',
+      'SUBMARKET_LIST',
+      'SYMBOL_LIST',
+      'TRADETYPECAT_LIST',
+      'TRADETYPE_LIST',
+      'TYPE_LIST',
+      'CANDLEINTERVAL_LIST',
+      'TIME_MACHINE_ENABLED',
+      'RESTARTONERROR'
+    ],
+    statements: ['INITIALIZATION', 'SUBMARKET']
+  },
+  tradeOptions: {
+    supported: true,
+    role: 'stake',
+    label: 'Trade options (stake, duration, currency)',
+    fields: ['DURATIONTYPE_LIST', 'CURRENCY_LIST']
+  },
+  last_digit: {
+    supported: true,
+    role: 'entry',
+    label: 'Last tick digit'
+  },
   trade_definition: {
     supported: true,
     role: 'trade-definition',
@@ -275,7 +305,6 @@ const RECOGNISED_UNSUPPORTED: Record<string, string> = {
   ohlc: 'OHLC accessors are not modelled.',
   ohlc_values: 'OHLC accessors are not modelled.',
   readOhlc: 'OHLC accessors are not modelled.',
-  last_digit: 'Last-digit analysis is not modelled.',
   lastDigitList: 'Last-digit analysis is not modelled.',
   stat: 'Statistical blocks are not modelled.',
   stat_list: 'Statistical blocks are not modelled.',

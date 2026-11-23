@@ -1,6 +1,7 @@
 import { Bot, Loader2 } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import { toggleAutomaticTrading, useExecutionControl } from '../lib/execution';
+import { automaticTradingDisabledMessage } from '../lib/trade';
 
 /**
  * Header switch for automatic trading.
@@ -24,11 +25,7 @@ export function AutoTradeToggle({ mobileLabel }: { mobileLabel?: string } = {}) 
   const disabled = !control.automaticEnabled && !on;
   const reason = control.status?.reason ?? null;
   const title = disabled
-    ? reason === 'execution_disabled'
-      ? 'Automatic trading is off — the server master switch is off (set ALLOW_EXECUTION=true)'
-      : reason === 'demo_execution_disabled'
-        ? 'Automatic trading is off — demo execution is off (set ALLOW_DEMO_EXECUTION=true)'
-        : 'Automatic trading is switched off on this server'
+    ? automaticTradingDisabledMessage(reason)
     : on
       ? 'Automatic trading is on — the scanner trades the signals you are shown. Click to switch to manual.'
       : 'Click to let the scanner trade the signals you are shown automatically';

@@ -50,12 +50,19 @@ function valueOfInput(node: BotTreeNode | null, inputName: string): string | nul
 }
 
 export function readStrategyConfig(tree: BotEditorPayload['tree']): StrategyConfig {
-  const marketBlock = findByType(tree.blocks, 'trade_definition_market');
-  const tradeTypeBlock = findByType(tree.blocks, 'trade_definition_tradetype');
-  const contractBlock = findByType(tree.blocks, 'trade_definition_contracttype');
-  const optionsBlock = findByType(tree.blocks, 'trade_definition_tradeoptions');
-  const candleBlock = findByType(tree.blocks, 'trade_definition_candleinterval');
-  const restartBlock = findByType(tree.blocks, 'trade_definition_restartonerror');
+  const legacyTradeBlock = findByType(tree.blocks, 'trade');
+  const marketBlock = findByType(tree.blocks, 'trade_definition_market') ?? legacyTradeBlock;
+  const tradeTypeBlock =
+    findByType(tree.blocks, 'trade_definition_tradetype') ?? legacyTradeBlock;
+  const contractBlock =
+    findByType(tree.blocks, 'trade_definition_contracttype') ?? legacyTradeBlock;
+  const optionsBlock =
+    findByType(tree.blocks, 'trade_definition_tradeoptions') ??
+    findByType(tree.blocks, 'tradeOptions');
+  const candleBlock =
+    findByType(tree.blocks, 'trade_definition_candleinterval') ?? legacyTradeBlock;
+  const restartBlock =
+    findByType(tree.blocks, 'trade_definition_restartonerror') ?? legacyTradeBlock;
 
   const durationValue = valueOfInput(optionsBlock, 'DURATION');
   const durationUnit = fieldOf(optionsBlock, 'DURATIONTYPE_LIST');
