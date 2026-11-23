@@ -302,6 +302,8 @@ export async function startBotRun(
     lastExecutionId: null,
     lastContractId: null,
     afterPurchaseFor: null,
+    sellRefusedFor: null,
+    sellRefusedReason: null,
     error: null,
     counters: emptyCounters(),
     events: [],
@@ -528,6 +530,13 @@ async function duringPurchaseStep(
   // between the last update and this tick can never reach a sell request.
   if (!contract || isSettled(contract) || contract.status !== 'open') return;
 
+  // A refusal belongs to the contract that earned it. A new contract starts with
+  // a clean slate rather than inheriting the previous one's verdict.
+  if (run.sellRefusedFor !== null && run.sellRefusedFor !== Number(contract.id)) {
+    run.sellRefusedFor = null;
+    run.sellRefusedReason = null;
+  }
+
   let tree: BlockTree;
   try {
     tree = loadBotTree(bot).tree;
@@ -580,6 +589,11 @@ async function duringPurchaseStep(
     return;
   }
 
+  // Deriv has already refused to offer a sale for this contract, so asking again
+  // would resubmit a request that cannot succeed. The contract is left to expire
+  // and `after_purchase` runs from the settlement, exactly as DBot does.
+  if (run.sellRefusedFor === Number(contract.id)) return;
+
   // Re-read under the gateway's own lock. The contract may have expired between
   // the check above and this call, and the gateway refuses a non-open contract.
   try {
@@ -599,8 +613,83 @@ async function duringPurchaseStep(
       detail: { runId: run.runId, botId: run.botId, contractId: contract.id, soldFor: sale.soldFor }
     });
   } catch (err) {
-    // A rejection or a pending close is not a sale. The run keeps the contract
-    // and tries again on the next tick only if Deriv still reports it sellable.
+    const code = err instanceof ExecutionError ? err.code : null;
+
+    // A definite refusal: Deriv will not offer this contract for sale. Record it
+    // once and stop asking. Nothing was sold, so the contract stays open, no
+    // profit is realised, and the ordinary expiry path still settles it.
+    if (code === 'close_offerings_unavailable') {
+      run.sellRefusedFor = Number(contract.id);
+      run.sellRefusedReason = 'invalid_offerings';
+      pushEvent(run, {
+        at: now,
+        kind: 'skip',
+        detail: 'Early sale is no longer offered for this contract; it will run to expiry.',
+        contractId: Number(contract.id)
+      });
+      await deps.auditor.record({
+        userId: user.id,
+        action: 'bot.run.sell',
+        outcome: 'denied',
+        accountId: run.accountId,
+        intentId: contract.intentId,
+        detail: {
+          runId: run.runId,
+          botId: run.botId,
+          contractId: contract.id,
+          reason: 'invalid_offerings'
+        }
+      });
+      return;
+    }
+
+    // An uncertain outcome is not a failure. The sale may have reached Deriv, so
+    // the contract's real state is read back rather than the request being
+    // resent. The gateway's pending-close guard blocks a duplicate meanwhile.
+    if (code === 'close_pending') {
+      let actual: ContractRecord | null = null;
+      try {
+        // Without a token Deriv cannot be asked, so the record is left as it is.
+        // The pending-close guard still blocks a duplicate request.
+        if (accessToken) {
+          // A short bound: this is a confirmation of a sale that may already
+          // have landed, not the sale itself. The contract's live subscription
+          // remains the authoritative path, so a slow answer here must not stall
+          // the tick loop.
+          actual = await deps.monitor.refreshContract(user, contract.id, accessToken, 2_000);
+        }
+      } catch {
+        // Reconciliation is best effort; the pending-close guard still holds.
+        actual = null;
+      }
+      pushEvent(run, {
+        at: now,
+        kind: 'skip',
+        detail:
+          actual === null
+            ? 'The early sale was not confirmed. Deriv will be re-read before any further attempt.'
+            : `The early sale was reconciled: the contract is ${actual.status}.`,
+        contractId: Number(contract.id)
+      });
+      await deps.auditor.record({
+        userId: user.id,
+        action: 'bot.run.sell',
+        outcome: 'error',
+        accountId: run.accountId,
+        intentId: contract.intentId,
+        detail: {
+          runId: run.runId,
+          botId: run.botId,
+          contractId: contract.id,
+          reason: 'close_uncertain',
+          reconciledStatus: actual?.status ?? null
+        }
+      });
+      return;
+    }
+
+    // Any other refusal is reported and left for the next tick, where Deriv's
+    // own sellability verdict decides whether another attempt is reasonable.
     const reason = err instanceof Error ? err.message : 'The sale could not be completed.';
     pushEvent(run, {
       at: now,
@@ -618,7 +707,7 @@ async function duringPurchaseStep(
         runId: run.runId,
         botId: run.botId,
         contractId: contract.id,
-        reason: err instanceof ExecutionError ? err.code : 'sell_failed'
+        reason: code ?? 'sell_failed'
       }
     });
   }

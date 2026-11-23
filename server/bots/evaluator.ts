@@ -27,7 +27,7 @@
 
 import type { MarketSnapshot } from '../services/marketData.js';
 import type { BlockTree, TreeNode } from './tree.js';
-import { INTERPRETED_BLOCKS, isDbProgram } from './interpreter.js';
+import { INTERPRETED_BLOCKS, isDbProgram, isValueBlock } from './interpreter.js';
 import type { ContractFamily, DerivContractType } from '../execution/types.js';
 import { DIGIT_PREDICTION_TYPES } from '../execution/types.js';
 import { fieldValue, findTopLevel, walkTree } from './tree.js';
@@ -347,6 +347,28 @@ function resolveOperand(
 }
 
 /**
+ * Value blocks found in statement position.
+ *
+ * `TreeInput.kind` distinguishes the two, so this is a structural question, not
+ * a guess: a `statement` input holds a stack, and every block in that stack must
+ * be executable as a statement.
+ */
+function misplacedValueStatements(tree: BlockTree): string[] {
+  const found: string[] = [];
+  for (const node of walkTree(tree)) {
+    for (const input of node.inputs) {
+      if (input.kind !== 'statement') continue;
+      let child = input.block;
+      while (child) {
+        if (isValueBlock(child.type)) found.push(child.type);
+        child = child.next ?? null;
+      }
+    }
+  }
+  return found;
+}
+
+/**
  * Builds a plan from a saved strategy, or explains why it cannot run.
  *
  * The plan is derived once at start, so a tick never re-interprets the document
@@ -389,6 +411,26 @@ export function planStrategy(tree: BlockTree): PlanResult {
     unsupportedTypes.push('variables_get');
   }
   const unsupported = [...new Set(unsupportedTypes)];
+
+  // A value block can only produce a value; it has no effect as a statement.
+  // The interpreter throws `UnsupportedBlockError` when it reaches one, which
+  // would happen on the first tick *after* a contract was bought — the strategy
+  // would never reach its `sell_at_market`, so the contract would sit open until
+  // expiry with no further decision. Refuse it at plan time instead, before any
+  // money moves.
+  //
+  // This applies only to the interpreter. The simplified dialect deliberately
+  // puts a bare `check_direction` in statement position and the plan engine
+  // models that shape, so its programs are exempt.
+  if (useInterpreter) {
+    const misplaced = misplacedValueStatements(tree);
+    if (misplaced.length > 0) {
+      reasons.push(
+        `The strategy places a value block (${[...new Set(misplaced)].join(', ')}) where a statement is required.`
+      );
+    }
+  }
+
   if (unsupported.length > 0) {
     const named = unsupported
       .map((type) => (UNSUPPORTED_REASONS[type] ? `${type} (${UNSUPPORTED_REASONS[type]})` : type))

@@ -75,6 +75,12 @@ export type ExecutionRejectionCode =
   | 'contract_not_open'
   | 'close_pending'
   | 'close_rejected'
+  /**
+   * Deriv refused the sale with `InvalidOfferings`: the contract is too close to
+   * expiry to be offered. Distinct from a generic rejection because it is
+   * terminal for the sale — the contract should be left to expire, not retried.
+   */
+  | 'close_offerings_unavailable'
   | 'close_unavailable';
 
 export class ExecutionError extends Error {
@@ -294,13 +300,21 @@ export class ExecutionGateway {
           });
         } catch (err) {
           const uncertain = err instanceof BrokerError && err.uncertain;
+          // `InvalidOfferings` is a definite refusal, so it is not uncertain: the
+          // contract is untouched and stays OPEN. It is separated from a generic
+          // rejection because the caller must stop asking rather than retry.
+          const offeringsUnavailable = err instanceof BrokerError && err.code === 'invalid_offerings';
           await this.finishCloseAttempt(closeAttempt, uncertain ? 'unknown' : 'rejected', err);
           const currentIntent = this.store.getTradeIntent(user.id, current.intentId);
           if (currentIntent?.state === 'CLOSE_PENDING') {
             await this.transition(
               currentIntent,
               uncertain ? 'RECONCILIATION_REQUIRED' : 'OPEN',
-              uncertain ? 'close_uncertain' : 'close_rejected'
+              uncertain
+                ? 'close_uncertain'
+                : offeringsUnavailable
+                  ? 'close_offerings_unavailable'
+                  : 'close_rejected'
             );
           }
           await this.auditor.record({
@@ -312,9 +326,17 @@ export class ExecutionGateway {
             detail: {
               contractId: current.id,
               reason: err instanceof BrokerError ? err.code : 'close_failed',
-              uncertain
+              uncertain,
+              ...(offeringsUnavailable ? { derivCode: err.derivCode } : {})
             }
           });
+          if (offeringsUnavailable) {
+            throw new ExecutionError(
+              'close_offerings_unavailable',
+              'Deriv will not offer a sale for this contract because it is too close to expiry.',
+              err.derivCode ? [err.derivCode] : []
+            );
+          }
           throw new ExecutionError(
             uncertain ? 'close_pending' : 'close_rejected',
             uncertain

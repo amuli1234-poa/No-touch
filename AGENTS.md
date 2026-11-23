@@ -1167,6 +1167,9 @@ specification, so read them before changing the interpreter:
   audited, risk-checked, non-duplicable, stoppable and tenant-isolated.
 - `bot_early_sell.test.ts` — pins the early-sell implementation to the real
   Deriv behaviour so it cannot regress into a guess.
+- `bot_sell_rejection.test.ts` — every way a sale can fail is distinguished
+  from success: `InvalidOfferings`, uncertain outcomes, and the full
+  sell/expire lifecycles.
 
 Early selling, verified from `packages/bot-skeleton/src/services/tradeEngine/`:
 
@@ -1195,6 +1198,42 @@ to `false`: that would sell on data the engine never had.
   `after_purchase` — which is DBot's loop. Do not return early after a sale.
   A *refused* sale leaves the contract open and must not be followed by a new
   entry in the same tick; the open-contract guard below handles that.
+
+A sale can fail three ways, and they are not interchangeable. Verified against
+`tradeEngine/trade/Sell.js`:
+
+- **`InvalidOfferings`** — the contract is too close to expiry to be offered.
+  Deriv refused it, nothing was sold, and the same request cannot succeed. The
+  broker maps it to `BrokerError.code === 'invalid_offerings'` (only for
+  `sell`; a buy keeps the generic `rejected`), the gateway to
+  `ExecutionError.code === 'close_offerings_unavailable'`. The run records
+  `sellRefusedFor` / `sellRefusedReason` and stops asking for that contract,
+  then lets it expire. DBot does the same: it swallows this error and lets the
+  contract finish. Do not disable early selling globally, and do not treat
+  other rejections as this one — the classification is by exact code.
+- **Uncertain** (`close_pending`) — the request may have reached Deriv. Never
+  assumed to have failed and never retried blindly. `duringPurchaseStep` calls
+  `monitor.refreshContract` to read the contract's real state; the gateway's
+  pending-close guard already blocks a duplicate submission in the meantime.
+  The in-tick re-read is bounded (2s) so a slow answer cannot stall the loop;
+  the contract's live subscription remains the authoritative path.
+- **Any other refusal** — reported and left for the next tick, where Deriv's own
+  `is_valid_to_sell` decides whether another attempt is reasonable.
+
+A refusal is remembered per contract, so a new contract starts with a clean
+slate and one bot's refusal never silences another. The tests for all of this
+are in `bot_sell_rejection.test.ts`; the broker-level mapping is pinned in
+`broker.test.ts`.
+
+A strategy whose `during_purchase` stack cannot reach a sell is refused at plan
+time, before any money moves. `planStrategy` rejects a value block in statement
+position — a bare `check_sell`, say — because the interpreter throws
+`UnsupportedBlockError` on it. That throw would land on the first tick *after*
+the purchase, so the contract would be bought and then never managed: held open
+until expiry with its sell branch unreachable. The check applies only to
+programs routed to the interpreter; the simplified dialect puts a bare
+`check_direction` in statement position on purpose and the plan engine models
+that shape.
 
 The run holds one contract at a time, as DBot does. `tickBotRun` refuses a new
 entry while `lastContractId` is still open. The entry ceiling

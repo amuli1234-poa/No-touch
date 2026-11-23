@@ -328,6 +328,91 @@ test('a sell is scoped to the account and requests the contract at market price'
   }
 });
 
+test('a sell refused with InvalidOfferings is a definite, distinct rejection', async () => {
+  const otp = stubOtp();
+  const sock = fakeSocket();
+  const broker = new DerivBroker(makeConfig(), {
+    wsFactory: () => sock as unknown as MinimalWebSocket,
+    timeoutMs: 200
+  });
+  try {
+    const salePromise = broker.sell({
+      accountId: 'VRTC1',
+      accessToken: 'tok',
+      accountMode: 'demo',
+      contractId: 999,
+      price: 0,
+      reqId: 4
+    });
+    await tick();
+    sock.emit('open');
+    sock.emit('message', {
+      data: JSON.stringify({
+        msg_type: 'sell',
+        req_id: 4,
+        error: {
+          code: 'InvalidOfferings',
+          message: 'Contract is too close to expiry to be sold.'
+        }
+      })
+    });
+
+    const err = await salePromise.then(
+      () => null,
+      (e) => e
+    );
+    assert.ok(err instanceof BrokerError);
+    // Definite, not uncertain: the sale did not happen and never will.
+    assert.equal(err.code, 'invalid_offerings');
+    assert.equal(err.uncertain, false);
+    assert.equal(err.derivCode, 'InvalidOfferings');
+  } finally {
+    broker.close();
+    otp.restore();
+  }
+});
+
+test('InvalidOfferings on a buy is not reclassified as a sell refusal', async () => {
+  const otp = stubOtp();
+  const sock = fakeSocket();
+  const broker = new DerivBroker(makeConfig(), {
+    wsFactory: () => sock as unknown as MinimalWebSocket,
+    timeoutMs: 200
+  });
+  try {
+    // A buy is only accepted on the socket that holds its proposal, so the
+    // proposal is requested first — exactly as the real flow does.
+    const proposal = await requestBuyableProposal(broker, sock);
+    const buyPromise = broker.buy({
+      accountId: 'VRTC1',
+      accessToken: 'tok',
+      accountMode: 'demo',
+      proposalId: proposal.proposalId,
+      price: proposal.askPrice,
+      reqId: 5
+    });
+    sock.emit('message', {
+      data: JSON.stringify({
+        msg_type: 'buy',
+        req_id: 5,
+        error: { code: 'InvalidOfferings', message: 'Invalid offerings.' }
+      })
+    });
+
+    const err = await buyPromise.then(
+      () => null,
+      (e) => e
+    );
+    assert.ok(err instanceof BrokerError);
+    // The sell-specific meaning must not leak onto a purchase.
+    assert.equal(err.code, 'rejected');
+    assert.equal(err.derivCode, 'InvalidOfferings');
+  } finally {
+    broker.close();
+    otp.restore();
+  }
+});
+
 test('a sell timeout is uncertain and cannot be treated as a confirmed close', async () => {
   const otp = stubOtp();
   const sock = fakeSocket();

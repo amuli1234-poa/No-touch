@@ -9,7 +9,8 @@ import type {
   BuyResult,
   SellRequest,
   SellResult,
-  ContractUpdate
+  ContractUpdate,
+  BrokerErrorCode
 } from './types.js';
 import type { AccountMode, ContractStatus } from '../types.js';
 
@@ -68,6 +69,20 @@ function toNumber(value: unknown): number | null {
     return Number.isFinite(n) ? n : null;
   }
   return null;
+}
+
+/**
+ * Refines a Deriv error code into the broker's own vocabulary.
+ *
+ * `InvalidOfferings` on a sell is the one rejection with a distinct meaning: the
+ * contract is too close to expiry to be offered, so the sale is definitively
+ * refused and the contract should be left to expire. Verified against
+ * `tradeEngine/trade/Sell.js`. Every other rejection keeps the generic
+ * `rejected` code, so this distinction is never applied by guesswork.
+ */
+function classifyRejection(derivCode: string | null, expect: string): BrokerErrorCode {
+  if (expect === 'sell' && derivCode === 'InvalidOfferings') return 'invalid_offerings';
+  return 'rejected';
 }
 
 export class DerivBroker implements BrokerAdapter {
@@ -143,9 +158,15 @@ export class DerivBroker implements BrokerAdapter {
         }
         if (!msg) return;
         if (msg.error) {
+          const derivCode = msg.error.code || null;
           finish(() =>
             reject(
-              new BrokerError('rejected', msg.error.message || 'Deriv rejected the request.', false, msg.error.code || null)
+              new BrokerError(
+                classifyRejection(derivCode, opts.expect),
+                msg.error.message || 'Deriv rejected the request.',
+                false,
+                derivCode
+              )
             )
           );
           return;

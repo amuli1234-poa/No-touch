@@ -69,6 +69,17 @@ export interface BotRunRecord {
    * settlement it has already reacted to and does not repeat it.
    */
   afterPurchaseFor: number | null;
+  /**
+   * The contract Deriv has refused to let this run sell, and why.
+   *
+   * `InvalidOfferings` means the contract is too close to expiry to be offered.
+   * That is a property of the contract's remaining life, not a transient fault,
+   * so the run stops asking for that contract instead of re-submitting the same
+   * rejected sale on every tick. Cleared whenever a different contract becomes
+   * the held one.
+   */
+  sellRefusedFor: number | null;
+  sellRefusedReason: string | null;
   /** Set when the run failed; cleared on a fresh start. */
   error: string | null;
   counters: BotRunCounters;

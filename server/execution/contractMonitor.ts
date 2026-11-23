@@ -230,6 +230,53 @@ export class ContractMonitor {
   }
 
   /**
+   * Re-reads one contract's true state from Deriv, with a bounded wait.
+   *
+   * Used when a close request's outcome is unknown: the sale may have landed, or
+   * the contract may still be open. Deriv's `proposal_open_contract` stream
+   * reports sold contracts too, so this is the only way to tell the two apart.
+   * The result is applied through `onUpdate`, which settles or refreshes the
+   * record and resolves the pending close attempt.
+   *
+   * Returns the stored record after applying what Deriv said, or null when Deriv
+   * did not answer in time — in which case nothing is assumed and nothing is
+   * retried.
+   */
+  async refreshContract(
+    user: UserRecord,
+    contractId: string,
+    accessToken: string,
+    timeoutMs = 8_000
+  ): Promise<ContractRecord | null> {
+    const contract = this.store.getContract(user.id, contractId);
+    if (!contract) return null;
+    const derivId = Number(contractId);
+    if (!Number.isSafeInteger(derivId) || derivId <= 0) return null;
+
+    const update = await new Promise<ContractUpdate | null>((resolve) => {
+      let done = false;
+      const finish = (value: ContractUpdate | null) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        unsubscribe();
+        resolve(value);
+      };
+      const timer = setTimeout(() => finish(null), timeoutMs);
+      const unsubscribe = this.broker.subscribeContract(
+        contract.accountId,
+        contract.accountMode,
+        accessToken,
+        derivId,
+        (u) => finish(u)
+      );
+    });
+    if (!update) return null;
+    await this.onUpdate(user, contractId, update);
+    return this.store.getContract(user.id, contractId);
+  }
+
+  /**
    * Reconciles an intent whose purchase outcome is unknown, by reading the
    * contract's true status from Deriv. Never retries a purchase.
    */

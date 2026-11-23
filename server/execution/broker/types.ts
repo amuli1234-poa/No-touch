@@ -134,6 +134,14 @@ export type BrokerErrorCode =
   | 'otp_failed'
   | 'socket_failed'
   | 'rejected'
+  /**
+   * Deriv answered a sell with `InvalidOfferings`, which means the contract is
+   * too close to expiry for its price to be offered. It is a definite refusal,
+   * not a lost response: the sale did not happen and retrying cannot help.
+   * Verified against `tradeEngine/trade/Sell.js`, which lets the contract run
+   * to expiry in this case.
+   */
+  | 'invalid_offerings'
   | 'timeout'
   | 'unknown'
   | 'not_connected';
