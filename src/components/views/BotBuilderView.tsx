@@ -20,8 +20,10 @@ import {
 } from '../../lib/bots';
 import { Card, EmptyState, StatusPill } from '../ui/primitives';
 import { BotImporter } from '../bots/BotImporter';
-import { ExecutionRail } from '../bots/ExecutionRail';
 import { TradingConfigPanel } from '../bots/TradingConfigPanel';
+import { RunPanel } from '../bots/RunPanel';
+import { RunControl } from '../bots/RunControl';
+import { useBotExecution } from '../bots/useBotExecution';
 import { unsupportedBlockDetails } from '../bots/unsupportedBlocks';
 import { WorkspaceToolbar } from '../bots/WorkspaceToolbar';
 import { StrategyWorkspace, type EditorControls } from '../bots/editor/StrategyWorkspace';
@@ -261,6 +263,22 @@ function StrategyEditor({
     [payload]
   );
 
+  const execution = useBotExecution(botId, {
+    runnable: executionEligibility.runnable,
+    dirty
+  });
+  // The workspace toolbar and the floating control both read this; the reason
+  // is stated once here rather than repeated at each call site.
+  const runBlockedReason = !execution.authenticated
+    ? 'Sign in with Deriv to run this strategy'
+    : execution.demoAccounts.length === 0
+      ? 'Link a Deriv demo account to run this strategy'
+      : dirty
+        ? 'Save your changes before running the strategy'
+        : !executionEligibility.runnable
+          ? executionEligibility.reasons[0] ?? 'This strategy cannot run yet'
+          : null;
+
   if (loadError) {
     return (
       <div className="p-4">
@@ -374,14 +392,17 @@ function StrategyEditor({
         {/* Workspace — the centre of the experience ---------------------- */}
         <div className="flex-1 min-w-0 relative">
           {payload ? (
-            <StrategyWorkspace
-              key={`${botId}:${revision}`}
-              xml={xml}
-              unknownBlocks={payload.unknownBlocks}
-              toolboxVisible={toolboxOpen}
-              onChange={handleChange}
-              onReady={setControls}
-            />
+            <>
+              <StrategyWorkspace
+                key={`${botId}:${revision}`}
+                xml={xml}
+                unknownBlocks={payload.unknownBlocks}
+                toolboxVisible={toolboxOpen}
+                onChange={handleChange}
+                onReady={setControls}
+              />
+              <RunControl execution={execution} reason={runBlockedReason} />
+            </>
           ) : (
             <div className="flex h-full items-center justify-center">
               <Loader2 className="w-5 h-5 animate-spin text-accent" aria-hidden="true" />
@@ -407,19 +428,21 @@ function StrategyEditor({
         {/* Configuration + execution rail --------------------------------- */}
         {payload && (
           <aside
-            aria-label="Bot configuration and execution"
+            aria-label="Run panel"
             className={`${
-              railOpen ? 'lg:flex' : 'lg:hidden'
-            } absolute lg:static inset-y-0 right-0 z-30 w-[330px] max-w-[85vw] shrink-0 flex-col border-l border-line bg-canvas overflow-y-auto`}
+              railOpen ? 'flex' : 'hidden'
+            } absolute lg:static inset-y-0 right-0 z-30 w-[340px] max-w-[85vw] shrink-0 flex-col border-l border-line bg-surface overflow-hidden`}
           >
-            <TradingConfigPanel botId={botId} payload={payload} dirty={dirty} />
-            <div className="border-t border-line" />
-            <ExecutionRail
-              botId={botId}
-              dirty={dirty}
-              executionEligibility={executionEligibility}
+            <RunPanel
+              execution={execution}
               symbol={config?.symbol ?? null}
               contractType={config?.contractType ?? null}
+              dirty={dirty}
+              runnable={executionEligibility.runnable}
+              reasons={executionEligibility.reasons}
+              configDetails={
+                <TradingConfigPanel botId={botId} payload={payload} dirty={dirty} />
+              }
             />
           </aside>
         )}

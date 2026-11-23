@@ -51,7 +51,7 @@ export interface WorkspaceToolbarProps {
   onResetWorkspace: () => void;
   toolboxOpen: boolean;
   onToggleToolbox: () => void;
-  /** Whether the configuration rail is showing; drives the labelled toggle. */
+  /** Whether the run panel is showing; drives the labelled toggle. */
   railOpen: boolean;
   onToggleRail: () => void;
 }
@@ -227,8 +227,8 @@ export function WorkspaceToolbar({
         type="button"
         onClick={onToggleRail}
         aria-expanded={railOpen}
-        aria-label={railOpen ? 'Hide the configuration panel' : 'Show the configuration panel'}
-        title={railOpen ? 'Hide the configuration panel' : 'Show the configuration panel'}
+        aria-label={railOpen ? 'Hide the run panel' : 'Show the run panel'}
+        title={railOpen ? 'Hide the run panel' : 'Show the run panel'}
         className={`${iconButton} px-2`}
       >
         {railOpen ? (
