@@ -18,8 +18,11 @@ import { test } from 'node:test';
 import {
   isDbProgram,
   loadVariables,
+  resolveDigitPrediction,
   runAfterPurchase,
   runBeforePurchase,
+  runInitialization,
+  runTickAnalysis,
   saveVariables,
   UnsupportedBlockError,
   type ContractFacts,
@@ -425,4 +428,100 @@ test('an unknown value block raises rather than comparing against null', () => {
     </block>`)
   );
   assert.throws(() => runBeforePurchase(tree, context()), UnsupportedBlockError);
+});
+
+/* ------------------------------ lifecycle -------------------------------- */
+
+/** A full program: declarations, a per-tick analysis, and a gated purchase. */
+function lifecycleProgram(): string {
+  return `<xml xmlns="http://www.w3.org/1999/xhtml" is_dbot="true">
+  <block type="trade">
+    <field name="SYMBOL_LIST">R_100</field>
+    <field name="TYPE_LIST">DIGITDIFF</field>
+    <statement name="INITIALIZATION">
+      <block type="variables_set">
+        <field name="VAR" id="limit">Max Entries</field>
+        <value name="VALUE"><block type="math_number"><field name="NUM">1</field></block></value>
+        <next><block type="variables_set">
+          <field name="VAR" id="seen">Entries Seen</field>
+          <value name="VALUE"><block type="math_number"><field name="NUM">0</field></block></value>
+        </block></next>
+      </block>
+    </statement>
+    <statement name="SUBMARKET">
+      <block type="tradeOptions">
+        <field name="DURATIONTYPE_LIST">t</field>
+        <field name="CURRENCY_LIST">USD</field>
+        <value name="DURATION"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+        <value name="AMOUNT"><shadow type="math_number"><field name="NUM">0.35</field></shadow></value>
+        <value name="PREDICTION">
+          <block type="variables_get"><field name="VAR" id="prediction">Prediction</field></block>
+        </value>
+      </block>
+    </statement>
+  </block>
+  <block type="tick_analysis">
+    <statement name="TICKANALYSIS_STACK">
+      <block type="variables_set">
+        <field name="VAR" id="prediction">Prediction</field>
+        <value name="VALUE"><block type="last_digit"/></value>
+      </block>
+    </statement>
+  </block>
+  <block type="before_purchase">
+    <statement name="BEFOREPURCHASE_STACK">
+      <block type="controls_if">
+        <value name="IF0"><block type="logic_compare">
+          <field name="OP">LT</field>
+          <value name="A"><block type="variables_get"><field name="VAR" id="seen">Entries Seen</field></block></value>
+          <value name="B"><block type="variables_get"><field name="VAR" id="limit">Max Entries</field></block></value>
+        </block></value>
+        <statement name="DO0"><block type="purchase"><field name="PURCHASE_LIST">DIGITDIFF</field></block></statement>
+      </block>
+    </statement>
+  </block>
+</xml>`;
+}
+
+test('INITIALIZATION runs once and its variables gate the entry stack', () => {
+  const tree = xmlToTree(lifecycleProgram());
+  const ctx = context();
+
+  // Before initialization the gate compares against unset variables, which is
+  // why running it is not optional: `undefined < undefined` is false.
+  assert.equal(runBeforePurchase(tree, ctx).purchase, null);
+
+  runInitialization(tree, ctx);
+  assert.equal(ctx.variables.get('limit'), 1);
+  assert.equal(ctx.variables.get('seen'), 0);
+  assert.equal(runBeforePurchase(tree, ctx).purchase, 'DIGITDIFF');
+});
+
+test('tick_analysis derives per-tick state that the entry stack reads', () => {
+  const tree = xmlToTree(lifecycleProgram());
+  const ctx = context({ ticks: ticks(123.47) });
+
+  runInitialization(tree, ctx);
+  // The prediction is only set by tick analysis, never by initialization.
+  assert.equal(ctx.variables.get('prediction'), undefined);
+
+  runTickAnalysis(tree, ctx);
+  assert.equal(ctx.variables.get('prediction'), 7);
+});
+
+test('resolveDigitPrediction reads a prediction held in a variable', () => {
+  const tree = xmlToTree(lifecycleProgram());
+  const ctx = context({ ticks: ticks(123.47) });
+
+  runInitialization(tree, ctx);
+  runTickAnalysis(tree, ctx);
+  assert.equal(resolveDigitPrediction(tree, ctx), 7);
+});
+
+test('resolveDigitPrediction refuses a value that is not a digit', () => {
+  const tree = xmlToTree(lifecycleProgram());
+  const ctx = context();
+  runInitialization(tree, ctx);
+  // No tick analysis has run, so the variable is unset rather than a number.
+  assert.equal(resolveDigitPrediction(tree, ctx), null);
 });

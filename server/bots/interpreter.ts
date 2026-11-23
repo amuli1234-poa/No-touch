@@ -39,7 +39,7 @@
 import type { MarketTick } from '../services/marketData.js';
 import type { JsonValue } from './runTypes.js';
 import type { BlockTree, TreeNode } from './tree.js';
-import { fieldValue, findTopLevel } from './tree.js';
+import { fieldValue, findTopLevel, walkTree } from './tree.js';
 
 /* ------------------------------- values --------------------------------- */
 
@@ -433,6 +433,60 @@ export function runBeforePurchase(tree: BlockTree, ctx: TickContext): ExecutionR
   const before = findTopLevel(tree, 'before_purchase');
   const stack = before ? inputBlock(before, 'BEFOREPURCHASE_STACK') : null;
   return executeStack(stack, ctx);
+}
+
+/**
+ * Runs the strategy's `INITIALIZATION` stack, which DBot executes once before
+ * the tick loop starts.
+ *
+ * Declarations such as stake, session limits and loop counters live here, so a
+ * run that skipped it would evaluate every later comparison against an unset
+ * variable. That is not a conservative failure: `undefined < 100` is false, so
+ * the strategy's own entry gate would silently never open.
+ */
+export function runInitialization(tree: BlockTree, ctx: TickContext): ExecutionResult {
+  const trade = findTopLevel(tree, 'trade') ?? findTopLevel(tree, 'trade_definition');
+  const stack = trade ? inputBlock(trade, 'INITIALIZATION') : null;
+  return executeStack(stack, ctx);
+}
+
+/**
+ * Runs the strategy's `tick_analysis` stack for the current tick.
+ *
+ * DBot runs every registered tick-analysis function before the entry decision,
+ * which is how a program derives per-tick state (the digit it will predict, a
+ * detected pair) that `before_purchase` then reads. Running it after the entry
+ * decision would act on the previous tick's analysis.
+ */
+export function runTickAnalysis(tree: BlockTree, ctx: TickContext): ExecutionResult {
+  const analysis = findTopLevel(tree, 'tick_analysis');
+  const stack = analysis ? inputBlock(analysis, 'TICKANALYSIS_STACK') : null;
+  return executeStack(stack, ctx);
+}
+
+/**
+ * Resolves the digit a strategy will predict, by evaluating its trade options'
+ * prediction input against the run's current variables.
+ *
+ * A DBot export commonly writes the prediction as `variables_get`, deriving it
+ * from the tick analysis, so the digit only exists at run time. Reading the
+ * literal field instead would either find nothing or, worse, act on a stale
+ * default the author never intended to trade.
+ *
+ * Returns `null` when the strategy names no prediction, or when the value it
+ * names is not a digit — the caller must treat that as "cannot place", never as
+ * a substitute digit.
+ */
+export function resolveDigitPrediction(tree: BlockTree, ctx: TickContext): number | null {
+  const options = walkTree(tree).find(
+    (node) => node.type === 'tradeOptions' || node.type === 'trade_definition_tradeoptions'
+  );
+  if (!options) return null;
+  const input = options.inputs.find((item) => item.name === 'PREDICTION' || item.name === 'BARRIER');
+  const value = evaluateBlock(input?.block ?? null, ctx);
+  const digit = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+  if (typeof digit !== 'number' || !Number.isInteger(digit) || digit < 0 || digit > 9) return null;
+  return digit;
 }
 
 /**

@@ -426,11 +426,54 @@ test('plan: supports a simple legacy DIGITDIFF bot with an explicit last-digit p
   assert.deepEqual(plan.conditions, [{ kind: 'digit_prediction', contractType: 'DIGITDIFF' }]);
 });
 
-test('plan: refuses legacy digit strategies with unmodelled variables or branching', () => {
+test('plan: a branching legacy digit program runs on the interpreter', () => {
+  // The root block is `trade` and the contract is a digit type, which used to
+  // force the plan engine. Structure decides instead: this program gates its
+  // purchase behind `controls_if`, so the interpreter owns it and the blocks the
+  // plan engine cannot model are no longer a refusal.
   const planned = planStrategy(xmlToTree(LEGACY_COMPLEX_DIGIT_DIFF_BOT));
-  assert.equal(planned.ok, false);
-  assert.ok(planned.unsupported.includes('controls_if'));
-  assert.ok(planned.reasons.some((reason) => reason.includes('variables_get')));
+  assert.equal(planned.ok, true, planned.reasons.join(' '));
+  assert.equal(planned.plan!.engine, 'interpreter');
+  assert.equal(planned.plan!.contractType, 'DIGITDIFF');
+  assert.equal(planned.plan!.symbol, 'R_50');
+  assert.deepEqual(planned.unsupported, []);
+});
+
+/**
+ * The real exported bot this build was asked to run.
+ *
+ * Read from disk rather than inlined so the test tracks the actual file: if the
+ * export changes, the assertions change with it instead of drifting against a
+ * stale copy.
+ */
+const DIGIT_DIFFERS_AI_XML = fs
+  .readFileSync(path.join(import.meta.dirname, '..', '..', 'Digit_Differs_AI.xml'), 'utf8')
+  // The harness market streams R_100; the export trades R_50.
+  .replace(/R_50/g, 'R_100');
+
+test('run: the exported Digit_Differs_AI bot reaches a digit entry end to end', async () => {
+  await withHarness(async ({ deps, user, store, setQuotes }) => {
+    const bot = await importFixture(store, user.id, DIGIT_DIFFERS_AI_XML);
+    setQuotes([1000.11, 1000.22, 1000.33, 1000.44, 1000.55]);
+
+    const run = await startBotRun(deps, user, bot.id, { accountId: 'DEMO' }, 'token');
+
+    // INITIALIZATION runs at start, so the strategy's own session caps exist
+    // before the first entry decision. Without it the gate could never open.
+    assert.ok(Object.keys(run.variables).length > 0, 'initialization should set variables');
+
+    const result = await tickBotRun(deps, user, run.runId, 'token', 'tick-1');
+    assert.equal(result.verdict, 'entry');
+    assert.equal(store.listTradeIntents(user.id).length, 1);
+  });
+});
+
+test('plan: a flat legacy digit export keeps the plan engine', () => {
+  // The older export has no decision block: its entry rule is the single
+  // purchase, which only the plan engine's digit path models.
+  const planned = planStrategy(xmlToTree(LEGACY_DIGIT_DIFF_BOT));
+  assert.equal(planned.ok, true, planned.reasons.join(' '));
+  assert.equal(planned.plan!.engine, 'plan');
 });
 
 test('evaluate: legacy DIGITDIFF resolves the latest digit for the barrier', () => {

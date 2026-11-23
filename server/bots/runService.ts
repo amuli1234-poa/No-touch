@@ -44,8 +44,11 @@ import {
 } from './evaluator.js';
 import {
   loadVariables,
+  resolveDigitPrediction,
   runAfterPurchase,
   runBeforePurchase,
+  runInitialization,
+  runTickAnalysis,
   saveVariables,
   UnsupportedBlockError,
   type ContractFacts,
@@ -53,6 +56,7 @@ import {
 } from './interpreter.js';
 import { contractFacts, isSettled, totalProfitOf } from './contractFacts.js';
 import type { BlockTree } from './tree.js';
+import { DIGIT_PREDICTION_TYPES } from '../execution/types.js';
 import type { DerivContractType } from '../execution/types.js';
 import type { BotRunEvent, BotRunRecord, BotRunStatus } from './runTypes.js';
 import { emptyCounters } from './runTypes.js';
@@ -308,6 +312,13 @@ export async function startBotRun(
     variables: {}
   };
 
+  // DBot runs `INITIALIZATION` once before its tick loop. Doing it here means the
+  // strategy's declarations (stake, session caps, counters) exist before the
+  // first entry decision, instead of every comparison reading an unset variable.
+  if (plan.engine === 'interpreter') {
+    seedInitialVariables(deps, bot, run);
+  }
+
   pushEvent(run, {
     at: startedAt,
     kind: 'start',
@@ -331,6 +342,43 @@ export async function startBotRun(
   });
 
   return run;
+}
+
+/**
+ * Runs the strategy's `INITIALIZATION` stack and stores the variables it sets.
+ *
+ * A block this build cannot execute is left to fail on the first tick instead of
+ * at start: the run record already exists by then, so the failure is reported the
+ * same way for every unsupported block.
+ */
+function seedInitialVariables(
+  deps: BotRunDeps,
+  bot: ImportedBotRecord,
+  run: BotRunRecord
+): void {
+  let tree: BlockTree;
+  try {
+    tree = loadBotTree(bot).tree;
+  } catch {
+    return;
+  }
+
+  const ctx: TickContext = {
+    ticks: deps.market.getTicks(run.symbol),
+    variables: loadVariables(null),
+    totalProfit: 0,
+    lastContract: null
+  };
+
+  let result;
+  try {
+    result = runInitialization(tree, ctx);
+  } catch (err) {
+    if (err instanceof UnsupportedBlockError) return;
+    throw err;
+  }
+
+  run.variables = saveVariables(result.variables);
 }
 
 /**
@@ -370,6 +418,9 @@ function interpretTick(
 
   let result;
   try {
+    // DBot runs tick analysis before the entry decision, and that analysis is
+    // where a program derives per-tick state the entry stack then reads.
+    runTickAnalysis(tree, ctx);
     result = runBeforePurchase(tree, ctx);
   } catch (err) {
     if (err instanceof UnsupportedBlockError) {
@@ -404,10 +455,24 @@ function interpretTick(
     );
   }
 
+  // A digit contract needs a prediction, and a program may have derived it into
+  // a variable. Placing the trade without one would submit a contract the
+  // strategy never asked for, so an unreadable digit declines this entry.
+  const digit = DIGIT_PREDICTION_TYPES.has(result.purchase as DerivContractType)
+    ? resolveDigitPrediction(tree, ctx)
+    : null;
+  if (DIGIT_PREDICTION_TYPES.has(result.purchase as DerivContractType) && digit === null) {
+    return {
+      kind: 'no_entry',
+      reason: `The strategy bought ${result.purchase} but its digit prediction could not be resolved.`
+    };
+  }
+
   return {
     kind: 'entry',
     direction: directionForContract(result.purchase as DerivContractType),
     contractType: result.purchase as DerivContractType,
+    ...(digit === null ? {} : { digit }),
     reason: `The strategy's program reached purchase for ${result.purchase}.`
   };
 }

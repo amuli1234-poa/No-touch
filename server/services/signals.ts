@@ -137,11 +137,16 @@ export async function createSignal(
   if (input.direction !== 'RISE' && input.direction !== 'FALL' && input.direction !== 'NONE') {
     throw new SignalError('invalid_direction', `Unsupported direction ${String(input.direction)}.`);
   }
-  if (input.direction === 'NONE') {
+  // A prediction family (digits, touch, accumulators) has no direction: the
+  // contract type is what the strategy chose. Rejecting `NONE` outright would
+  // refuse every such strategy, so only a directional signal must carry one.
+  if (input.direction === 'NONE' && !input.contractType) {
     throw new SignalError('invalid_direction', 'A NONE signal cannot be recorded as a tradeable signal.');
   }
-  // Validate the direction maps to a contract in the family before storing.
-  contractTypeFor(input.direction, input.contractFamily);
+  // Validate that a placeable contract type results before storing. An explicit
+  // type is checked against its family; only a directional signal falls back to
+  // the direction, which cannot choose a contract in a prediction family.
+  resolveContractType(input);
 
   const maxAge = options.maxPriceAgeMs ?? DEFAULT_MAX_PRICE_AGE_MS;
   const snapshot = market.getSnapshot(input.symbol);

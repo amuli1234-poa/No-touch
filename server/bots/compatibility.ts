@@ -118,7 +118,10 @@ export function evaluateCompatibility(
       details: ['The strategy configures a contract type that contradicts its own trade definition.']
     };
   }
+  // An interpreter plan resolves its digit and barrier per entry, so their
+  // absence here says nothing about whether the strategy can run.
   if (
+    plan.engine !== 'interpreter' &&
     DIGIT_PREDICTION_TYPES.has(plan.contractType) &&
     plan.digit === null &&
     !plan.dynamicDigit
@@ -129,7 +132,7 @@ export function evaluateCompatibility(
       details: ['Add a digit prediction between 0 and 9 to the trade options.']
     };
   }
-  if (plan.contractFamily === 'higher_lower' && plan.barrier === null) {
+  if (plan.engine !== 'interpreter' && plan.contractFamily === 'higher_lower' && plan.barrier === null) {
     return {
       state: 'invalid',
       reason: 'The strategy buys a barrier contract but names no barrier.',

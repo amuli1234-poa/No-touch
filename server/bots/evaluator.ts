@@ -364,7 +364,17 @@ export function planStrategy(tree: BlockTree): PlanResult {
   // A genuine DBot export runs its own program. The simplified dialect — a bare
   // value block in statement position — is modelled by the condition list below
   // instead, so existing bots keep trading exactly as before.
-  const useInterpreter = !legacyDigit && isDbProgram(tree);
+  //
+  // A `trade`-rooted digit strategy is the one case where the two overlap: the
+  // older flat export is a single `purchase` with a literal prediction, while a
+  // real program gates its purchase behind control flow and derives the digit at
+  // run time. `isDbProgram` tells them apart by structure, so the interpreter
+  // takes the program and the plan engine keeps the flat export.
+  const useInterpreter = isDbProgram(tree);
+  // The plan engine's legacy digit path reads the prediction statically. A
+  // program that derives it from a variable has no static prediction to read, so
+  // it stays on the interpreter even though its root block is `trade`.
+  const legacyDigitPlan = legacyDigit && !useInterpreter;
 
   // Check against the set for the engine that will actually run this strategy.
   // A branching program is fine for the interpreter and impossible for the plan
@@ -375,7 +385,7 @@ export function planStrategy(tree: BlockTree): PlanResult {
   // The legacy digit path reads its prediction from a `last_digit` block. A
   // `variables_get` there would stand in for the prediction, and that path does
   // not resolve variables, so it is refused rather than guessed at.
-  if (legacyDigit && all.some((node) => node.type === 'variables_get')) {
+  if (legacyDigitPlan && all.some((node) => node.type === 'variables_get')) {
     unsupportedTypes.push('variables_get');
   }
   const unsupported = [...new Set(unsupportedTypes)];
@@ -386,8 +396,13 @@ export function planStrategy(tree: BlockTree): PlanResult {
     reasons.push(`The strategy uses blocks this build cannot execute: ${named}.`);
   }
 
-  // Market and contract configuration come from the trade definition.
-  const definition = findTopLevel(tree, legacyDigit ? 'trade' : 'trade_definition');
+  // Market and contract configuration come from the trade definition. A program
+  // rooted at `trade` carries them as fields on that block instead of in child
+  // definition blocks, so both shapes are read here.
+  const definition =
+    findTopLevel(tree, legacyDigitPlan ? 'trade' : 'trade_definition') ??
+    legacyTrade ??
+    findTopLevel(tree, 'trade_definition');
   const marketBlock = all.find((n) => n.type === 'trade_definition_market');
   const symbol =
     fieldValue(marketBlock, 'SYMBOL_LIST') ??
@@ -396,11 +411,15 @@ export function planStrategy(tree: BlockTree): PlanResult {
 
   const contractBlock = all.find((n) => n.type === 'trade_definition_contracttype');
   const contractTypeRaw =
-    (legacyDigit ? fieldValue(definition, 'TYPE_LIST') : fieldValue(contractBlock, 'TYPE_LIST')) ?? '';
+    fieldValue(contractBlock, 'TYPE_LIST') ??
+    fieldValue(legacyTrade, 'TYPE_LIST') ??
+    fieldValue(definition, 'TYPE_LIST') ??
+    '';
 
   const candleBlock = all.find((n) => n.type === 'trade_definition_candleinterval');
   const candleInterval =
-    (legacyDigit ? fieldValue(definition, 'CANDLEINTERVAL_LIST') : fieldValue(candleBlock, 'CANDLEINTERVAL_LIST')) ??
+    fieldValue(candleBlock, 'CANDLEINTERVAL_LIST') ??
+    fieldValue(legacyTrade, 'CANDLEINTERVAL_LIST') ??
     null;
 
   if (!symbol) reasons.push('The strategy does not name a trading symbol.');
@@ -412,9 +431,10 @@ export function planStrategy(tree: BlockTree): PlanResult {
     );
   }
 
-  // Trade options: stake, currency, duration.
-  const options = all.find((n) =>
-    legacyDigit ? n.type === 'tradeOptions' : n.type === 'trade_definition_tradeoptions'
+  // Trade options: stake, currency, duration. Both shapes are accepted, because
+  // a `trade`-rooted program keeps them in a `tradeOptions` block.
+  const options = all.find(
+    (n) => n.type === 'tradeOptions' || n.type === 'trade_definition_tradeoptions'
   );
   const stake = options ? inputNumber(options, 'AMOUNT') : null;
   const duration = options ? inputNumber(options, 'DURATION') : null;
@@ -494,7 +514,7 @@ export function planStrategy(tree: BlockTree): PlanResult {
   // Legacy digit exports resolve their prediction through a variable or from
   // the latest digit. WickSentinel supports the deterministic tick-path here;
   // control-flow and martingale branches are not silently interpreted.
-  if (legacyDigit) {
+  if (legacyDigitPlan) {
     const contractType = contractTypeRaw as DerivContractType;
     if (CONTRACT_TYPES.has(contractType)) {
       conditions.push({ kind: 'digit_prediction', contractType });
@@ -511,10 +531,12 @@ export function planStrategy(tree: BlockTree): PlanResult {
   if (!beforePurchase) reasons.push('The strategy has no before-purchase block.');
 
   // The purchase block must name the contract the trade definition configures,
-  // or the two disagree and the trade would be meaningless.
-  const purchaseBlock = all.find((n) => n.type === 'purchase');
-  const purchaseType = fieldValue(purchaseBlock, 'PURCHASE_LIST');
-  if (purchaseType && contractTypeRaw && purchaseType !== contractTypeRaw) {
+  // or the two disagree and the trade would be meaningless. A program may choose
+  // between contract types at run time, so the mismatch only binds the plan
+  // engine, which places the trade definition's type unconditionally.
+  const purchaseBlocks = all.filter((n) => n.type === 'purchase');
+  const purchaseType = fieldValue(purchaseBlocks[0], 'PURCHASE_LIST');
+  if (!useInterpreter && purchaseType && contractTypeRaw && purchaseType !== contractTypeRaw) {
     reasons.push(
       `The purchase block buys ${purchaseType} but the trade definition configures ${contractTypeRaw}.`
     );
@@ -527,13 +549,17 @@ export function planStrategy(tree: BlockTree): PlanResult {
   const contractType = contractTypeRaw as DerivContractType;
   const baseFamily = CONTRACT_TYPE_FAMILY[contractType];
   const digit = DIGIT_PREDICTION_TYPES.has(contractType) ? readDigitPrediction(all) : null;
-  const predictionOptions = all.find((n) =>
-    legacyDigit ? n.type === 'tradeOptions' : n.type === 'trade_definition_tradeoptions'
+  const predictionOptions = all.find(
+    (n) => n.type === 'tradeOptions' || n.type === 'trade_definition_tradeoptions'
   );
+  // A program may derive its prediction at run time, from tick analysis or a
+  // martingale variable. That digit cannot be read statically, so it is marked
+  // dynamic and resolved per entry by the interpreter rather than refused here.
   const dynamicDigit =
-    legacyDigit &&
     DIGIT_PREDICTION_TYPES.has(contractType) &&
-    predictionOptions?.inputs.find((input) => input.name === 'PREDICTION')?.block?.type === 'last_digit';
+    (useInterpreter ||
+      predictionOptions?.inputs.find((input) => input.name === 'PREDICTION')?.block?.type ===
+        'last_digit');
   const barrier = readBarrier(all);
 
   // A CALL/PUT strategy that configures a barrier is a Higher/Lower strategy:
@@ -543,10 +569,27 @@ export function planStrategy(tree: BlockTree): PlanResult {
   const contractFamily: ContractFamily =
     baseFamily === 'rise_fall' && barrier !== null ? 'higher_lower' : baseFamily;
 
-  if (DIGIT_PREDICTION_TYPES.has(contractType) && digit === null && !dynamicDigit) {
+  // A program supplies its digit and barrier per entry, so a missing static one
+  // is not a defect: refusing here would reject a strategy that names them in a
+  // variable. The plan engine reads them statically and must find them.
+  //
+  // "Resolved at run time" still requires somewhere to resolve it *from*. A digit
+  // contract with no prediction input at all can never produce a digit, so it is
+  // refused here rather than declining every entry for the life of the run.
+  const hasPredictionInput = predictionOptions?.inputs.some(
+    (input) => input.name === 'PREDICTION' && input.block !== null
+  );
+  if (
+    useInterpreter &&
+    DIGIT_PREDICTION_TYPES.has(contractType) &&
+    !hasPredictionInput
+  ) {
     reasons.push('The strategy buys a digit contract but names no digit prediction.');
   }
-  if (contractFamily === 'higher_lower' && barrier === null) {
+  if (!useInterpreter && DIGIT_PREDICTION_TYPES.has(contractType) && digit === null && !dynamicDigit) {
+    reasons.push('The strategy buys a digit contract but names no digit prediction.');
+  }
+  if (!useInterpreter && contractFamily === 'higher_lower' && barrier === null) {
     reasons.push('The strategy buys a barrier contract but names no barrier.');
   }
   if (reasons.length > 0) {

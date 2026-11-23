@@ -1,0 +1,1152 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<xml xmlns="http://www.w3.org/1999/xhtml" collection="false">
+  <variables>
+    <variable type="" id="take_profit_limit">Take Profit (USD)</variable>
+    <variable type="" id="stop_loss_limit">Stop Loss (USD)</variable>
+    <variable type="" id="base_stake">Base Stake (USD)</variable>
+    <variable type="" id="current_stake">Current Stake (USD)</variable>
+    <variable type="" id="loss_streak">Consecutive Losses</variable>
+    <variable type="" id="max_consecutive_losses">Maximum Consecutive Losses</variable>
+    <variable type="" id="current_prediction">Current Prediction</variable>
+    <variable type="" id="compound_step_percent">Compound Step (%)</variable>
+    <variable type="" id="compound_wins_before_reset">Compound Wins Before Reset</variable>
+    <variable type="" id="compound_wins_count">Compound Wins Count</variable>
+    <variable type="" id="wait_after_trade_seconds">Wait After Batch (Seconds)</variable>
+    <variable type="" id="martingale_multiplier">Martingale Multiplier</variable>
+    <variable type="" id="contracts_per_batch">Contracts Per Batch</variable>
+    <variable type="" id="max_total_contracts">Maximum Total Contracts (Session)</variable>
+    <variable type="" id="batch_contract_count">Batch Contracts Count</variable>
+    <variable type="" id="total_contract_count">Total Contracts Count</variable>
+    <variable type="" id="trades_remaining_after_pair">Trades Remaining After Pair Trigger</variable>
+    <variable type="" id="trigger_pair_digit_end_1">Trigger Pair Digit (End 1)</variable>
+    <variable type="" id="trigger_pair_digit_end_2">Trigger Pair Digit (End 2)</variable>
+    <variable type="" id="pair_detected_during_wait">Pair Detected During Wait</variable>
+    <variable type="" id="waiting_for_digit_after_pair">Waiting For Digit After Pair</variable>
+  </variables>
+  <block type="trade" id="trade" x="0" y="0">
+    <field name="MARKET_LIST">volidx</field>
+    <field name="SUBMARKET_LIST">random_index</field>
+    <field name="SYMBOL_LIST">R_50</field>
+    <field name="TRADETYPECAT_LIST">digits</field>
+    <field name="TRADETYPE_LIST">matchesdiffers</field>
+    <field name="TYPE_LIST">DIGITDIFF</field>
+    <field name="CANDLEINTERVAL_LIST">60</field>
+    <field name="TIME_MACHINE_ENABLED">FALSE</field>
+    <field name="RESTARTONERROR">TRUE</field>
+    <statement name="INITIALIZATION">
+      <block type="variables_set" id="init_base_stake">
+        <field name="VAR" id="base_stake" variabletype="">Base Stake (USD)</field>
+        <value name="VALUE">
+          <block type="math_number" id="base_stake_default">
+            <field name="NUM">0.35</field>
+          </block>
+        </value>
+        <next>
+          <block type="variables_set" id="set_initial_current_stake">
+            <field name="VAR" id="current_stake" variabletype="">Current Stake (USD)</field>
+            <value name="VALUE">
+              <block type="variables_get" id="get_base_stake_init">
+                <field name="VAR" id="base_stake" variabletype="">Base Stake (USD)</field>
+              </block>
+            </value>
+            <next>
+              <block type="variables_set" id="set_take_profit">
+                <field name="VAR" id="take_profit_limit" variabletype="">Take Profit (USD)</field>
+                <value name="VALUE">
+                  <block type="math_number" id="take_profit_default">
+                    <field name="NUM">5</field>
+                  </block>
+                </value>
+                <next>
+                  <block type="variables_set" id="set_stop_loss">
+                    <field name="VAR" id="stop_loss_limit" variabletype="">Stop Loss (USD)</field>
+                    <value name="VALUE">
+                      <block type="math_number" id="stop_loss_default">
+                        <field name="NUM">3</field>
+                      </block>
+                    </value>
+                    <next>
+                      <block type="variables_set" id="set_wait_after_trade_seconds">
+                        <field name="VAR" id="wait_after_trade_seconds" variabletype="">Wait After Batch (Seconds)</field>
+                        <value name="VALUE">
+                          <block type="math_number" id="wait_after_trade_seconds_default">
+                            <field name="NUM">10</field>
+                          </block>
+                        </value>
+                        <next>
+                          <block type="variables_set" id="init_current_prediction">
+                            <field name="VAR" id="current_prediction" variabletype="">Current Prediction</field>
+                            <value name="VALUE">
+                              <block type="last_digit" id="init_previous_tick_digit"/>
+                            </value>
+                            <next>
+                              <block type="variables_set" id="set_max_consecutive_losses">
+                                <field name="VAR" id="max_consecutive_losses" variabletype="">Maximum Consecutive Losses</field>
+                                <value name="VALUE">
+                                  <block type="math_number" id="max_losses_default">
+                                    <field name="NUM">3</field>
+                                  </block>
+                                </value>
+                                <next>
+                                  <block type="variables_set" id="set_loss_streak">
+                                    <field name="VAR" id="loss_streak" variabletype="">Consecutive Losses</field>
+                                    <value name="VALUE">
+                                      <block type="math_number" id="loss_streak_default">
+                                        <field name="NUM">0</field>
+                                      </block>
+                                    </value>
+                                    <next>
+                                      <block type="variables_set" id="set_compound_wins_count">
+                                        <field name="VAR" id="compound_wins_count" variabletype="">Compound Wins Count</field>
+                                        <value name="VALUE">
+                                          <block type="math_number" id="compound_wins_count_default">
+                                            <field name="NUM">0</field>
+                                          </block>
+                                        </value>
+                                        <next>
+                                          <block type="variables_set" id="set_compound_wins_before_reset">
+                                            <field name="VAR" id="compound_wins_before_reset" variabletype="">Compound Wins Before Reset</field>
+                                            <value name="VALUE">
+                                              <block type="math_number" id="compound_wins_before_reset_default">
+                                                <field name="NUM">5</field>
+                                              </block>
+                                            </value>
+                                            <next>
+                                              <block type="variables_set" id="set_compound_step_percent">
+                                                <field name="VAR" id="compound_step_percent" variabletype="">Compound Step (%)</field>
+                                                <value name="VALUE">
+                                                  <block type="math_number" id="compound_step_percent_default">
+                                                    <field name="NUM">100</field>
+                                                  </block>
+                                                </value>
+                                                <next>
+                                                  <block type="variables_set" id="set_martingale_multiplier">
+                                                    <field name="VAR" id="martingale_multiplier" variabletype="">Martingale Multiplier</field>
+                                                    <value name="VALUE">
+                                                      <block type="math_number" id="martingale_multiplier_default">
+                                                        <field name="NUM">2</field>
+                                                      </block>
+                                                    </value>
+                                                    <next>
+                                                      <block type="variables_set" id="set_contracts_per_batch">
+                                                        <field name="VAR" id="contracts_per_batch" variabletype="">Contracts Per Batch</field>
+                                                        <value name="VALUE">
+                                                          <block type="math_number" id="contracts_per_batch_default">
+                                                            <field name="NUM">1</field>
+                                                          </block>
+                                                        </value>
+                                                        <next>
+                                                          <block type="variables_set" id="set_max_total_contracts">
+                                                            <field name="VAR" id="max_total_contracts" variabletype="">Maximum Total Contracts (Session)</field>
+                                                            <value name="VALUE">
+                                                            <block type="math_number" id="max_total_contracts_default">
+                                                            <field name="NUM">100</field>
+                                                            </block>
+                                                            </value>
+                                                            <next>
+                                                            <block type="variables_set" id="init_batch_contract_count">
+                                                            <field name="VAR" id="batch_contract_count" variabletype="">Batch Contracts Count</field>
+                                                            <value name="VALUE">
+                                                            <block type="math_number" id="batch_contract_count_default">
+                                                            <field name="NUM">0</field>
+                                                            </block>
+                                                            </value>
+                                                            <next>
+                                                            <block type="variables_set" id="init_total_contract_count">
+                                                            <field name="VAR" id="total_contract_count" variabletype="">Total Contracts Count</field>
+                                                            <value name="VALUE">
+                                                            <block type="math_number" id="total_contract_count_default">
+                                                            <field name="NUM">0</field>
+                                                            </block>
+                                                            </value>
+                                                            <next>
+                                                            <block type="variables_set" id="init_trades_remaining_after_pair">
+                                                            <field name="VAR" variabletype="" id="trades_remaining_after_pair">trades_remaining_after_pair</field>
+                                                            <value name="VALUE">
+                                                            <block type="variables_get" id="init_trades_remaining_from_configured_batch">
+                                                            <field name="VAR" id="contracts_per_batch" variabletype="">Contracts Per Batch</field>
+                                                            </block>
+                                                            </value>
+                                                            <next>
+                                                            <block type="variables_set" id="init_trigger_pair_end_1">
+                                                            <field name="VAR" id="trigger_pair_digit_end_1" variabletype="">Trigger Pair Digit (End 1)</field>
+                                                            <value name="VALUE">
+                                                            <block type="math_number" id="init_trigger_pair_end_1_zero">
+                                                            <field name="NUM">0</field>
+                                                            </block>
+                                                            </value>
+                                                            <next>
+                                                            <block type="variables_set" id="init_trigger_pair_end_2">
+                                                            <field name="VAR" id="trigger_pair_digit_end_2" variabletype="">Trigger Pair Digit (End 2)</field>
+                                                            <value name="VALUE">
+                                                            <block type="math_number" id="init_trigger_pair_end_2_zero">
+                                                            <field name="NUM">0</field>
+                                                            </block>
+                                                            </value>
+                                                            <next>
+                                                            <block type="variables_set" id="init_pair_detected_during_wait">
+                                                            <field name="VAR" id="pair_detected_during_wait" variabletype="">Pair Detected During Wait</field>
+                                                            <value name="VALUE">
+                                                            <block type="logic_boolean" id="init_pair_detected_false">
+                                                            <field name="BOOL">FALSE</field>
+                                                            </block>
+                                                            </value>
+                                                            <next>
+                                                            <block type="variables_set" id="init_waiting_for_digit_after_pair">
+                                                            <field name="VAR" id="waiting_for_digit_after_pair" variabletype="">Waiting For Digit After Pair</field>
+                                                            <value name="VALUE">
+                                                            <block type="logic_boolean" id="init_waiting_after_pair_false">
+                                                            <field name="BOOL">FALSE</field>
+                                                            </block>
+                                                            </value>
+                                                            </block>
+                                                            </next>
+                                                            </block>
+                                                            </next>
+                                                            </block>
+                                                            </next>
+                                                            </block>
+                                                            </next>
+                                                            </block>
+                                                            </next>
+                                                            </block>
+                                                            </next>
+                                                            </block>
+                                                            </next>
+                                                          </block>
+                                                        </next>
+                                                      </block>
+                                                    </next>
+                                                  </block>
+                                                </next>
+                                              </block>
+                                            </next>
+                                          </block>
+                                        </next>
+                                      </block>
+                                    </next>
+                                  </block>
+                                </next>
+                              </block>
+                            </next>
+                          </block>
+                        </next>
+                      </block>
+                    </next>
+                  </block>
+                </next>
+              </block>
+            </next>
+          </block>
+        </next>
+      </block>
+    </statement>
+    <statement name="SUBMARKET">
+      <block type="tradeOptions" id="trade_options">
+        <field name="DURATIONTYPE_LIST">t</field>
+        <field name="CURRENCY_LIST">USD</field>
+        <value name="DURATION">
+          <shadow type="math_number" id="duration_value">
+            <field name="NUM">1</field>
+          </shadow>
+          <block type="math_number" id="duration_num">
+            <field name="NUM">1</field>
+          </block>
+        </value>
+        <value name="AMOUNT">
+          <shadow type="math_number" id="stake_fallback">
+            <field name="NUM">0.35</field>
+          </shadow>
+          <block type="variables_get" id="get_live_stake">
+            <field name="VAR" id="current_stake" variabletype="">Current Stake (USD)</field>
+          </block>
+        </value>
+        <value name="PREDICTION">
+          <block type="variables_get" id="prediction_normal_current_digit">
+            <field name="VAR" id="current_prediction" variabletype="">Current Prediction</field>
+          </block>
+        </value>
+      </block>
+    </statement>
+  </block>
+  <block type="before_purchase" id="before_purchase" x="0" y="700">
+    <statement name="BEFOREPURCHASE_STACK">
+      <block type="controls_if" id="gate_purchase_by_total_contract_limit">
+        <value name="IF0">
+          <block type="logic_compare" id="allow_purchase_below_total_limit">
+            <field name="OP">LT</field>
+            <value name="A">
+              <block type="variables_get" id="get_total_count_before_purchase">
+                <field name="VAR" id="total_contract_count" variabletype="">Total Contracts Count</field>
+              </block>
+            </value>
+            <value name="B">
+              <block type="variables_get" id="get_total_limit_before_purchase">
+                <field name="VAR" id="max_total_contracts" variabletype="">Maximum Total Contracts (Session)</field>
+              </block>
+            </value>
+          </block>
+        </value>
+        <statement name="DO0">
+          <block type="controls_if" id="check_active_pair_trigger_sequence">
+            <mutation else="1"/>
+            <value name="IF0">
+              <block type="logic_compare" id="pair_trigger_sequence_has_trades_remaining">
+                <field name="OP">GT</field>
+                <value name="A">
+                  <block type="variables_get" id="get_trades_remaining_before_purchase">
+                    <field name="VAR" variabletype="" id="trades_remaining_after_pair">trades_remaining_after_pair</field>
+                  </block>
+                </value>
+                <value name="B">
+                  <block type="math_number" id="zero_trades_remaining_before_purchase">
+                    <field name="NUM">0</field>
+                  </block>
+                </value>
+              </block>
+            </value>
+            <statement name="DO0">
+              <block type="purchase" id="purchase_next_in_active_pair_sequence">
+                <field name="PURCHASE_LIST">DIGITDIFF</field>
+              </block>
+            </statement>
+            <statement name="ELSE">
+              <block type="controls_if" id="branch_on_pair_seen_during_five_second_wait">
+                <mutation else="1"/>
+                <value name="IF0">
+                  <block type="logic_compare" id="compare_pair_flag_for_batch_start">
+                    <field name="OP">EQ</field>
+                    <value name="A">
+                      <block type="variables_get" id="get_pair_detected_before_batch_start">
+                        <field name="VAR" id="pair_detected_during_wait" variabletype="">Pair Detected During Wait</field>
+                      </block>
+                    </value>
+                    <value name="B">
+                      <block type="logic_boolean" id="pair_detected_true_for_batch_start">
+                        <field name="BOOL">TRUE</field>
+                      </block>
+                    </value>
+                  </block>
+                </value>
+                <statement name="DO0">
+                  <block type="variables_set" id="start_three_trade_batch_after_pair">
+                    <field name="VAR" id="trades_remaining_after_pair" variabletype="">trades_remaining_after_pair</field>
+                    <value name="VALUE">
+                      <block type="variables_get" id="remaining_after_pair_from_configured_batch">
+                        <field name="VAR" id="contracts_per_batch" variabletype="">Contracts Per Batch</field>
+                      </block>
+                    </value>
+                    <next>
+                      <block type="variables_set" id="clear_pair_detected_after_trigger">
+                        <field name="VAR" id="pair_detected_during_wait" variabletype="">Pair Detected During Wait</field>
+                        <value name="VALUE">
+                          <block type="logic_boolean" id="pair_flag_reset_after_trigger">
+                            <field name="BOOL">FALSE</field>
+                          </block>
+                        </value>
+                        <next>
+                          <block type="variables_set" id="clear_post_pair_flag_after_trigger">
+                            <field name="VAR" id="waiting_for_digit_after_pair" variabletype="">Waiting For Digit After Pair</field>
+                            <value name="VALUE">
+                              <block type="logic_boolean" id="post_pair_flag_reset_after_trigger">
+                                <field name="BOOL">FALSE</field>
+                              </block>
+                            </value>
+                            <next>
+                              <block type="timeout" id="wait_five_seconds_after_matching_pair"><statement name="TIMEOUTSTACK"><block type="purchase" id="purchase_next_three_batch_after_pair"><field name="PURCHASE_LIST">DIGITDIFF</field></block>
+                            </statement><value name="SECONDS"><shadow type="math_number" id="pair_wait_seconds_fallback"><field name="NUM">5</field></shadow></value></block></next>
+                          </block>
+                        </next>
+                      </block>
+                    </next>
+                  </block>
+                </statement>
+                <statement name="ELSE">
+                  <block type="variables_set" id="refresh_prediction_after_no_pair_wait">
+                    <field name="VAR" id="current_prediction" variabletype="">Current Prediction</field>
+                    <value name="VALUE">
+                      <block type="last_digit" id="read_latest_digit_after_no_pair_timeout"/>
+                    </value>
+                    <next>
+                      <block type="variables_set" id="start_three_trade_batch_after_no_pair">
+                        <field name="VAR" id="trades_remaining_after_pair" variabletype="">trades_remaining_after_pair</field>
+                        <value name="VALUE">
+                          <block type="variables_get" id="remaining_after_timeout_from_configured_batch">
+                            <field name="VAR" id="contracts_per_batch" variabletype="">Contracts Per Batch</field>
+                          </block>
+                        </value>
+                        <next>
+                          <block type="notify" id="no_pair_timeout_journal_notification">
+                            <field name="NOTIFICATION_TYPE">info</field>
+                            <field name="NOTIFICATION_SOUND">silent</field>
+                            <value name="MESSAGE">
+                              <block type="text_join" id="no_pair_timeout_journal_text">
+                                <mutation items="4"/>
+                                <value name="ADD0">
+                                  <block type="text" id="no_pair_timeout_journal_prefix">
+                                    <field name="TEXT">DIGIT DIFFERS AI | NO MATCHING PAIR IN 10 SECONDS | STARTING NEXT BATCH (</field>
+                                  </block>
+                                </value>
+                                <value name="ADD1">
+                                  <block type="variables_get" id="no_pair_journal_batch_size">
+                                    <field name="VAR" id="contracts_per_batch" variabletype="">Contracts Per Batch</field>
+                                  </block>
+                                </value>
+                                <value name="ADD2">
+                                  <block type="text" id="no_pair_journal_middle">
+                                    <field name="TEXT"> CONTRACTS) | CURRENT DIGIT: </field>
+                                  </block>
+                                </value>
+                                <value name="ADD3">
+                                  <block type="variables_get" id="no_pair_timeout_journal_digit">
+                                    <field name="VAR" id="current_prediction" variabletype="">Current Prediction</field>
+                                  </block>
+                                </value>
+                              </block>
+                            </value>
+                            <next>
+                              <block type="variables_set" id="clear_pair_flag_after_timeout">
+                                <field name="VAR" id="pair_detected_during_wait" variabletype="">Pair Detected During Wait</field>
+                                <value name="VALUE">
+                                  <block type="logic_boolean" id="pair_flag_reset_after_timeout">
+                                    <field name="BOOL">FALSE</field>
+                                  </block>
+                                </value>
+                                <next>
+                                  <block type="variables_set" id="clear_post_pair_flag_after_timeout">
+                                    <field name="VAR" id="waiting_for_digit_after_pair" variabletype="">Waiting For Digit After Pair</field>
+                                    <value name="VALUE">
+                                      <block type="logic_boolean" id="post_pair_flag_reset_after_timeout">
+                                        <field name="BOOL">FALSE</field>
+                                      </block>
+                                    </value>
+                                    <next>
+                                      <block type="purchase" id="purchase_next_three_batch_after_timeout"><field name="PURCHASE_LIST">DIGITDIFF</field></block>
+                                    </next>
+                                  </block>
+                                </next>
+                              </block>
+                            </next>
+                          </block>
+                        </next>
+                      </block>
+                    </next>
+                  </block>
+                </statement>
+              </block>
+            </statement>
+          </block>
+        </statement>
+      </block>
+    </statement>
+  </block>
+  <block type="after_purchase" id="after_purchase" x="0" y="820">
+    <statement name="AFTERPURCHASE_STACK">
+      <block type="controls_if" id="handle_win_or_loss_with_martingale">
+        <mutation else="1"/>
+        <value name="IF0">
+          <block type="contract_check_result" id="contract_won">
+            <field name="CHECK_RESULT">win</field>
+          </block>
+        </value>
+        <statement name="DO0">
+          <block type="notify" id="trade_win_sound_notification"><field name="NOTIFICATION_TYPE">success</field><field name="NOTIFICATION_SOUND">earned-money</field><value name="MESSAGE"><shadow type="text" id="trade_win_sound_message_shadow"><field name="TEXT">DIGIT DIFFERS AI | CONTRACT WON</field></shadow></value><next><block type="controls_if" id="choose_martingale_reset_or_compound">
+            <mutation else="1"/>
+            <value name="IF0">
+              <block type="logic_compare" id="has_previous_loss">
+                <field name="OP">GT</field>
+                <value name="A">
+                  <block type="variables_get" id="get_loss_streak_for_win_branch">
+                    <field name="VAR" id="loss_streak" variabletype="">Consecutive Losses</field>
+                  </block>
+                </value>
+                <value name="B">
+                  <block type="math_number" id="zero_loss_for_branch">
+                    <field name="NUM">0</field>
+                  </block>
+                </value>
+              </block>
+            </value>
+            <statement name="DO0">
+              <block type="variables_set" id="reset_stake_to_base_after_martingale_win">
+                <field name="VAR" id="current_stake" variabletype="">Current Stake (USD)</field>
+                <value name="VALUE">
+                  <block type="variables_get" id="get_base_stake_after_martingale_win">
+                    <field name="VAR" id="base_stake" variabletype="">Base Stake (USD)</field>
+                  </block>
+                </value>
+                <next>
+                  <block type="variables_set" id="reset_compound_count_after_martingale_win">
+                    <field name="VAR" id="compound_wins_count" variabletype="">Compound Wins Count</field>
+                    <value name="VALUE">
+                      <block type="math_number" id="compound_count_zero_after_martingale_win">
+                        <field name="NUM">0</field>
+                      </block>
+                    </value>
+                    <next>
+                      <block type="variables_set" id="reset_loss_streak_after_martingale_win">
+                        <field name="VAR" id="loss_streak" variabletype="">Consecutive Losses</field>
+                        <value name="VALUE">
+                          <block type="math_number" id="loss_streak_zero_after_martingale_win">
+                            <field name="NUM">0</field>
+                          </block>
+                        </value>
+                        <next>
+                          <block type="variables_set" id="refresh_prediction_after_martingale_win">
+                            <field name="VAR" id="current_prediction" variabletype="">Current Prediction</field>
+                            <value name="VALUE">
+                              <block type="last_digit" id="refresh_digit_after_martingale_win"/>
+                            </value>
+                          </block>
+                        </next>
+                      </block>
+                    </next>
+                  </block>
+                </next>
+              </block>
+            </statement>
+            <statement name="ELSE">
+              <block type="variables_set" id="compound_stake_after_win">
+                <field name="VAR" id="current_stake" variabletype="">Current Stake (USD)</field>
+                <value name="VALUE">
+                  <block type="math_arithmetic" id="add_contract_profit_to_previous_stake">
+                    <field name="OP">ADD</field>
+                    <value name="A">
+                      <block type="variables_get" id="get_previous_stake_for_compounding">
+                        <field name="VAR" id="current_stake" variabletype="">Current Stake (USD)</field>
+                      </block>
+                    </value>
+                    <value name="B">
+                      <block type="math_arithmetic" id="apply_compound_step_percent">
+                        <field name="OP">DIVIDE</field>
+                        <value name="A">
+                          <block type="math_arithmetic" id="profit_times_compound_step">
+                            <field name="OP">MULTIPLY</field>
+                            <value name="A">
+                              <block type="read_details" id="read_settled_contract_profit">
+                                <field name="DETAIL_INDEX">4</field>
+                              </block>
+                            </value>
+                            <value name="B">
+                              <block type="variables_get" id="get_compound_step_percent">
+                                <field name="VAR" id="compound_step_percent" variabletype="">Compound Step (%)</field>
+                              </block>
+                            </value>
+                          </block>
+                        </value>
+                        <value name="B">
+                          <block type="math_number" id="compound_percent_base">
+                            <field name="NUM">100</field>
+                          </block>
+                        </value>
+                      </block>
+                    </value>
+                  </block>
+                </value>
+                <next>
+                  <block type="math_change" id="increment_compound_wins_count">
+                    <field name="VAR" id="compound_wins_count" variabletype="">Compound Wins Count</field>
+                    <value name="DELTA">
+                      <shadow type="math_number" id="increment_compound_wins_count_shadow">
+                        <field name="NUM">1</field>
+                      </shadow>
+                    </value>
+                  <next><block type="controls_if" id="check_compound_wins_reset_limit">
+                    <value name="IF0">
+                      <block type="logic_compare" id="compare_compound_wins_to_reset_limit">
+                        <field name="OP">GTE</field>
+                        <value name="A">
+                          <block type="variables_get" id="get_compound_wins_count_for_reset">
+                            <field name="VAR" id="compound_wins_count" variabletype="">Compound Wins Count</field>
+                          </block>
+                        </value>
+                        <value name="B">
+                          <block type="variables_get" id="get_compound_wins_reset_limit">
+                            <field name="VAR" id="compound_wins_before_reset" variabletype="">Compound Wins Before Reset</field>
+                          </block>
+                        </value>
+                      </block>
+                    </value>
+                    <statement name="DO0">
+                      <block type="variables_set" id="reset_compounded_stake_after_configured_wins">
+                        <field name="VAR" id="current_stake" variabletype="">Current Stake (USD)</field>
+                        <value name="VALUE">
+                          <block type="variables_get" id="get_base_stake_after_compound_limit">
+                            <field name="VAR" id="base_stake" variabletype="">Base Stake (USD)</field>
+                          </block>
+                        </value>
+                        <next>
+                          <block type="variables_set" id="reset_compound_wins_counter_after_limit">
+                            <field name="VAR" id="compound_wins_count" variabletype="">Compound Wins Count</field>
+                            <value name="VALUE">
+                              <block type="math_number" id="compound_wins_count_zero_after_limit">
+                                <field name="NUM">0</field>
+                              </block>
+                            </value>
+                          </block>
+                        </next>
+                      </block>
+                    </statement>
+                  <next><block type="variables_set" id="reset_losses_after_win">
+                    <field name="VAR" id="loss_streak" variabletype="">Consecutive Losses</field>
+                    <value name="VALUE">
+                      <block type="math_number" id="zero_losses">
+                        <field name="NUM">0</field>
+                      </block>
+                    </value>
+                    <next>
+                      <block type="variables_set" id="refresh_normal_prediction_after_win">
+                        <field name="VAR" id="current_prediction" variabletype="">Current Prediction</field>
+                        <value name="VALUE">
+                          <block type="last_digit" id="refresh_latest_previous_tick_digit"/>
+                        </value>
+                      </block>
+                    </next>
+                  </block>
+                </next></block>
+                  </next></block>
+                  </next>
+              </block>
+            </statement>
+          </block>
+        </next></block></statement>
+        <statement name="ELSE">
+          <block type="notify" id="trade_loss_sound_notification"><field name="NOTIFICATION_TYPE">error</field><field name="NOTIFICATION_SOUND">error</field><value name="MESSAGE"><shadow type="text" id="trade_loss_sound_message_shadow"><field name="TEXT">DIGIT DIFFERS AI | CONTRACT LOST | MARTINGALE APPLIED</field></shadow></value><next><block type="variables_set" id="apply_martingale_after_loss">
+            <field name="VAR" id="current_stake" variabletype="">Current Stake (USD)</field>
+            <value name="VALUE">
+              <block type="math_arithmetic" id="multiply_stake_by_martingale">
+                <field name="OP">MULTIPLY</field>
+                <value name="A">
+                  <block type="variables_get" id="get_current_stake_for_martingale">
+                    <field name="VAR" id="current_stake" variabletype="">Current Stake (USD)</field>
+                  </block>
+                </value>
+                <value name="B">
+                  <block type="variables_get" id="get_martingale_multiplier">
+                    <field name="VAR" id="martingale_multiplier" variabletype="">Martingale Multiplier</field>
+                  </block>
+                </value>
+              </block>
+            </value>
+            <next>
+              <block type="variables_set" id="reset_compound_count_after_loss">
+                <field name="VAR" id="compound_wins_count" variabletype="">Compound Wins Count</field>
+                <value name="VALUE">
+                  <block type="math_number" id="compound_wins_count_zero_after_loss">
+                    <field name="NUM">0</field>
+                  </block>
+                </value>
+                <next>
+                  <block type="math_change" id="increment_loss_streak">
+                    <field name="VAR" id="loss_streak" variabletype="">Consecutive Losses</field>
+                    <value name="DELTA">
+                      <shadow type="math_number" id="increment_loss_streak_shadow">
+                        <field name="NUM">1</field>
+                      </shadow>
+                    </value>
+                    <next>
+                      <block type="variables_set" id="refresh_prediction_after_loss">
+                        <field name="VAR" id="current_prediction" variabletype="">Current Prediction</field>
+                        <value name="VALUE">
+                          <block type="last_digit" id="refresh_digit_after_loss"/>
+                        </value>
+                      </block>
+                    </next>
+                  </block>
+                </next>
+              </block>
+            </next>
+          </block>
+        </next></block></statement>
+        <next>
+          <block type="math_change" id="decrement_pair_sequence_after_contract">
+            <field name="VAR" variabletype="" id="trades_remaining_after_pair">trades_remaining_after_pair</field>
+            <value name="DELTA">
+              <block type="math_number" id="minus_one_pair_sequence_delta">
+                <field name="NUM">-1</field>
+              </block>
+            </value>
+            <next>
+              <block type="math_change" id="increment_total_contract_count">
+                <field name="VAR" id="total_contract_count" variabletype="">Total Contracts Count</field>
+                <value name="DELTA">
+                  <shadow type="math_number" id="increment_total_contract_count_shadow">
+                    <field name="NUM">1</field>
+                  </shadow>
+                </value>
+                <next>
+                  <block type="math_change" id="increment_batch_contract_count">
+                    <field name="VAR" id="batch_contract_count" variabletype="">Batch Contracts Count</field>
+                    <value name="DELTA">
+                      <shadow type="math_number" id="increment_batch_contract_count_shadow">
+                        <field name="NUM">1</field>
+                      </shadow>
+                    </value>
+                    <next>
+                      <block type="controls_if" id="check_batch_contract_limit">
+                        <value name="IF0">
+                          <block type="logic_compare" id="batch_contracts_reached">
+                            <field name="OP">GTE</field>
+                            <value name="A">
+                              <block type="variables_get" id="get_batch_count_for_limit">
+                                <field name="VAR" id="batch_contract_count" variabletype="">Batch Contracts Count</field>
+                              </block>
+                            </value>
+                            <value name="B">
+                              <block type="variables_get" id="get_contracts_per_batch_limit">
+                                <field name="VAR" id="contracts_per_batch" variabletype="">Contracts Per Batch</field>
+                              </block>
+                            </value>
+                          </block>
+                        </value>
+                        <statement name="DO0">
+                          <block type="variables_set" id="reset_batch_counter_after_limit">
+                            <field name="VAR" id="batch_contract_count" variabletype="">Batch Contracts Count</field>
+                            <value name="VALUE">
+                              <block type="math_number" id="batch_contract_count_reset_value">
+                                <field name="NUM">0</field>
+                              </block>
+                            </value>
+                          </block>
+                        </statement>
+                        <next>
+                          <block type="controls_if" id="check_take_profit_first">
+                            <mutation else="1"/>
+                            <value name="IF0">
+                              <block type="logic_compare" id="take_profit_condition">
+                                <field name="OP">GTE</field>
+                                <value name="A">
+                                  <block type="total_profit" id="profit_for_tp"/>
+                                </value>
+                                <value name="B">
+                                  <block type="variables_get" id="get_take_profit">
+                                    <field name="VAR" id="take_profit_limit" variabletype="">Take Profit (USD)</field>
+                                  </block>
+                                </value>
+                              </block>
+                            </value>
+                            <statement name="DO0">
+                              <block type="notify" id="take_profit_congratulations_notification">
+                                <field name="NOTIFICATION_TYPE">success</field>
+                                <field name="NOTIFICATION_SOUND">job-done</field>
+                                <value name="MESSAGE">
+                                  <shadow type="text" id="take_profit_congratulations_notification_message_shadow">
+                                    <field name="TEXT">Congratulations 🎉 Lucky your strategy worked</field>
+                                  </shadow>
+                                </value>
+                              </block>
+                            </statement>
+                            <statement name="ELSE">
+                              <block type="controls_if" id="check_non_tp_stop_conditions">
+                                <mutation else="1"/>
+                                <value name="IF0">
+                                  <block type="logic_operation" id="all_stop_conditions_including_total_count">
+                                    <field name="OP">OR</field>
+                                    <value name="A">
+                                      <block type="logic_operation" id="profit_or_loss_limit">
+                                        <field name="OP">OR</field>
+                                        <value name="A">
+                                          <block type="logic_compare" id="check_stop_loss">
+                                            <field name="OP">LTE</field>
+                                            <value name="A">
+                                              <block type="total_profit" id="profit_for_sl"/>
+                                            </value>
+                                            <value name="B">
+                                              <block type="math_single" id="negative_stop_loss">
+                                                <field name="OP">NEG</field>
+                                                <value name="NUM">
+                                                  <block type="variables_get" id="get_stop_loss">
+                                                    <field name="VAR" id="stop_loss_limit" variabletype="">Stop Loss (USD)</field>
+                                                  </block>
+                                                </value>
+                                              </block>
+                                            </value>
+                                          </block>
+                                        </value>
+                                        <value name="B">
+                                          <block type="logic_compare" id="check_max_consecutive_losses">
+                                            <field name="OP">GTE</field>
+                                            <value name="A">
+                                              <block type="variables_get" id="get_loss_streak_for_stop">
+                                                <field name="VAR" id="loss_streak" variabletype="">Consecutive Losses</field>
+                                              </block>
+                                            </value>
+                                            <value name="B">
+                                              <block type="variables_get" id="get_max_losses_for_stop">
+                                                <field name="VAR" id="max_consecutive_losses" variabletype="">Maximum Consecutive Losses</field>
+                                              </block>
+                                            </value>
+                                          </block>
+                                        </value>
+                                      </block>
+                                    </value>
+                                    <value name="B">
+                                      <block type="logic_compare" id="check_total_contract_cap">
+                                        <field name="OP">GTE</field>
+                                        <value name="A">
+                                          <block type="variables_get" id="get_total_count_for_stop">
+                                            <field name="VAR" id="total_contract_count" variabletype="">Total Contracts Count</field>
+                                          </block>
+                                        </value>
+                                        <value name="B">
+                                          <block type="variables_get" id="get_max_total_contracts_for_stop">
+                                            <field name="VAR" id="max_total_contracts" variabletype="">Maximum Total Contracts (Session)</field>
+                                          </block>
+                                        </value>
+                                      </block>
+                                    </value>
+                                  </block>
+                                </value>
+                                <statement name="DO0">
+                                  <block type="notify" id="stop_notification">
+                                    <field name="NOTIFICATION_TYPE">warn</field>
+                                    <field name="NOTIFICATION_SOUND">severe-error</field>
+                                    <value name="MESSAGE">
+                                      <shadow type="text" id="stop_notification_message_shadow">
+                                        <field name="TEXT">Stop condition reached: take profit, stop loss, maximum consecutive losses, or maximum total contracts. Bot stopped.</field>
+                                      </shadow>
+                                    </value>
+                                  </block>
+                                </statement>
+                                <statement name="ELSE">
+                                  <block type="controls_if" id="delay_only_after_completed_batch">
+                                    <mutation else="1"/>
+                                    <value name="IF0">
+                                      <block type="logic_compare" id="wait_only_when_batch_is_complete">
+                                        <field name="OP">GT</field>
+                                        <value name="A">
+                                          <block type="variables_get" id="get_remaining_batch_count_for_wait_gate">
+                                            <field name="VAR" id="trades_remaining_after_pair" variabletype="">trades_remaining_after_pair</field>
+                                          </block>
+                                        </value>
+                                        <value name="B">
+                                          <block type="math_number" id="zero_remaining_for_wait_gate">
+                                            <field name="NUM">0</field>
+                                          </block>
+                                        </value>
+                                      </block>
+                                    </value>
+                                    <statement name="DO0">
+                                      <block type="trade_again" id="continue_immediately_within_three_trade_batch"/>
+                                    </statement>
+                                    <statement name="ELSE">
+                                      <block type="timeout" id="wait_before_next_contract">
+                                        <statement name="TIMEOUTSTACK">
+                                          <block type="trade_again" id="continue_after_configured_wait"/>
+                                        </statement>
+                                        <value name="SECONDS">
+                                          <shadow type="math_number" id="wait_after_trade_seconds_fallback">
+                                            <field name="NUM">10</field>
+                                          </shadow>
+                                          <block type="variables_get" id="get_wait_after_trade_seconds">
+                                            <field name="VAR" id="wait_after_trade_seconds" variabletype="">Wait After Batch (Seconds)</field>
+                                          </block>
+                                        </value>
+                                      </block>
+                                    </statement>
+                                  </block>
+                                </statement>
+                              </block>
+                            </statement>
+                          </block>
+                        </next>
+                      </block>
+                    </next>
+                  </block>
+                </next>
+              </block>
+            </next>
+          </block>
+        </next>
+      </block>
+    </statement>
+  </block>
+  <block type="tick_analysis" id="digit_differs_ai_waiting_tick_journal" x="520" y="900">
+    <statement name="TICKANALYSIS_STACK">
+      <block type="controls_if" id="only_log_digits_while_waiting_for_pair">
+        <value name="IF0">
+          <block type="logic_compare" id="pair_sequence_is_idle_check">
+            <field name="OP">EQ</field>
+            <value name="A">
+              <block type="variables_get" id="get_pair_trades_remaining_for_journal">
+                <field name="VAR" id="trades_remaining_after_pair" variabletype="">trades_remaining_after_pair</field>
+              </block>
+            </value>
+            <value name="B">
+              <block type="math_number" id="journal_idle_zero">
+                <field name="NUM">0</field>
+              </block>
+            </value>
+          </block>
+        </value>
+        <statement name="DO0">
+          <block type="notify" id="journal_each_waiting_digit">
+            <field name="NOTIFICATION_TYPE">info</field>
+            <field name="NOTIFICATION_SOUND">silent</field>
+            <value name="MESSAGE">
+              <block type="text_join" id="join_waiting_digit_journal_message">
+                <mutation items="2"/>
+                <value name="ADD0">
+                  <block type="text" id="waiting_digit_journal_prefix">
+                    <field name="TEXT">DIGIT DIFFERS AI | WAITING FOR MATCHING PAIR | LAST DIGIT: </field>
+                  </block>
+                </value>
+                <value name="ADD1">
+                  <block type="last_digit" id="waiting_digit_journal_current_last_digit"/>
+                </value>
+              </block>
+            </value>
+            <next>
+              <block type="controls_if" id="detect_pair_once_per_batch_wait">
+                <mutation else="1"/>
+                <value name="IF0">
+                  <block type="logic_compare" id="pair_flag_is_false_check">
+                    <field name="OP">EQ</field>
+                    <value name="A">
+                      <block type="variables_get" id="get_pair_flag_before_tick_detection">
+                        <field name="VAR" id="pair_detected_during_wait" variabletype="">Pair Detected During Wait</field>
+                      </block>
+                    </value>
+                    <value name="B">
+                      <block type="logic_boolean" id="pair_flag_false_value">
+                        <field name="BOOL">FALSE</field>
+                      </block>
+                    </value>
+                  </block>
+                </value>
+                <statement name="DO0">
+                  <block type="controls_if" id="check_for_equal_last_two_digits_in_wait">
+                    <value name="IF0">
+                      <block type="logic_compare" id="compare_latest_two_digits_for_wait_trigger">
+                        <field name="OP">EQ</field>
+                        <value name="A">
+                          <block type="lists_getIndex" id="read_pair_digit_end_1_for_wait">
+                            <mutation statement="false" at="true"/>
+                            <field name="MODE">GET</field>
+                            <field name="WHERE">FROM_END</field>
+                            <value name="VALUE">
+                              <block type="lastDigitList" id="history_pair_digit_end_1"/>
+                            </value>
+                            <value name="AT">
+                              <block type="math_number" id="read_pair_digit_end_1_for_wait_index">
+                                <field name="NUM">1</field>
+                              </block>
+                            </value>
+                          </block>
+                        </value>
+                        <value name="B">
+                          <block type="lists_getIndex" id="read_pair_digit_end_2_for_wait">
+                            <mutation statement="false" at="true"/>
+                            <field name="MODE">GET</field>
+                            <field name="WHERE">FROM_END</field>
+                            <value name="VALUE">
+                              <block type="lastDigitList" id="history_pair_digit_end_2"/>
+                            </value>
+                            <value name="AT">
+                              <block type="math_number" id="read_pair_digit_end_2_for_wait_index">
+                                <field name="NUM">2</field>
+                              </block>
+                            </value>
+                          </block>
+                        </value>
+                      </block>
+                    </value>
+                    <statement name="DO0">
+                      <block type="variables_set" id="capture_wait_trigger_pair_end_1">
+                        <field name="VAR" id="trigger_pair_digit_end_1" variabletype="">Trigger Pair Digit (End 1)</field>
+                        <value name="VALUE">
+                          <block type="lists_getIndex" id="capture_pair_digit_1_while_waiting">
+                            <mutation statement="false" at="true"/>
+                            <field name="MODE">GET</field>
+                            <field name="WHERE">FROM_END</field>
+                            <value name="VALUE">
+                              <block type="lastDigitList" id="history_capture_pair_digit_1"/>
+                            </value>
+                            <value name="AT">
+                              <block type="math_number" id="capture_pair_digit_1_while_waiting_index">
+                                <field name="NUM">1</field>
+                              </block>
+                            </value>
+                          </block>
+                        </value>
+                        <next>
+                          <block type="variables_set" id="capture_wait_trigger_pair_end_2">
+                            <field name="VAR" id="trigger_pair_digit_end_2" variabletype="">Trigger Pair Digit (End 2)</field>
+                            <value name="VALUE">
+                              <block type="lists_getIndex" id="capture_pair_digit_2_while_waiting">
+                                <mutation statement="false" at="true"/>
+                                <field name="MODE">GET</field>
+                                <field name="WHERE">FROM_END</field>
+                                <value name="VALUE">
+                                  <block type="lastDigitList" id="history_capture_pair_digit_2"/>
+                                </value>
+                                <value name="AT">
+                                  <block type="math_number" id="capture_pair_digit_2_while_waiting_index">
+                                    <field name="NUM">2</field>
+                                  </block>
+                                </value>
+                              </block>
+                            </value>
+                            <next>
+                              <block type="variables_set" id="set_pair_detected_during_wait">
+                                <field name="VAR" id="pair_detected_during_wait" variabletype="">Pair Detected During Wait</field>
+                                <value name="VALUE">
+                                  <block type="logic_boolean" id="set_pair_detected_true">
+                                    <field name="BOOL">TRUE</field>
+                                  </block>
+                                </value>
+                                <next>
+                                  <block type="variables_set" id="set_waiting_for_digit_after_pair">
+                                    <field name="VAR" id="waiting_for_digit_after_pair" variabletype="">Waiting For Digit After Pair</field>
+                                    <value name="VALUE">
+                                      <block type="logic_boolean" id="set_waiting_for_post_pair_true">
+                                        <field name="BOOL">TRUE</field>
+                                      </block>
+                                    </value>
+                                    <next>
+                                      <block type="notify" id="journal_matching_pair_detected_in_wait">
+                                        <field name="NOTIFICATION_TYPE">success</field>
+                                        <field name="NOTIFICATION_SOUND">announcement</field>
+                                        <value name="MESSAGE">
+                                          <block type="text_join" id="pair_detected_wait_journal_text">
+                                            <mutation items="5"/>
+                                            <value name="ADD0">
+                                              <block type="text" id="pair_detected_wait_prefix">
+                                                <field name="TEXT">DIGIT DIFFERS AI | MATCHING PAIR DETECTED DURING 10-SECOND WAIT | END 1 = </field>
+                                              </block>
+                                            </value>
+                                            <value name="ADD1">
+                                              <block type="variables_get" id="pair_detected_wait_digit_1">
+                                                <field name="VAR" id="trigger_pair_digit_end_1" variabletype="">Trigger Pair Digit (End 1)</field>
+                                              </block>
+                                            </value>
+                                            <value name="ADD2">
+                                              <block type="text" id="pair_detected_wait_mid">
+                                                <field name="TEXT"> | END 2 = </field>
+                                              </block>
+                                            </value>
+                                            <value name="ADD3">
+                                              <block type="variables_get" id="pair_detected_wait_digit_2">
+                                                <field name="VAR" id="trigger_pair_digit_end_2" variabletype="">Trigger Pair Digit (End 2)</field>
+                                              </block>
+                                            </value>
+                                            <value name="ADD4">
+                                              <block type="text" id="pair_detected_wait_suffix">
+                                                <field name="TEXT"> | WAITING FOR THE FOLLOWING DIGIT.</field>
+                                              </block>
+                                            </value>
+                                          </block>
+                                        </value>
+                                      </block>
+                                    </next>
+                                  </block>
+                                </next>
+                              </block>
+                            </next>
+                          </block>
+                        </next>
+                      </block>
+                    </statement>
+                  </block>
+                </statement>
+                <statement name="ELSE">
+                  <block type="controls_if" id="capture_digit_after_pair_once">
+                    <value name="IF0">
+                      <block type="logic_compare" id="check_waiting_for_post_pair_digit">
+                        <field name="OP">EQ</field>
+                        <value name="A">
+                          <block type="variables_get" id="get_waiting_for_post_pair_digit">
+                            <field name="VAR" id="waiting_for_digit_after_pair" variabletype="">Waiting For Digit After Pair</field>
+                          </block>
+                        </value>
+                        <value name="B">
+                          <block type="logic_boolean" id="waiting_for_post_pair_true_value">
+                            <field name="BOOL">TRUE</field>
+                          </block>
+                        </value>
+                      </block>
+                    </value>
+                    <statement name="DO0">
+                      <block type="variables_set" id="set_prediction_to_digit_after_pair">
+                        <field name="VAR" id="current_prediction" variabletype="">Current Prediction</field>
+                        <value name="VALUE">
+                          <block type="last_digit" id="read_tick_digit_after_matched_pair"/>
+                        </value>
+                        <next>
+                          <block type="variables_set" id="clear_waiting_for_post_pair_digit">
+                            <field name="VAR" id="waiting_for_digit_after_pair" variabletype="">Waiting For Digit After Pair</field>
+                            <value name="VALUE">
+                              <block type="logic_boolean" id="clear_waiting_post_pair_false">
+                                <field name="BOOL">FALSE</field>
+                              </block>
+                            </value>
+                            <next>
+                              <block type="notify" id="journal_prediction_after_pair_wait">
+                                <field name="NOTIFICATION_TYPE">info</field>
+                                <field name="NOTIFICATION_SOUND">silent</field>
+                                <value name="MESSAGE">
+                                  <block type="text_join" id="post_pair_prediction_journal_text">
+                                    <mutation items="9"/>
+                                    <value name="ADD0">
+                                      <block type="text" id="post_pair_prediction_prefix">
+                                        <field name="TEXT">DIGIT DIFFERS AI | MATCHED PAIR: END 1 = </field>
+                                      </block>
+                                    </value>
+                                    <value name="ADD1">
+                                      <block type="variables_get" id="post_pair_prediction_pair_1">
+                                        <field name="VAR" id="trigger_pair_digit_end_1" variabletype="">Trigger Pair Digit (End 1)</field>
+                                      </block>
+                                    </value>
+                                    <value name="ADD2">
+                                      <block type="text" id="post_pair_prediction_mid_1">
+                                        <field name="TEXT"> | END 2 = </field>
+                                      </block>
+                                    </value>
+                                    <value name="ADD3">
+                                      <block type="variables_get" id="post_pair_prediction_pair_2">
+                                        <field name="VAR" id="trigger_pair_digit_end_2" variabletype="">Trigger Pair Digit (End 2)</field>
+                                      </block>
+                                    </value>
+                                    <value name="ADD4">
+                                      <block type="text" id="post_pair_prediction_mid_2">
+                                        <field name="TEXT"> | NEXT DIGIT AFTER PAIR (PREDICTION) = </field>
+                                      </block>
+                                    </value>
+                                    <value name="ADD5">
+                                      <block type="variables_get" id="post_pair_prediction_value">
+                                        <field name="VAR" id="current_prediction" variabletype="">Current Prediction</field>
+                                      </block>
+                                    </value>
+                                    <value name="ADD6">
+                                      <block type="text" id="post_pair_prediction_suffix">
+                                        <field name="TEXT"> | NEXT BATCH SIZE: </field>
+                                      </block>
+                                    </value>
+                                    <value name="ADD7">
+                                      <block type="variables_get" id="post_pair_prediction_batch_size">
+                                        <field name="VAR" id="contracts_per_batch" variabletype="">Contracts Per Batch</field>
+                                      </block>
+                                    </value>
+                                    <value name="ADD8">
+                                      <block type="text" id="post_pair_prediction_suffix_final">
+                                        <field name="TEXT"> DIFFERS CONTRACTS AFTER THE ADDITIONAL 5-SECOND PAIR DELAY.</field>
+                                      </block>
+                                    </value>
+                                  </block>
+                                </value>
+                              </block>
+                            </next>
+                          </block>
+                        </next>
+                      </block>
+                    </statement>
+                  </block>
+                </statement>
+              </block>
+            </next>
+          </block>
+        </statement>
+      </block>
+    </statement>
+  </block>
+</xml>
