@@ -97,7 +97,7 @@ export interface NormalizedBot {
   blockInventory: { type: string; count: number }[];
   /** Blocks we recognised as DBot blocks but cannot interpret. */
   unsupportedBlocks: UnsupportedBlock[];
-  /** Block types that are not DBot blocks at all. */
+  /** Block types this build does not recognise at all, whether or not DBot defines them. */
   unknownBlocks: { type: string; count: number }[];
   /** Non-fatal problems worth surfacing to the user. */
   warnings: BotWarning[];

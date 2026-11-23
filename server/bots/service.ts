@@ -350,13 +350,16 @@ export interface BotView {
 }
 
 export function toView(record: ImportedBotRecord): BotView {
+  // Derived rather than read off the record: the stored value is a snapshot
+  // from import time, and the interpreted-block set grows between releases.
+  const { compatibility, reason } = botCompatibility(record);
   return {
     id: record.id,
     name: record.name,
     originalFilename: record.originalFilename,
     sourceFormat: record.sourceFormat,
-    compatibility: record.compatibility,
-    compatibilityReason: record.compatibilityReason,
+    compatibility,
+    compatibilityReason: reason,
     status: record.status,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,

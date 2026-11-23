@@ -416,7 +416,7 @@ function classify(
   if (unknownCount > 0) {
     return {
       level: 'unsupported',
-      reason: `${unknownCount} block(s) in this file are not DBot blocks No-touch recognises.`
+      reason: `${unknownCount} block(s) in this file are DBot blocks this build does not recognise.`
     };
   }
 
