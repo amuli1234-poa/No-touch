@@ -327,6 +327,8 @@ const META: Record<string, BlockMeta> = {
  * and containers with no behaviour.
  */
 const DELIBERATELY_UNEXECUTED: Record<string, string> = {
+  trade_definition_tradeoptions_payout:
+    'Payout-based sizing is not modelled: every entry in this build is sized by stake, so a payout target cannot be honoured.',
   trade_definition_multiplier: 'Multiplier configuration is not modelled by this build.',
   trade_definition_accumulator: 'Accumulator configuration is not modelled by this build.',
   multiplier_take_profit: 'Multiplier take-profit is not modelled by this build.',
@@ -362,7 +364,6 @@ const CONTAINER_BLOCKS: ReadonlySet<string> = new Set<string>([
   'trade_definition_contracttype',
   'trade_definition_candleinterval',
   'trade_definition_tradeoptions',
-  'trade_definition_tradeoptions_payout',
   'trade_definition_restartbuysell',
   'trade_definition_restartonerror',
   'before_purchase',

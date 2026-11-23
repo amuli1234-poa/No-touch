@@ -569,3 +569,86 @@ test('"both" with an unknown trade type warns instead of inventing a contract', 
   assert.deepEqual(result.bot.contract.contractTypes, []);
   assert.ok(result.bot.warnings.some((w) => w.code === 'contract_type_both_unresolved'));
 });
+
+/* ------------------- payout-based sizing is refused, not faked ------------ */
+
+/**
+ * `trade_definition_tradeoptions_payout` looks like the ordinary trade-options
+ * block and DBot aliases it to the same definition, but its `AMOUNT` is a
+ * payout target rather than a stake. Every entry this build makes is sized with
+ * `basis: 'stake'`, so reading the payout figure as a stake would open a real
+ * contract at the wrong size. The block must be reported unsupported instead.
+ */
+const PAYOUT_DBOT = `<xml xmlns="http://www.w3.org/1999/xhtml" collection="false" is_dbot="true">
+  <variables></variables>
+  <block type="trade_definition" x="0" y="0">
+    <statement name="TRADE_OPTIONS">
+      <block type="trade_definition_market">
+        <field name="MARKET_LIST">synthetic_index</field>
+        <field name="SUBMARKET_LIST">random_index</field>
+        <field name="SYMBOL_LIST">R_100</field>
+        <next>
+          <block type="trade_definition_tradetype">
+            <field name="TRADETYPECAT_LIST">callput</field>
+            <field name="TRADETYPE_LIST">callput</field>
+            <next>
+              <block type="trade_definition_contracttype">
+                <field name="TYPE_LIST">CALL</field>
+              </block>
+            </next>
+          </block>
+        </next>
+      </block>
+    </statement>
+    <statement name="SUBMARKET">
+      <block type="trade_definition_tradeoptions_payout">
+        <field name="DURATIONTYPE_LIST">t</field>
+        <field name="CURRENCY_LIST">USD</field>
+        <value name="DURATION">
+          <shadow type="math_number"><field name="NUM">5</field></shadow>
+        </value>
+        <value name="AMOUNT">
+          <shadow type="math_number"><field name="NUM">50</field></shadow>
+        </value>
+      </block>
+    </statement>
+  </block>
+  <block type="before_purchase" x="0" y="400">
+    <statement name="BEFOREPURCHASE_STACK">
+      <block type="purchase"><field name="PURCHASE_LIST">CALL</field></block>
+    </statement>
+  </block>
+  <block type="during_purchase" x="0" y="600"></block>
+  <block type="after_purchase" x="0" y="800"></block>
+</xml>`;
+
+test('payout: the block is reported unsupported rather than read as a stake', () => {
+  const result = analyzeDbotXml(PAYOUT_DBOT, { filename: 'payout.xml' });
+  assert.ok(result.bot, 'the file still parses; only the sizing block is refused');
+  const refused = result.bot.unsupportedBlocks.find(
+    (b) => b.type === 'trade_definition_tradeoptions_payout'
+  );
+  assert.ok(refused, 'the payout block must be listed as unsupported');
+  assert.match(refused!.reason, /payout/i);
+});
+
+test('payout: the strategy is not runnable', () => {
+  const result = analyzeDbotXml(PAYOUT_DBOT, { filename: 'payout.xml' });
+  assert.equal(result.compatibility, 'partial', 'a refused sizing block makes the bot non-runnable');
+  assert.match(result.compatibilityReason ?? '', /could not be interpreted/i);
+});
+
+test('payout: the payout figure is never silently adopted as the stake', () => {
+  const result = analyzeDbotXml(PAYOUT_DBOT, { filename: 'payout.xml' });
+  assert.ok(result.bot);
+  assert.equal(
+    result.bot.stake.amount,
+    null,
+    'the payout target must not be presented as a stake amount'
+  );
+});
+
+test('payout: the block is no longer advertised as a supported container', () => {
+  assert.equal(supportedBlockTypes().includes('trade_definition_tradeoptions_payout'), false);
+  assert.equal(isKnownBlock('trade_definition_tradeoptions_payout'), true, 'it is recognised, not unknown');
+});

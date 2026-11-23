@@ -923,6 +923,26 @@
   content: 'x';
 }
 
+.bot-blockly-host .ws-blockly-category-icon--loop::before {
+  content: '↻';
+}
+
+.bot-blockly-host .ws-blockly-category-icon--text::before {
+  content: 'T';
+}
+
+.bot-blockly-host .ws-blockly-category-icon--list::before {
+  content: '≡';
+}
+
+.bot-blockly-host .ws-blockly-category-icon--function::before {
+  content: 'ƒ';
+}
+
+.bot-blockly-host .ws-blockly-category-icon--utility::before {
+  content: '…';
+}
+
 .bot-blockly-host .blocklyText,
 .bot-blockly-host .blocklyDropdownText {
   font-family: 'Plus Jakarta Sans', Inter, system-ui, sans-serif;

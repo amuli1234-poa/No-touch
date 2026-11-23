@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type {
+  BotRunRecord as ServerBotRunRecord,
+  JsonValue,
+  PendingDeferral as ServerPendingDeferral
+} from '../../server/bots/runTypes';
 
 /**
  * Frontend bot-importer client.
@@ -399,6 +404,9 @@ export interface BotRunCounters {
   skipped: number;
 }
 
+/** Work a `timeout` block deferred, waiting for its delay to elapse. */
+export type BotPendingDeferral = ServerPendingDeferral;
+
 export interface BotRun {
   runId: string;
   botId: string;
@@ -418,7 +426,35 @@ export interface BotRun {
   strategyRevision: number;
   symbol: string;
   timeframe: string;
+  /**
+   * Interpreter variables for this run, keyed by Blockly variable id (or name
+   * when the export omits ids). The server sends this on every run view; it is
+   * declared here so the Variables panel can show real state rather than a
+   * placeholder.
+   */
+  variables: Record<string, JsonValue>;
+  /** Work a `timeout` deferred, or null when nothing is waiting. */
+  pendingDeferral: BotPendingDeferral | null;
+  /** Contract whose `after_purchase` stack has already run. */
+  afterPurchaseFor: number | null;
+  /** Contract Deriv has refused to sell, and why. */
+  sellRefusedFor: number | null;
+  sellRefusedReason: string | null;
+  /** Idempotency key and timestamp of the most recent accepted tick. */
+  lastTickKey: string | null;
+  lastTickAt: number | null;
 }
+
+/**
+ * Compile-time guard: the client view must stay assignable from the server
+ * record. `src/lib/bots.ts` used to declare a subset of what
+ * `server/bots/runTypes.ts` sends, so panels showing interpreter state had no
+ * declared field to read. If the server adds a field the client needs, this
+ * fails to compile rather than silently dropping it at runtime.
+ */
+type _BotRunMatchesServer = BotRun extends ServerBotRunRecord ? true : never;
+const _botRunShape: _BotRunMatchesServer = true;
+void _botRunShape;
 
 export type BotRunVerdict = 'entry' | 'no_entry' | 'insufficient' | 'ineligible' | 'skipped' | 'stopped';
 

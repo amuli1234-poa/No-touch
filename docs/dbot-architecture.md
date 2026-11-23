@@ -231,3 +231,99 @@ strategy into a flat-stake one. `runInitialization` applies the same rule, gated
 on a `market` block being present (only that generation put declarations there),
 and copies the blocks instead of re-linking them so the strategy tree is not
 rewritten on every tick.
+
+## 9. Palette coverage and the payout block (this pass)
+
+Two defects fixed and one capability gap closed. Numbers below are printed by
+executing the real modules, not counted by hand.
+
+| Measure | Before | After |
+|---|---|---|
+| Server catalogue (DBot types known) | 135 | 135 |
+| Supported (`supportedBlockTypes()`) | 75 | **74** |
+| Unsupported | 60 | **61** (11 deliberate + 50 no-runtime) |
+| `EXECUTABLE` (runtime truth) | 74 | 74 |
+| Editor `DBOT_DECLS` | 41 | 41 |
+| Blocks the palette offers | 24 | **74** |
+
+`supported` is now exactly `EXECUTABLE`. That equality is the property worth
+protecting: before this pass `supported` claimed one block the runtime could not
+run.
+
+### 9.1 `trade_definition_tradeoptions_payout` was reported supported
+
+`blocks.ts` listed it in `CONTAINER_BLOCKS`, so `supportedBlockTypes()` returned
+it as runnable. Nothing read it — the parser's `switch` had no case for it and
+neither engine referenced it — so a payout strategy parsed with `stake.amount`
+left at `null`.
+
+The consequence was not a cosmetic miscount. `runService.ts` builds every
+execution intent with `basis: 'stake'`, and `stake = plan.stake ?? 1`, so a
+payout-based strategy would have opened real contracts sized at the fallback
+stake of 1 rather than at the size its author asked for.
+
+DBot aliases the block to the ordinary trade-options definition, so the fields
+look identical, but its generator emits `basis: 'payout'` and its `AMOUNT` is a
+**payout target**, not a stake. Reading one as the other is a silent sizing
+error.
+
+The block is now in `DELIBERATELY_UNEXECUTED` with a reason and removed from
+`CONTAINER_BLOCKS`, so the two tables cannot contradict each other. A payout
+strategy still parses and is still recognised — it is reported non-runnable with
+an explanation instead of being run at the wrong size. Four tests cover it: the
+block is listed unsupported, the bot is not runnable, `stake.amount` stays
+`null`, and it is no longer advertised as supported.
+
+If payout sizing is wanted later, the gateway already accepts
+`basis: 'stake' | 'payout'`; what is missing is carrying a basis through
+`BotStakeConfig` and `plan.stake` into the intent, not transport support.
+
+### 9.2 The palette offered 24 of the 74 runnable blocks
+
+Fifty executable blocks were unreachable from the editor: 16 DBot blocks this
+build already declares (`timeout`, `sell_at_market`, `sell_price`,
+`total_profit`, `notify`, `ticks`, `lastDigitList`, `check_sell`,
+`contract_check_result`, `read_details`, `trade_again`, …) and 34 stock Blockly
+blocks — every loop, `controls_if`, procedures, and the text/list/math
+families.
+
+Stock blocks are registered by the `blockly/blocks` import, so this was purely
+a palette omission: the runtime could already run them, and a strategy that
+used a loop could be imported but never rebuilt. The palette now offers all 74,
+grouped DBot-style: Trade, Market, Trade options, Contract, Entry conditions,
+Exit conditions, Indicators, Logic, Loops, Mathematics, Text, Lists, Variables,
+Functions, Utility. Five category styles and five icons were added so no
+category renders unstyled.
+
+`toolbox.test.ts` now asserts both directions: nothing offered that the runtime
+refuses, and nothing runnable that the palette hides. The second test is the one
+that would have caught this gap.
+
+### 9.3 The client type under-declared the run payload
+
+`server/bots/runTypes.ts` sends `variables`, `pendingDeferral`,
+`afterPurchaseFor`, `sellRefusedFor`, `sellRefusedReason`, `lastTickKey` and
+`lastTickAt` on every run view. `BotRun` in `src/lib/bots.ts` declared none of
+them, so any panel showing interpreter state would have had to read undeclared
+fields. They are now declared, including `BotPendingDeferral` for deferred
+`timeout` work.
+
+This is a type-level fix only. The Variables and Execution panels are not built
+yet — see §10.
+
+### 9.4 Still not done
+
+Stated plainly, because the gap is the point:
+
+- **50 blocks have no runtime.** Candle/OHLC blocks have no data source at all:
+  `MarketDataService` requests `style: 'ticks'` and never `style: 'candles'`, so
+  `ohlc`, `get_ohlc`, `is_candle_black` and the indicator statements built on
+  them cannot be implemented without a new fetch path. This is the single
+  largest blocker and it is a data problem, not a block problem.
+- **`rsi_statement`, `bb_statement`, `macda_statement`, `smaa_statement`** and
+  the rest of the indicator family still do not execute.
+- **No Variables or Execution panel.** The server sends the state and the client
+  type now describes it, but no UI renders it.
+- **The `console` block has no runtime**, so there is no journal source for it.
+- **Compatibility is unchanged**: the palette fix does not make a single new
+  strategy runnable. It makes the 74 runnable blocks buildable.

@@ -1135,6 +1135,22 @@ the compatibility report honest:
   a strategy whose conditions cannot be honoured is reported `partial` with the
   reason. `trade_definition_multiplier` is the live example. Do not add a handler
   that answers a block from a guess: a wrong answer trades the customer's money.
+- **The palette and the runtime must agree, in both directions.**
+  `toolbox.test.ts` asserts the palette offers nothing `EXECUTABLE` refuses
+  *and* hides nothing it can run. The second half matters: 50 runnable blocks
+  (every loop, procedure and text/list/math block) were unreachable from the
+  editor because only 24 were listed. A block that runs but cannot be placed is
+  a silent capability loss, not a cosmetic gap.
+
+`trade_definition_tradeoptions_payout` is the worked example for "refuse, don't
+fake". DBot aliases it to the ordinary trade-options block, so the fields look
+identical, but its generator emits `basis: 'payout'` and its `AMOUNT` is a
+**payout target, not a stake**. Every intent this build creates is
+`basis: 'stake'` with `stake = plan.stake ?? 1`, so treating the payout figure as
+a stake would have opened real contracts at the wrong size. It sits in
+`DELIBERATELY_UNEXECUTED` with a reason, and a payout strategy reports as
+non-runnable. The gateway already accepts `basis: 'payout'`; what is missing is
+carrying a basis through `BotStakeConfig` and `plan.stake`, not transport.
 
 Deriv-specific shapes that are easy to get wrong:
 
