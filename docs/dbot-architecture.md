@@ -114,19 +114,24 @@ crash is prevented; the *cause* is not removed.
 
 ## 5. Measured strategy-level compatibility
 
-Of the 57 example files, 22 are snippets (indicator helpers, fragments with no
-`trade_definition`). Of the 35 that look like complete strategies:
+Of the 57 example files, 25 are snippets (indicator helpers, fragments with no
+`trade_definition`). Of the 32 that look like complete strategies:
 
 | State | Count |
 |---|---|
-| Fully compatible | 1 |
-| Partial | 5 |
-| Unsupported | 26 |
-| Invalid | 3 |
+| Fully compatible | 10 |
+| Partial | 15 |
+| Unsupported | 7 |
 
-**1 of 35 (3%).** The dominant blockers are `market` (23 files, legacy),
-`loader` (11, fetches remote blocks at run time — genuinely non-executable),
-and `text_print` (10, trivially implementable).
+**10 of 32 (31%).** Of the 22 runnable strategies that are not yet full, 6 are
+blocked by candle blocks and nothing else (no data source exists — see §6 item
+3), 8 by `loader` (fetches remote blocks at run time — genuinely
+non-executable), and 4 by `text_print` (trivially implementable). The rest need
+one of the unexecuted indicator or list/math blocks.
+
+Before the legacy `market` work in §8 this was 1 fully compatible, 5 partial and
+26 unsupported, so reading the oldest generation moved 9 strategies to fully
+compatible and 10 more out of "unsupported".
 
 ## 6. What must change
 
@@ -185,7 +190,44 @@ the one real gap the new drift test found. That test now compares the editor's
 declarations against `supportedBlockTypes()` from the server, so this class of
 divergence fails in CI rather than on a customer's import.
 
-The measured fixture baseline is unchanged at **1 of 35 fully compatible**: the
-remaining blockers are candle/indicator data and legacy `market` generation, not
-`timeout`. The `timeout` fixes are correctness fixes — a strategy that used to
-trade immediately now waits, and one that used to stop now pauses.
+The measured fixture baseline is unchanged by the `timeout` work at **1 of 32
+fully compatible**; the remaining blockers are candle/indicator data (no candle
+source exists) and `loader`, not `timeout`. The `timeout` fixes are correctness
+fixes — a strategy that used to trade immediately now waits, and one that used
+to stop now pauses.
+
+### The legacy `market` generation now parses and executes
+
+The oldest exports carry no `trade_definition*` blocks at all: one `market`
+block sits inside `trade`'s `SUBMARKET` statement and holds the market, contract,
+candle interval, stake, currency and duration. Four separate bugs hid behind
+that shape, and together they took the corpus from **1 to 10 fully compatible**
+(partial 5→15, unsupported 26→7, of 57 files; the 25 snippet files stay
+`invalid` throughout).
+
+**The parser and planner never looked at the block.** Both read fields only off
+`trade`/`trade_definition*`, so a legacy strategy reported no symbol, no
+contract type and no stake — and the planner treated `market` as an unsupported
+block, refusing the whole file. Both now read it, and `market` is a container in
+`PLAN_EXECUTABLE` rather than a blocker.
+
+**Legacy field values were being compared against modern ones.** DBot renamed
+`volidx`→`synthetic_index`, `risefall`→`callput`, `callputequal`→`callput` and
+`endsinout`/`staysinout`→`inout`. `LEGACY_FIELD_VALUES` in `blocks.ts` is now the
+one table both parser and planner normalise through, so they cannot disagree.
+
+**`TYPE_LIST: both` was stored as a contract type.** It is not one: it means
+"either direction", and DBot expands it through `config.opposites[tradeType]`
+while the author's `purchase` block picks one per entry. 33 of the 35 real
+fixtures use `both`, so leaving it unresolved refused the ordinary legacy
+configuration. Both parser and planner expand it to the pair, and the parser
+warns when the trade type has no pair.
+
+**Declarations in `SUBMARKET` were declared but never run.** DBot's
+`naivelyFixLegacyStrategyAfterConversion` moves every non-trade-options block out
+of `SUBMARKET` into `INITIALIZATION`, because `SUBMARKET` re-runs before each
+trade — a martingale counter kept there would reset every time, turning the
+strategy into a flat-stake one. `runInitialization` applies the same rule, gated
+on a `market` block being present (only that generation put declarations there),
+and copies the blocks instead of re-linking them so the strategy tree is not
+rewritten on every tick.

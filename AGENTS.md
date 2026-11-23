@@ -1270,9 +1270,63 @@ input names must match DBot's `message0`/`args0` shape exactly, because the XML
 is the source of truth. `definitions.test.ts` parses the shipped
 `Digit_Differs_AI.xml` and asserts this; extend that audit when you add blocks.
 
-Two legacy DBot types stay as placeholders on purpose: `loader` (fetches blocks
-from a URL at run time) and `market` (pre-`trade_definition_market`; current
-DBot no longer defines it). They are visible and preserved, never executed.
+One legacy DBot type stays a placeholder on purpose: `loader` (fetches blocks
+from a URL at run time). It is visible and preserved, never executed.
+
+## The oldest generation keeps everything on a `market` block
+
+Exports older than `trade_definition*` nest one `market` block inside the `trade`
+block's `SUBMARKET` statement and hang market, contract, candle interval, stake
+and duration off it. `parser.ts` reads those fields, and `evaluator.ts` reads
+them for the plan, so a strategy is not reported as naming no symbol or no
+contract just because it predates the current blocks.
+
+Three rules there are not obvious:
+
+- **`TYPE_LIST: both` is not a contract type.** It means "either direction" and
+  DBot expands it through `config.opposites[tradeType]`; the author's `purchase`
+  block picks one per entry. Both parser and planner expand it, because storing
+  `both` would refuse the ordinary legacy configuration.
+- **Legacy field values are renamed, not aliased.** `volidx`→`synthetic_index`,
+  `risefall`→`callput`, `callputequal`→`callput`, `endsinout`/`staysinout`→
+  `inout`. `LEGACY_FIELD_VALUES` in `blocks.ts` is the single table; both parser
+  and planner go through `normaliseLegacyValue` so they cannot drift.
+- **Declarations in `SUBMARKET` are initialisation.** DBot's
+  `naivelyFixLegacyStrategyAfterConversion` moves every non-trade-options block
+  out of `SUBMARKET` into `INITIALIZATION`, because `SUBMARKET` re-runs before
+  each trade and a martingale counter kept there would reset every time.
+  `runInitialization` applies the same rule, gated on the `market` block being
+  present, and copies the blocks rather than re-linking them so the strategy
+  tree is not rewritten.
+
+`Great Martingale.xml` initialises nothing even though it is a martingale: its
+variables are set inside a `procedures_defreturn` body, so they are function
+scope, not top-level declarations. Empty `vars after init` is correct there.
+
+## There is no candle data source
+
+`MarketDataService` only ever requests `ticks_history` with `style: 'ticks'`, and
+`TickContext` carries ticks alone. Every candle block (`ohlc`, `ohlc_values`,
+`ohlc_values_in_list`, `get_ohlc`, `read_ohlc`, `read_ohlc_obj`,
+`is_candle_black`) is therefore unbacked, and so are the indicators that read
+candle closes. They are declared and preserved, never executed.
+
+This is the single biggest compatibility lever left: of the 32 runnable
+strategies in the 57 DBot examples, 6 are blocked by candle blocks and nothing
+else, so adding them would take fully compatible strategies from 10 to 16. (11
+files reference candle blocks with no other blocker, but 5 of those are snippets
+missing mandatory blocks, which no amount of block support can make runnable.)
+
+Two further gaps sit on the same path and must be fixed with it, not after:
+`plan.timeframe` is computed but nothing consumes it as an indicator
+granularity, and the tick buffer is never primed from `getTicksHistory` at run
+start, so an SMA warms up from zero on a live run.
+
+DBot's semantics, for whoever builds it: `getOhlc` maps the dropdown to a
+`granularity` (`default` → the trade's candle interval, else 60), `get_ohlc` and
+`read_ohlc` index **from the end** with a positive integer, `is_candle_black` is
+`close < open`, and `read_ohlc_obj`/`ohlc_values` just project a field
+(`open`/`high`/`low`/`close`/`epoch`).
 
 ## DBot `timeout` pauses the whole strategy, not just its body
 
