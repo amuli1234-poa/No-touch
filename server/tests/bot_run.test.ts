@@ -468,6 +468,81 @@ test('run: the exported Digit_Differs_AI bot reaches a digit entry end to end', 
   });
 });
 
+test('run: the exported Digit_Differs_AI bot stops itself once a contract settles in profit', async () => {
+  await withHarness(async ({ deps, user, store, setQuotes }) => {
+    const bot = await importFixture(store, user.id, DIGIT_DIFFERS_AI_XML);
+    setQuotes([1000.11, 1000.22, 1000.33, 1000.44, 1000.55]);
+
+    const run = await startBotRun(deps, user, bot.id, { accountId: 'DEMO' }, 'token');
+    // The export's own INITIALIZATION sets Take Profit to 5 USD.
+    assert.equal(run.variables.take_profit_limit, 5);
+
+    const first = await tickBotRun(deps, user, run.runId, 'token', 'tick-1');
+    assert.equal(first.verdict, 'entry');
+
+    const contract = store.getContract(user.id, String(first.contractId))!;
+    await store.putContract({
+      ...contract,
+      status: 'won',
+      profit: 6,
+      exitSpot: 1001,
+      settlementTime: Date.now()
+    });
+
+    // The export's win branch ends without a `trade_again`, so the run stops
+    // rather than opening another contract. The stop is the strategy's own
+    // decision; the entry ceiling is untouched.
+    const second = await tickBotRun(deps, user, run.runId, 'token', 'tick-2');
+    assert.equal(second.verdict, 'stopped');
+    assert.equal(second.run.runtimeStatus, 'stopped');
+    assert.equal(second.run.afterPurchaseFor, Number(first.contractId));
+    assert.equal(store.listTradeIntents(user.id).length, 1);
+    assert.ok(
+      second.run.events.some((e) => /contract won/i.test(e.detail)),
+      'the win notification should be journalled'
+    );
+
+    // A stopped run stays stopped: a later tick cannot resume it.
+    const third = await tickBotRun(deps, user, run.runId, 'token', 'tick-3');
+    assert.equal(third.verdict, 'stopped');
+    assert.equal(store.listTradeIntents(user.id).length, 1);
+  });
+});
+
+test('run: the exported Digit_Differs_AI bot stops at its own stop-loss', async () => {
+  await withHarness(async ({ deps, user, store, setQuotes }) => {
+    const bot = await importFixture(store, user.id, DIGIT_DIFFERS_AI_XML);
+    setQuotes([1000.11, 1000.22, 1000.33, 1000.44, 1000.55]);
+
+    const run = await startBotRun(deps, user, bot.id, { accountId: 'DEMO' }, 'token');
+    // The export sets Stop Loss to 3 USD.
+    assert.equal(run.variables.stop_loss_limit, 3);
+
+    const first = await tickBotRun(deps, user, run.runId, 'token', 'tick-1');
+    assert.equal(first.verdict, 'entry');
+
+    const contract = store.getContract(user.id, String(first.contractId))!;
+    await store.putContract({
+      ...contract,
+      status: 'lost',
+      profit: -3.5,
+      exitSpot: 999,
+      settlementTime: Date.now()
+    });
+
+    // Cumulative profit is at or below minus the stop loss, so the strategy's
+    // own stop condition fires and it declines to trade again.
+    const second = await tickBotRun(deps, user, run.runId, 'token', 'tick-2');
+    assert.equal(second.verdict, 'stopped');
+    assert.equal(second.run.runtimeStatus, 'stopped');
+    assert.equal(store.listTradeIntents(user.id).length, 1);
+    assert.ok(
+      second.run.events.some((e) => /stop condition reached/i.test(e.detail)),
+      'the stop-condition notification should be journalled'
+    );
+  });
+});
+
 test('plan: a flat legacy digit export keeps the plan engine', () => {
   // The older export has no decision block: its entry rule is the single
   // purchase, which only the plan engine's digit path models.
