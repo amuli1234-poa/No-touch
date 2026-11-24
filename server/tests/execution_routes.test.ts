@@ -144,6 +144,8 @@ async function withServer(
      * wired into the router, so a place request exercises the fan-out.
      */
     copyFollowers?: Partial<CopyTradingFollowerRecord>[];
+    /** The master's copy switch; on by default so the fan-out is exercised. */
+    copyEnabled?: boolean;
     systemSignal?: {
       symbol: string;
       direction: 'RISE' | 'FALL';
@@ -264,6 +266,14 @@ async function withServer(
         ...overrides
       });
     }
+    await store.putCopyTradingControl({
+      ownerUserId: 'u_a',
+      enabled: opts.copyEnabled ?? true,
+      updatedBy: 'adm_test',
+      updatedByEmail: 'admin@test',
+      updatedAt: Date.now(),
+      stoppedReason: null
+    });
     copyEngine = new CopyExecutionEngine({ store, cfg, gateway, auditor });
   }
   app.use(
@@ -1555,5 +1565,27 @@ test('an automatic entry mirrors onto followers too', async () => {
       assert.equal(broker.buys[1].accountId, 'F1_DEMO');
     },
     { automatic: true, copyFollowers: [{}] }
+  );
+});
+
+test('POST /place does not mirror while the copy switch is stopped', async () => {
+  await withServer(
+    async ({ post, broker }) => {
+      const res = await post('/api/execution/place', {
+        accountId: 'DEMO',
+        symbol: 'R_100',
+        timeframe: '5m',
+        direction: 'RISE',
+        contractFamily: 'rise_fall',
+        stake: 2,
+        currency: 'USD',
+        parameters: { duration: 5, durationUnit: 'm' },
+        idempotencyKey: 'place-copy-stopped'
+      });
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.equal(broker.buys.length, 1, 'only the manager trades');
+      assert.equal(broker.buys[0].accountId, 'DEMO');
+    },
+    { copyFollowers: [{}], copyEnabled: false }
   );
 });

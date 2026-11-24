@@ -131,6 +131,11 @@ export class CopyExecutionEngine {
     // until a separate release approval enables it.
     if (input.signal.accountMode !== 'demo') return [];
 
+    // Copying is opt-in per master. Until an administrator presses Start, a
+    // manager's trade is theirs alone, so nothing fans out.
+    const control = this.store.getCopyTradingControl(input.master.id);
+    if (!control?.enabled) return [];
+
     const followers = this.store
       .listAllCopyTradingFollowers()
       .filter((f) => f.ownerUserId === input.master.id);

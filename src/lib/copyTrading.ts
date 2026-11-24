@@ -18,6 +18,51 @@ export interface CopyTradingStatus {
   patConfigured: boolean;
 }
 
+export interface CopyControl {
+  enabled: boolean;
+  updatedAt: number | null;
+  stoppedReason: string | null;
+  followers: { total: number; eligible: number };
+}
+
+export interface CopyAccountPerformance {
+  followerId: string | null;
+  loginId: string | null;
+  accountId: string;
+  accountMode: 'demo' | 'real';
+  currency: string;
+  trades: number;
+  settledTrades: number;
+  openTrades: number;
+  wins: number;
+  losses: number;
+  realisedPnl: number;
+  staked: number;
+  openStake: number;
+  lastTradeAt: number | null;
+}
+
+export interface CopyPerformance {
+  generatedAt: number;
+  ownerUserId: string;
+  enabled: boolean;
+  followers: number;
+  totals: {
+    accounts: number;
+    trades: number;
+    settledTrades: number;
+    openTrades: number;
+    wins: number;
+    losses: number;
+    realisedPnl: number;
+    staked: number;
+    openStake: number;
+    roiPercent: number | null;
+  };
+  accounts: CopyAccountPerformance[];
+  daily: { date: string; realisedPnl: number; trades: number }[];
+}
+
 async function readError(res: Response): Promise<Error> {
   try {
     const body = await res.json();
@@ -69,4 +114,27 @@ export async function disconnectCopyFollower(id: string): Promise<{ providerRevo
   });
   if (!res.ok) throw await readError(res);
   return await res.json() as { providerRevoked: boolean };
+}
+
+export async function fetchCopyControl(): Promise<CopyControl> {
+  const res = await fetch('/api/copy-trading/control', { credentials: 'same-origin' });
+  if (!res.ok) throw await readError(res);
+  return (await res.json()).control as CopyControl;
+}
+
+export async function setCopyControl(enabled: boolean): Promise<{ control: CopyControl; note: string }> {
+  const res = await fetch('/api/copy-trading/control', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled })
+  });
+  if (!res.ok) throw await readError(res);
+  return await res.json() as { control: CopyControl; note: string };
+}
+
+export async function fetchCopyPerformance(days = 30): Promise<CopyPerformance> {
+  const res = await fetch(`/api/copy-trading/performance?days=${days}`, { credentials: 'same-origin' });
+  if (!res.ok) throw await readError(res);
+  return await res.json() as CopyPerformance;
 }

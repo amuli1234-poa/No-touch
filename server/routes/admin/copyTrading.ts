@@ -8,6 +8,7 @@ import { createOpaqueId } from '../../lib/pkce.js';
 import { seal, open } from '../../lib/crypto.js';
 import { revokeToken } from '../../lib/deriv.js';
 import { validatePatToken, PAT_FAILURE_MESSAGE } from '../../copyTrading/pat.js';
+import { buildCopyPerformance } from '../../copyTrading/performance.js';
 import type {
   CopyTradingFollowerRecord,
   CopyFollowerStatus,
@@ -678,6 +679,104 @@ export function createCopyTradingAdminRouter(ctx: AdminRouteContext): Router {
       balancesUnavailable:
         'Balances are not shown here. This view does not call Deriv, so it cannot present a verified figure.'
     });
+  });
+
+  /* ==================================================================== */
+  /*  Copy engine control + performance                                    */
+  /* ==================================================================== */
+
+  /**
+   * The Start/Stop switch for a master's copy engine.
+   *
+   * Off is the default and the safe state: a master's accepted trade is theirs
+   * alone until an administrator starts copying. The switch is per master
+   * because each master manages their own set of followers.
+   */
+  function controlView(ownerUserId: string) {
+    const record = store.getCopyTradingControl(ownerUserId);
+    const master = store.getUserById(ownerUserId);
+    const followers = store.listAllCopyTradingFollowers().filter((f) => f.ownerUserId === ownerUserId);
+    const eligible = followers.filter((f) => effectiveStatus(f) === 'authorized' || effectiveStatus(f) === 'active');
+    return {
+      ownerUserId,
+      master: master ? { userId: master.id, loginId: master.loginId ?? null } : null,
+      enabled: Boolean(record?.enabled),
+      updatedAt: record?.updatedAt ?? null,
+      updatedBy: record?.updatedBy ?? null,
+      updatedByEmail: record?.updatedByEmail ?? null,
+      stoppedReason: record?.stoppedReason ?? null,
+      followers: {
+        total: followers.length,
+        eligible: eligible.length,
+        held: followers.length - eligible.length
+      }
+    };
+  }
+
+  router.get('/control', requireAdmin(ctx, 'copytrading.read'), (req: AdminAuthedRequest, res: Response) => {
+    const ownerUserId = String(req.query.masterUserId ?? '').trim();
+    if (ownerUserId) {
+      if (!store.getUserById(ownerUserId)) return fail(res, 404, 'master_not_found');
+      return res.json({ control: controlView(ownerUserId) });
+    }
+    // Without a master, report every master that has a control or a follower.
+    const ids = new Set<string>([
+      ...store.listAllCopyTradingFollowers().map((f) => f.ownerUserId),
+      ...store.listUsers().map((u) => u.id).filter((id) => store.getCopyTradingControl(id) !== null)
+    ]);
+    return res.json({ items: [...ids].map(controlView) });
+  });
+
+  router.post('/control', requireAdmin(ctx, 'copytrading.control'), async (req: AdminAuthedRequest, res: Response) => {
+    const body = (req.body ?? {}) as { masterUserId?: unknown; enabled?: unknown; reason?: unknown };
+    const ownerUserId = typeof body.masterUserId === 'string' ? body.masterUserId.trim() : '';
+    if (!ownerUserId) return fail(res, 400, 'master_required');
+    const master = store.getUserById(ownerUserId);
+    if (!master) return fail(res, 404, 'master_not_found');
+    if (typeof body.enabled !== 'boolean') return fail(res, 400, 'enabled_required');
+
+    const followers = store.listAllCopyTradingFollowers().filter((f) => f.ownerUserId === ownerUserId);
+    if (body.enabled && followers.length === 0) {
+      return fail(res, 409, 'no_followers', {
+        message: 'Connect at least one client before starting copy trading for this master.'
+      });
+    }
+
+    const now = Date.now();
+    const reason = optionalText(body.reason, MAX_NOTE_LENGTH);
+    await store.putCopyTradingControl({
+      ownerUserId,
+      enabled: body.enabled,
+      updatedBy: req.admin!.id,
+      updatedByEmail: req.admin!.email,
+      updatedAt: now,
+      stoppedReason: body.enabled ? null : reason
+    });
+
+    await auditFromRequest(ctx, req, {
+      action: body.enabled ? 'copytrading.control.started' : 'copytrading.control.stopped',
+      targetType: 'copy_trading_control',
+      targetId: ownerUserId,
+      previousState: { enabled: Boolean(store.getCopyTradingControl(ownerUserId)?.enabled) },
+      newState: { enabled: body.enabled },
+      reason
+    });
+
+    return res.json({
+      control: controlView(ownerUserId),
+      note: body.enabled
+        ? 'Copy trading started. Each accepted DEMO trade is mirrored onto every eligible follower DEMO account.'
+        : 'Copy trading stopped. New master trades are no longer mirrored; contracts already open are unaffected.'
+    });
+  });
+
+  /** Profit and loss across the master and every follower they manage. */
+  router.get('/performance', requireAdmin(ctx, 'copytrading.read'), (req: AdminAuthedRequest, res: Response) => {
+    const ownerUserId = String(req.query.masterUserId ?? '').trim();
+    if (!ownerUserId) return fail(res, 400, 'master_required');
+    if (!store.getUserById(ownerUserId)) return fail(res, 404, 'master_not_found');
+    const days = Number.parseInt(String(req.query.days ?? '30'), 10);
+    return res.json(buildCopyPerformance(store, ownerUserId, { days: Number.isFinite(days) ? days : 30 }));
   });
 
   /* ==================================================================== */

@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api, qs } from './api';
 
 /**
  * Typed client for the Copy Trading administration endpoints.
@@ -136,4 +136,63 @@ export const copyTradingApi = {
     api.del<{ removed: boolean; providerRevoked: boolean; note: string }>(`/copy-trading/clients/${encodeURIComponent(id)}`),
 
   risk: (id: string) => api.get<RiskProfileView>(`/copy-trading/clients/${encodeURIComponent(id)}/risk`)
+};
+
+export interface CopyControlView {
+  ownerUserId: string;
+  master: { userId: string; loginId: string | null } | null;
+  enabled: boolean;
+  updatedAt: number | null;
+  updatedBy: string | null;
+  updatedByEmail: string | null;
+  stoppedReason: string | null;
+  followers: { total: number; eligible: number; held: number };
+}
+
+export interface CopyAccountPerformance {
+  followerId: string | null;
+  loginId: string | null;
+  accountId: string;
+  accountMode: 'demo' | 'real';
+  currency: string;
+  trades: number;
+  settledTrades: number;
+  openTrades: number;
+  wins: number;
+  losses: number;
+  realisedPnl: number;
+  staked: number;
+  openStake: number;
+  lastTradeAt: number | null;
+}
+
+export interface CopyPerformance {
+  generatedAt: number;
+  ownerUserId: string;
+  enabled: boolean;
+  followers: number;
+  totals: {
+    accounts: number;
+    trades: number;
+    settledTrades: number;
+    openTrades: number;
+    wins: number;
+    losses: number;
+    realisedPnl: number;
+    staked: number;
+    openStake: number;
+    roiPercent: number | null;
+  };
+  accounts: CopyAccountPerformance[];
+  daily: { date: string; realisedPnl: number; trades: number }[];
+}
+
+export const copyControlApi = {
+  get: (masterUserId: string) =>
+    api.get<{ control: CopyControlView }>(`/copy-trading/control${qs({ masterUserId })}`),
+  list: () => api.get<{ items: CopyControlView[] }>('/copy-trading/control'),
+  set: (body: { masterUserId: string; enabled: boolean; reason?: string }) =>
+    api.post<{ control: CopyControlView; note: string }>('/copy-trading/control', body),
+  performance: (masterUserId: string, days = 30) =>
+    api.get<CopyPerformance>(`/copy-trading/performance${qs({ masterUserId, days })}`)
 };

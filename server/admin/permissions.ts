@@ -36,7 +36,8 @@ export const PERMISSIONS = [
   'copytrading.onboard',
   'copytrading.authorize',
   'copytrading.followers.manage',
-  'copytrading.risk.manage'
+  'copytrading.risk.manage',
+  'copytrading.control'
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -93,7 +94,8 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'copytrading.read',
     'copytrading.onboard',
     'copytrading.authorize',
-    'copytrading.followers.manage'
+    'copytrading.followers.manage',
+    'copytrading.control'
   ],
 
   FINANCE_ADMIN: [

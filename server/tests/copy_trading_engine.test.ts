@@ -129,9 +129,22 @@ const PARAMS = {
   takeProfit: null
 };
 
+/** Turns a master's copy switch on; copying is off until an admin starts it. */
+export async function enableCopying(store: Store, ownerUserId = 'u_master'): Promise<void> {
+  await store.putCopyTradingControl({
+    ownerUserId,
+    enabled: true,
+    updatedBy: 'adm_test',
+    updatedByEmail: 'admin@test',
+    updatedAt: NOW,
+    stoppedReason: null
+  });
+}
+
 async function harness(opts: { risk?: { approved: boolean; reasons: string[] } } = {}) {
   const store = new Store(tmpDir(), { unsafeDisableLock: true });
   await store.load();
+  await enableCopying(store);
   const broker = new FakeBroker();
   const flags = { allowExecution: true, allowDemoExecution: true, allowRealExecution: false, allowAutomaticTrading: true };
   const gateway = new ExecutionGateway({
@@ -303,6 +316,7 @@ test('an expired follower token is skipped', async () => {
 test('the kill switches still gate a copied trade', async () => {
   const store = new Store(tmpDir(), { unsafeDisableLock: true });
   await store.load();
+  await enableCopying(store);
   const broker = new FakeBroker();
   // Master switch on, DEMO switch OFF: copying must not buy.
   const gateway = new ExecutionGateway({
@@ -361,6 +375,87 @@ test('the same master trade cannot be copied twice (idempotent)', async () => {
     assert.equal(broker.buys.length, 1, 'the retry must not place a second copy');
     assert.equal(second[0].outcome, 'skipped', JSON.stringify(second[0]));
     assert.equal(second[0].reason, 'already_copied');
+  } finally {
+    await store.close();
+  }
+});
+
+/* --------------------------- the start switch ----------------------------- */
+
+test('nothing is copied until the master switch is started', async () => {
+  const store = new Store(tmpDir(), { unsafeDisableLock: true });
+  await store.load();
+  const broker = new FakeBroker();
+  const gateway = new ExecutionGateway({
+    store,
+    cfg: makeConfig(),
+    flags: { allowExecution: true, allowDemoExecution: true, allowRealExecution: false, allowAutomaticTrading: true },
+    broker,
+    balanceProvider: async () => 1000,
+    riskEvaluator: () => ({ approved: true, reasons: [] }),
+    now: () => NOW
+  });
+  const auditor = new ExecutionAuditor(store, { now: () => NOW });
+  const engine = new CopyExecutionEngine({ store, cfg: makeConfig(), gateway, auditor, now: () => NOW });
+  try {
+    await store.putCopyTradingFollower(follower());
+    const outcomes = await engine.mirrorMasterTrade(mirrorInput());
+    assert.deepEqual(outcomes, [], 'a stopped engine reports no outcomes at all');
+    assert.equal(broker.buys.length, 0, 'a stopped engine must not buy');
+  } finally {
+    await store.close();
+  }
+});
+
+test('stopping the switch halts future copies but keeps prior ones', async () => {
+  const { store, broker, engine } = await harness();
+  try {
+    await store.putCopyTradingFollower(follower());
+    const first = await engine.mirrorMasterTrade(mirrorInput());
+    assert.equal(first[0].outcome, 'copied');
+    assert.equal(broker.buys.length, 1);
+
+    await store.putCopyTradingControl({
+      ownerUserId: 'u_master',
+      enabled: false,
+      updatedBy: 'adm_test',
+      updatedByEmail: 'admin@test',
+      updatedAt: NOW + 1,
+      stoppedReason: 'manual stop'
+    });
+
+    const second = await engine.mirrorMasterTrade(mirrorInput({ masterIntentId: 'int_master_2' }));
+    assert.deepEqual(second, []);
+    assert.equal(broker.buys.length, 1, 'no second copy after stopping');
+  } finally {
+    await store.close();
+  }
+});
+
+test('one master\'s switch does not start another master\'s copying', async () => {
+  const { store, broker, engine } = await harness();
+  try {
+    await store.putCopyTradingFollower(follower());
+    // The switch belongs to a different master.
+    await store.putCopyTradingControl({
+      ownerUserId: 'u_other',
+      enabled: true,
+      updatedBy: 'adm_test',
+      updatedByEmail: 'admin@test',
+      updatedAt: NOW,
+      stoppedReason: null
+    });
+    await store.putCopyTradingControl({
+      ownerUserId: 'u_master',
+      enabled: false,
+      updatedBy: 'adm_test',
+      updatedByEmail: 'admin@test',
+      updatedAt: NOW,
+      stoppedReason: null
+    });
+    const outcomes = await engine.mirrorMasterTrade(mirrorInput());
+    assert.deepEqual(outcomes, []);
+    assert.equal(broker.buys.length, 0);
   } finally {
     await store.close();
   }

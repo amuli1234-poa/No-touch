@@ -53,6 +53,23 @@ export interface CopyTradingConsentRecord {
   note: string | null;
 }
 
+export interface CopyTradingControlRecord {
+  /** The master whose trades are copied. One control per master. */
+  ownerUserId: string;
+  /**
+   * When true the copy engine fans a master's accepted DEMO trade out to every
+   * eligible follower. When false nothing is copied, and the reason is recorded
+   * so the console can explain why.
+   */
+  enabled: boolean;
+  /** Administrator who last changed the switch. */
+  updatedBy: string | null;
+  updatedByEmail: string | null;
+  updatedAt: number;
+  /** Why copying was last stopped, when it was stopped by a person. */
+  stoppedReason: string | null;
+}
+
 export interface CopyTradingInvitationRecord {
   id: string;
   ownerUserId: string;

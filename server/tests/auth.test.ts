@@ -849,3 +849,106 @@ test('23. Sign-in returns to the page that started it, and only same-origin path
     await deriv.close();
   }
 });
+
+test('17. Copy Trading start switch is off by default and only copies once started', async () => {
+  const deriv = await startFakeDeriv();
+  const app = await startApp(deriv);
+  const managerCookies = jar();
+  try {
+    const login = await get(app.base, '/auth/start?mode=login', managerCookies);
+    const loginState = new URL(login.headers.get('location')!).searchParams.get('state')!;
+    await get(app.base, `/auth/deriv/callback?code=MANAGER&state=${loginState}`, managerCookies);
+    const managerId = app.store.getUserByDerivSub('deriv-subject-abc-123')!.id;
+
+    // Off until the manager says otherwise.
+    const initial = await get(app.base, '/api/copy-trading/control', managerCookies);
+    assert.equal(initial.status, 200);
+    const initialBody = await initial.json() as { control: { enabled: boolean; followers: { total: number } } };
+    assert.equal(initialBody.control.enabled, false);
+    assert.equal(initialBody.control.followers.total, 0);
+
+    // Starting without a connected client is refused, not silently accepted.
+    const empty = await fetch(`${app.base}/api/copy-trading/control`, {
+      method: 'POST',
+      headers: { Cookie: managerCookies.header(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: true })
+    });
+    assert.equal(empty.status, 409);
+    assert.equal((await empty.json()).error, 'no_followers');
+
+    await app.store.putCopyTradingFollower({
+      id: 'f_trader_1',
+      ownerUserId: managerId,
+      derivSub: 'sub_follower_trader',
+      authMethod: 'pat',
+      loginId: 'CR_TRADER_1',
+      accounts: [{ accountId: 'VRTC_TRADER_1', type: 'demo', currency: 'USD', status: 'active' }],
+      tokenSealed: 'sealed',
+      tokenExpiresAt: 0,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      status: 'active',
+      revision: 1
+    });
+
+    const started = await fetch(`${app.base}/api/copy-trading/control`, {
+      method: 'POST',
+      headers: { Cookie: managerCookies.header(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: true })
+    });
+    assert.equal(started.status, 200);
+    const startedBody = await started.json() as { control: { enabled: boolean; followers: { eligible: number } } };
+    assert.equal(startedBody.control.enabled, true);
+    assert.equal(startedBody.control.followers.eligible, 1);
+    assert.equal(app.store.getCopyTradingControl(managerId)?.enabled, true);
+
+    const stopped = await fetch(`${app.base}/api/copy-trading/control`, {
+      method: 'POST',
+      headers: { Cookie: managerCookies.header(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: false })
+    });
+    assert.equal(stopped.status, 200);
+    assert.equal(app.store.getCopyTradingControl(managerId)?.enabled, false);
+  } finally {
+    await app.close();
+    await deriv.close();
+  }
+});
+
+test('18. Copy Trading performance is scoped to the signed-in manager', async () => {
+  const deriv = await startFakeDeriv();
+  const app = await startApp(deriv);
+  const managerCookies = jar();
+  try {
+    const login = await get(app.base, '/auth/start?mode=login', managerCookies);
+    const loginState = new URL(login.headers.get('location')!).searchParams.get('state')!;
+    await get(app.base, `/auth/deriv/callback?code=MANAGER&state=${loginState}`, managerCookies);
+    const managerId = app.store.getUserByDerivSub('deriv-subject-abc-123')!.id;
+
+    // A follower belonging to a different manager must never be counted here.
+    await app.store.putCopyTradingFollower({
+      id: 'f_other',
+      ownerUserId: 'u_someone_else',
+      derivSub: 'sub_other',
+      authMethod: 'pat',
+      loginId: 'CR_OTHER',
+      accounts: [{ accountId: 'VRTC_OTHER', type: 'demo', currency: 'USD', status: 'active' }],
+      tokenSealed: 'sealed',
+      tokenExpiresAt: 0,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      status: 'active',
+      revision: 1
+    });
+
+    const res = await get(app.base, '/api/copy-trading/performance', managerCookies);
+    assert.equal(res.status, 200);
+    const body = await res.json() as { ownerUserId: string; followers: number; accounts: { accountId: string }[] };
+    assert.equal(body.ownerUserId, managerId);
+    assert.equal(body.followers, 0);
+    assert.equal(body.accounts.some((a) => a.accountId === 'VRTC_OTHER'), false);
+  } finally {
+    await app.close();
+    await deriv.close();
+  }
+});

@@ -1,15 +1,31 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Activity, Check, Copy, KeyRound, Link2, LoaderCircle, RefreshCw, ShieldCheck, Unlink } from 'lucide-react';
+import { Activity, Check, Copy, KeyRound, Link2, LoaderCircle, Play, RefreshCw, ShieldCheck, Square, TrendingDown, TrendingUp, Unlink } from 'lucide-react';
 import {
   addCopyFollower,
   createCopyInvitation,
   disconnectCopyFollower,
+  fetchCopyControl,
+  fetchCopyPerformance,
   fetchCopyTradingStatus,
   listCopyFollowers,
-  type CopyFollower
+  setCopyControl,
+  type CopyControl,
+  type CopyFollower,
+  type CopyPerformance
 } from '../../lib/copyTrading';
 
 type ConnectionMethod = 'link' | 'token';
+
+function money(value: number, currency: string): string {
+  const sign = value < 0 ? '-' : '';
+  return `${sign}${currency} ${Math.abs(value).toFixed(2)}`;
+}
+
+function pnlClass(value: number): string {
+  if (value > 0) return 'text-success';
+  if (value < 0) return 'text-danger';
+  return 'text-muted';
+}
 
 export function CopyTradingView() {
   const [followers, setFollowers] = useState<CopyFollower[]>([]);
@@ -22,13 +38,23 @@ export function CopyTradingView() {
   const [invite, setInvite] = useState<{ url: string; expiresAt: number } | null>(null);
   const [token, setToken] = useState('');
   const [copied, setCopied] = useState(false);
+  const [control, setControl] = useState<CopyControl | null>(null);
+  const [performance, setPerformance] = useState<CopyPerformance | null>(null);
+  const [starting, setStarting] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [nextFollowers, status] = await Promise.all([listCopyFollowers(), fetchCopyTradingStatus()]);
+      const [nextFollowers, status, nextControl, nextPerformance] = await Promise.all([
+        listCopyFollowers(),
+        fetchCopyTradingStatus(),
+        fetchCopyControl(),
+        fetchCopyPerformance()
+      ]);
       setFollowers(nextFollowers);
       setPatConfigured(status.patConfigured);
+      setControl(nextControl);
+      setPerformance(nextPerformance);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The connected accounts could not be loaded.');
@@ -38,6 +64,22 @@ export function CopyTradingView() {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  const toggleCopying = async () => {
+    setStarting(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const next = await setCopyControl(!(control?.enabled ?? false));
+      setControl(next.control);
+      setNotice(next.note);
+      setPerformance(await fetchCopyPerformance());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'The copy switch could not be changed.');
+    } finally {
+      setStarting(false);
+    }
+  };
 
   const generateInvite = async () => {
     setBusy(true);
@@ -99,15 +141,44 @@ export function CopyTradingView() {
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6 p-4 sm:p-6">
       <header className="rounded-2xl border border-line bg-surface p-5 sm:p-7">
-        <div className="flex items-start gap-4">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-accent/25 bg-accent/10 text-accent">
-            <Activity className="h-6 w-6" aria-hidden="true" />
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-accent/25 bg-accent/10 text-accent">
+              <Activity className="h-6 w-6" aria-hidden="true" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent">Managed demo accounts</p>
+              <h1 className="mt-1 text-2xl font-bold text-ink">Copy Trading</h1>
+              <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted">
+                Connect clients with a Deriv authorization link or paste a client’s trade-scoped Personal Access Token.
+              </p>
+            </div>
           </div>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent">Managed demo accounts</p>
-            <h1 className="mt-1 text-2xl font-bold text-ink">Copy Trading</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted">
-              Connect clients with a Deriv authorization link or paste a client’s trade-scoped Personal Access Token.
+          <div className="flex flex-col items-stretch gap-2 sm:items-end">
+            <button
+              type="button"
+              onClick={() => void toggleCopying()}
+              disabled={starting || loading || (!control?.enabled && followers.length === 0)}
+              aria-pressed={control?.enabled ?? false}
+              className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                control?.enabled ? 'bg-danger hover:opacity-90' : 'bg-accent hover:bg-accent-strong'
+              }`}
+            >
+              {starting ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : control?.enabled ? (
+                <Square className="h-4 w-4" />
+              ) : (
+                <Play className="h-4 w-4" />
+              )}
+              {control?.enabled ? 'Stop copy trading' : 'Start copy trading'}
+            </button>
+            <p className="text-xs text-muted" role="status">
+              {control?.enabled
+                ? `Copying is on · ${control.followers.eligible} eligible of ${control.followers.total} connected`
+                : followers.length === 0
+                  ? 'Connect a client account to start copying'
+                  : 'Copying is off · your trades are not being mirrored'}
             </p>
           </div>
         </div>
@@ -118,6 +189,93 @@ export function CopyTradingView() {
           {error ?? notice}
         </div>
       )}
+
+      <section className="rounded-2xl border border-line bg-surface p-5 sm:p-6" aria-label="Copy trading performance">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold text-ink">Performance across your accounts</h2>
+            <p className="mt-0.5 text-xs text-muted">
+              Profit and loss for your own account and every client account you manage.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-xl border border-line bg-elevated p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Net profit / loss</p>
+            <p className={`mt-1 text-xl font-bold ${pnlClass(performance?.totals.realisedPnl ?? 0)}`}>
+              {money(performance?.totals.realisedPnl ?? 0, 'USD')}
+            </p>
+          </div>
+          <div className="rounded-xl border border-line bg-elevated p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Return on stake</p>
+            <p className={`mt-1 text-xl font-bold ${pnlClass(performance?.totals.roiPercent ?? 0)}`}>
+              {performance?.totals.roiPercent === null || performance?.totals.roiPercent === undefined
+                ? '—'
+                : `${performance.totals.roiPercent > 0 ? '+' : ''}${performance.totals.roiPercent.toFixed(2)}%`}
+            </p>
+          </div>
+          <div className="rounded-xl border border-line bg-elevated p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Wins / losses</p>
+            <p className="mt-1 text-xl font-bold text-ink">
+              <span className="text-success">{performance?.totals.wins ?? 0}</span>
+              <span className="mx-1 text-muted">/</span>
+              <span className="text-danger">{performance?.totals.losses ?? 0}</span>
+            </p>
+          </div>
+          <div className="rounded-xl border border-line bg-elevated p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Open stake at risk</p>
+            <p className="mt-1 text-xl font-bold text-ink">
+              {money(performance?.totals.openStake ?? 0, 'USD')}
+            </p>
+          </div>
+        </div>
+
+        {performance && performance.accounts.length > 0 ? (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[38rem] border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-muted">
+                  <th className="py-2 pr-3 font-semibold">Account</th>
+                  <th className="py-2 pr-3 font-semibold">Trades</th>
+                  <th className="py-2 pr-3 font-semibold">Open</th>
+                  <th className="py-2 pr-3 font-semibold">W / L</th>
+                  <th className="py-2 pr-3 text-right font-semibold">Profit / loss</th>
+                </tr>
+              </thead>
+              <tbody>
+                {performance.accounts.map((row) => (
+                  <tr key={`${row.followerId ?? 'master'}-${row.accountId}`} className="border-b border-line/60 last:border-0">
+                    <td className="py-2.5 pr-3">
+                      <p className="font-semibold text-ink">{row.loginId ?? row.accountId}</p>
+                      <p className="text-[11px] text-muted">
+                        {row.followerId === null ? 'Your account' : 'Client account'} · {row.accountId}
+                      </p>
+                    </td>
+                    <td className="py-2.5 pr-3 text-ink">{row.trades}</td>
+                    <td className="py-2.5 pr-3 text-muted">{row.openTrades}</td>
+                    <td className="py-2.5 pr-3">
+                      <span className="text-success">{row.wins}</span>
+                      <span className="mx-1 text-muted">/</span>
+                      <span className="text-danger">{row.losses}</span>
+                    </td>
+                    <td className={`py-2.5 pr-3 text-right font-semibold ${pnlClass(row.realisedPnl)}`}>
+                      <span className="inline-flex items-center gap-1">
+                        {row.realisedPnl > 0 ? <TrendingUp className="h-3.5 w-3.5" /> : row.realisedPnl < 0 ? <TrendingDown className="h-3.5 w-3.5" /> : null}
+                        {money(row.realisedPnl, row.currency)}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="mt-4 rounded-xl border border-dashed border-line bg-elevated p-4 text-sm text-muted">
+            No trades recorded yet. Performance appears once your trades and their copies settle.
+          </p>
+        )}
+      </section>
 
       <section className="rounded-2xl border border-line bg-surface p-5 sm:p-6">
         <div className="flex flex-wrap gap-2" role="tablist" aria-label="Connect a client account">
@@ -205,7 +363,7 @@ export function CopyTradingView() {
       </section>
 
       <aside className="rounded-xl border border-warning/25 bg-warning/5 p-4 text-xs leading-relaxed text-muted">
-        <div className="flex items-start gap-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-warning" /><p><strong className="text-ink">Demo connection only.</strong> Both methods currently save demo accounts only; this stage does not place or copy trades. Removing a pasted PAT here forgets it from WickSentinel but does not revoke it at Deriv—the client must revoke that token in Deriv settings.</p></div>
+        <div className="flex items-start gap-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-warning" /><p><strong className="text-ink">Demo accounts only.</strong> Both connection methods save demo accounts only. Once you press Start copy trading, each DEMO trade you place is mirrored onto every eligible client demo account; REAL trades are never copied. Removing a pasted PAT here forgets it from WickSentinel but does not revoke it at Deriv—the client must revoke that token in Deriv settings.</p></div>
       </aside>
     </div>
   );

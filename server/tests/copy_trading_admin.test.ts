@@ -760,3 +760,213 @@ test('bots: the imports endpoint never upgrades a compatibility verdict', async 
     assert.equal(res.json.items[0].unknownBlocks[0].type, 'contract_check');
   });
 });
+
+/* ============================ CONTROL + PERFORMANCE ====================== */
+
+/** Connects a client to a master the way the console does, returning the follower id. */
+async function linkClientToMaster(
+  ctx: { app: Awaited<ReturnType<typeof startApp>>; admin: Client },
+  clientId: string,
+  masterId: string
+): Promise<string> {
+  const res = await ctx.admin.post(`/api/admin/v1/copy-trading/clients/${clientId}/authorize-token`, {
+    token: PAT,
+    consent: true,
+    masterUserId: masterId
+  });
+  assert.equal(res.status, 201, JSON.stringify(res.json));
+  return res.json.client.id as string;
+}
+
+test('copy control: a master with no clients cannot be started', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+    const res = await admin.post('/api/admin/v1/copy-trading/control', { masterUserId: 'master1', enabled: true });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.error, 'no_followers');
+  });
+});
+
+test('copy control: starting and stopping is persisted and audited', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+    await seedTrader(app.store, { id: 'client1', derivSub: 'deriv-client-subject-456' });
+    await linkClientToMaster({ app, admin }, 'client1', 'master1');
+
+    // Off by default: copying is opt-in.
+    const initial = await admin.get('/api/admin/v1/copy-trading/control?masterUserId=master1');
+    assert.equal(initial.status, 200);
+    assert.equal(initial.json.control.enabled, false);
+    assert.equal(initial.json.control.followers.total, 1);
+
+    const started = await admin.post('/api/admin/v1/copy-trading/control', {
+      masterUserId: 'master1',
+      enabled: true
+    });
+    assert.equal(started.status, 200, JSON.stringify(started.json));
+    assert.equal(started.json.control.enabled, true);
+    assert.equal(app.store.getCopyTradingControl('master1')?.enabled, true);
+    assert.equal(app.store.getCopyTradingControl('master1')?.updatedByEmail, 'a@x.com');
+
+    const stopped = await admin.post('/api/admin/v1/copy-trading/control', {
+      masterUserId: 'master1',
+      enabled: false,
+      reason: 'client requested a pause'
+    });
+    assert.equal(stopped.status, 200);
+    assert.equal(stopped.json.control.enabled, false);
+    assert.equal(stopped.json.control.stoppedReason, 'client requested a pause');
+
+    const actions = app.store.listAudit().map((a: any) => a.action);
+    assert.ok(actions.includes('copytrading.control.started'), actions.join(','));
+    assert.ok(actions.includes('copytrading.control.stopped'), actions.join(','));
+  });
+});
+
+test('copy control: an unknown master is rejected', async () => {
+  await withApp(async ({ app: _app, admin }) => {
+    const res = await admin.post('/api/admin/v1/copy-trading/control', { masterUserId: 'nope', enabled: true });
+    assert.equal(res.status, 404);
+    assert.equal(res.json.error, 'master_not_found');
+  });
+});
+
+test('copy control: a read-only administrator cannot start copying', async () => {
+  await withApp(
+    async ({ app, admin }) => {
+      await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+      // Seeded directly: an analyst cannot authorize clients, which is the
+      // point of the permission being tested below.
+      await app.store.putCopyTradingFollower({
+        id: 'f_analyst',
+        ownerUserId: 'master1',
+        derivSub: 'sub_client1',
+        authMethod: 'pat',
+        loginId: 'CRclient1',
+        accounts: [{ accountId: 'VRTC_CLIENT_9', type: 'demo', currency: 'USD', status: 'active' }],
+        tokenSealed: seal(PAT, SECRET),
+        tokenExpiresAt: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        status: 'active',
+        revision: 1
+      });
+      // The analyst has copytrading.read but not copytrading.control.
+      const res = await admin.post('/api/admin/v1/copy-trading/control', { masterUserId: 'master1', enabled: true });
+      assert.equal(res.status, 403);
+      assert.equal(app.store.getCopyTradingControl('master1'), null);
+    },
+    { role: 'ANALYST' }
+  );
+});
+
+test('copy performance: a manager sees their own and every follower account', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+    await seedTrader(app.store, { id: 'client1', derivSub: 'deriv-client-subject-456' });
+    await linkClientToMaster({ app, admin }, 'client1', 'master1');
+
+    const res = await admin.get('/api/admin/v1/copy-trading/performance?masterUserId=master1');
+    assert.equal(res.status, 200, JSON.stringify(res.json));
+    // The master's own account plus the client's Deriv account on the follower
+    // record. An account that has not traded still appears, with a zero row.
+    assert.equal(res.json.totals.accounts, 2);
+    assert.equal(res.json.followers, 1);
+    const ids = res.json.accounts.map((a: any) => a.accountId).sort();
+    assert.deepEqual(ids, ['VRTC_CLIENT_9', 'VRTCmaster1']);
+    const clientRow = res.json.accounts.find((a: any) => a.accountId === 'VRTC_CLIENT_9');
+    assert.equal(clientRow.trades, 0);
+    assert.equal(clientRow.realisedPnl, 0);
+  });
+});
+
+test('copy performance: realised profit is attributed to the trading account', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+    await seedTrader(app.store, { id: 'client1', derivSub: 'deriv-client-subject-456' });
+    const followerId = await linkClientToMaster({ app, admin }, 'client1', 'master1');
+
+    const now = Date.now();
+    // The master's own settled win.
+    await app.store.putContract({
+      id: 'c_master',
+      userId: 'master1',
+      accountId: 'VRTCmaster1',
+      accountMode: 'demo',
+      intentId: 'i_master',
+      contractFamily: 'rise_fall',
+      contractType: 'CALL',
+      symbol: 'R_100',
+      buyPrice: 10,
+      stake: 10,
+      currency: 'USD',
+      payout: 19,
+      entrySpot: 100,
+      exitSpot: 101,
+      purchaseTime: now - 1000,
+      startTime: now - 1000,
+      expiryTime: now,
+      settlementTime: now,
+      status: 'won',
+      profit: 9,
+      soldFor: null,
+      buyTransactionId: 1,
+      updatedAt: now
+    });
+    // A copied trade on the client's account, owned by the follower principal.
+    await app.store.putContract({
+      id: 'c_client',
+      userId: `copy_follower_${followerId}`,
+      accountId: 'VRTC_CLIENT_9',
+      accountMode: 'demo',
+      intentId: 'i_client',
+      contractFamily: 'rise_fall',
+      contractType: 'CALL',
+      symbol: 'R_100',
+      buyPrice: 10,
+      stake: 10,
+      currency: 'USD',
+      payout: 0,
+      entrySpot: 100,
+      exitSpot: 99,
+      purchaseTime: now - 1000,
+      startTime: now - 1000,
+      expiryTime: now,
+      settlementTime: now,
+      status: 'lost',
+      profit: -10,
+      soldFor: null,
+      buyTransactionId: 2,
+      updatedAt: now
+    });
+
+    const res = await admin.get('/api/admin/v1/copy-trading/performance?masterUserId=master1');
+    assert.equal(res.status, 200, JSON.stringify(res.json));
+    assert.equal(res.json.totals.realisedPnl, -1);
+    assert.equal(res.json.totals.wins, 1);
+    assert.equal(res.json.totals.losses, 1);
+    assert.equal(res.json.totals.staked, 20);
+    assert.equal(res.json.totals.roiPercent, -5);
+
+    const masterRow = res.json.accounts.find((a: any) => a.accountId === 'VRTCmaster1');
+    const clientRow = res.json.accounts.find((a: any) => a.accountId === 'VRTC_CLIENT_9');
+    assert.equal(masterRow.followerId, null);
+    assert.equal(masterRow.realisedPnl, 9);
+    assert.equal(clientRow.followerId, followerId);
+    assert.equal(clientRow.realisedPnl, -10);
+  });
+});
+
+test('copy performance: another manager cannot read this master\'s numbers', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+    await seedTrader(app.store, { id: 'master2', derivSub: 'sub_master2' });
+    await seedTrader(app.store, { id: 'client1', derivSub: 'deriv-client-subject-456' });
+    await linkClientToMaster({ app, admin }, 'client1', 'master1');
+
+    const res = await admin.get('/api/admin/v1/copy-trading/performance?masterUserId=master2');
+    assert.equal(res.status, 200);
+    assert.equal(res.json.followers, 0);
+    assert.equal(res.json.accounts.every((a: any) => a.followerId === null), true);
+  });
+});

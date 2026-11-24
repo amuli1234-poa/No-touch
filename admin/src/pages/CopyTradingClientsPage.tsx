@@ -27,6 +27,7 @@ import {
   type UserSearchRow
 } from '../lib/copyTrading';
 import { Badge, Card, Empty, LoadingBlock, Modal, Notice, PageHeader, Pagination, StatCard } from '../components/UI';
+import { CopyEnginePanel } from '../components/CopyEnginePanel';
 import { formatDateTime, formatNumber, formatRelative } from '../lib/format';
 
 const PAGE_SIZE = 20;
@@ -63,6 +64,7 @@ export function CopyTradingClientsPage() {
   const canOnboard = has('copytrading.onboard');
   const canAuthorize = has('copytrading.authorize');
   const canManage = has('copytrading.followers.manage');
+  const canControl = has('copytrading.control');
 
   const clients = useAsync(
     () => copyTradingApi.listClients(qs({ page, pageSize: PAGE_SIZE, q, status })),
@@ -118,10 +120,12 @@ export function CopyTradingClientsPage() {
       </div>
 
       <Notice kind="info">
-        <strong>Connections are live; trade mirroring is not.</strong> This module stores and manages Deriv
-        authorizations through the existing Copy Trading backend. Automatic copying of trades is not implemented in
-        this deployment, so a follower marked “Active” will not place trades on anyone’s behalf.
+        <strong>DEMO trades are mirrored; REAL trades are not.</strong> An accepted DEMO trade is copied onto each
+        active follower's DEMO accounts. Copying is off for REAL accounts in this deployment, and a follower marked
+        “Paused” or “Suspended” is skipped.
       </Notice>
+
+      <CopyEnginePanel canControl={canControl} onNotify={push} />
 
       <Card
         tight

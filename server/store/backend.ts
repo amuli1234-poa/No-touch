@@ -45,7 +45,8 @@ export const COLLECTIONS = [
   'botRuns',
   'copyTradingFollowers',
   'copyTradingInvitations',
-  'copyTradingConsents'
+  'copyTradingConsents',
+  'copyTradingControls'
 ] as const;
 
 export type CollectionName = (typeof COLLECTIONS)[number];
@@ -111,7 +112,8 @@ export const COLLECTION_SPECS: readonly CollectionSpec[] = [
   { name: 'botRuns', kind: 'keyed', keyField: 'runId', indexFields: ['userId', 'botId'] },
   { name: 'copyTradingFollowers', kind: 'keyed', keyField: 'id', indexFields: ['ownerUserId', 'derivSub'] },
   { name: 'copyTradingInvitations', kind: 'keyed', keyField: 'id', indexFields: ['ownerUserId', 'tokenHash'] },
-  { name: 'copyTradingConsents', kind: 'keyed', keyField: 'followerId', indexFields: ['ownerUserId'] }
+  { name: 'copyTradingConsents', kind: 'keyed', keyField: 'followerId', indexFields: ['ownerUserId'] },
+  { name: 'copyTradingControls', kind: 'keyed', keyField: 'ownerUserId', indexFields: ['ownerUserId'] }
 ];
 
 export interface StorageBackend {

@@ -33,7 +33,8 @@ import type { BotRunRecord } from '../bots/runTypes.js';
 import type {
   CopyTradingFollowerRecord,
   CopyTradingInvitationRecord,
-  CopyTradingConsentRecord
+  CopyTradingConsentRecord,
+  CopyTradingControlRecord
 } from '../copyTrading/types.js';
 import { JsonBackend } from './json_backend.js';
 import { SqliteBackend, sqliteFileExists } from './sqlite_backend.js';
@@ -166,6 +167,7 @@ interface Database {
   copyTradingFollowers: Record<string, CopyTradingFollowerRecord>;
   copyTradingInvitations: Record<string, CopyTradingInvitationRecord>;
   copyTradingConsents: Record<string, CopyTradingConsentRecord>;
+  copyTradingControls: Record<string, CopyTradingControlRecord>;
 }
 
 const EMPTY: Database = {
@@ -198,7 +200,8 @@ const EMPTY: Database = {
   botRuns: {},
   copyTradingFollowers: {},
   copyTradingInvitations: {},
-  copyTradingConsents: {}
+  copyTradingConsents: {},
+  copyTradingControls: {}
 };
 
 /**
@@ -266,7 +269,8 @@ export class Store {
         botRuns: (await this.backend.loadKeyed('botRuns')) as unknown as Database['botRuns'],
         copyTradingFollowers: (await this.backend.loadKeyed('copyTradingFollowers')) as unknown as Database['copyTradingFollowers'],
         copyTradingInvitations: (await this.backend.loadKeyed('copyTradingInvitations')) as unknown as Database['copyTradingInvitations'],
-        copyTradingConsents: (await this.backend.loadKeyed('copyTradingConsents')) as unknown as Database['copyTradingConsents']
+        copyTradingConsents: (await this.backend.loadKeyed('copyTradingConsents')) as unknown as Database['copyTradingConsents'],
+        copyTradingControls: (await this.backend.loadKeyed('copyTradingControls')) as unknown as Database['copyTradingControls']
       };
       const platformConfig = await this.backend.loadSingleton('platformConfig');
       this.db.platformConfig = { ...EMPTY.platformConfig, ...((platformConfig ?? {}) as Partial<PlatformConfigRecord>) };
@@ -1139,6 +1143,33 @@ export class Store {
     if (!this.db.copyTradingConsents[followerId]) return;
     delete this.db.copyTradingConsents[followerId];
     await this.backend.deleteKeyed('copyTradingConsents', followerId);
+  }
+
+  /* --------------------------- copy trading control --------------------- */
+
+  async putCopyTradingControl(record: CopyTradingControlRecord): Promise<void> {
+    this.ensureLoaded();
+    this.db.copyTradingControls[record.ownerUserId] = record;
+    await this.backend.putKeyed('copyTradingControls', record.ownerUserId, record as unknown as StoredRecord);
+  }
+
+  getCopyTradingControl(ownerUserId: string): CopyTradingControlRecord | null {
+    this.ensureLoaded();
+    return this.db.copyTradingControls[ownerUserId] ?? null;
+  }
+
+  /**
+   * Contracts owned by any user whose id is in `userIds`.
+   *
+   * The copy engine represents each follower as a synthetic principal, so a
+   * follower's copied contracts are stored under that synthetic id rather than
+   * the manager's. Performance reporting must see both, which the owner-scoped
+   * `listContracts` cannot do.
+   */
+  listContractsForUsers(userIds: readonly string[]): ContractRecord[] {
+    this.ensureLoaded();
+    const wanted = new Set(userIds);
+    return Object.values(this.db.contracts).filter((c) => wanted.has(c.userId));
   }
 
   /* ====================================================================== */

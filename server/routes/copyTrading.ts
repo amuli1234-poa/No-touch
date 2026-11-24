@@ -6,6 +6,7 @@ import { open, seal } from '../lib/crypto.js';
 import { revokeToken } from '../lib/deriv.js';
 import { createOpaqueId } from '../lib/pkce.js';
 import { validatePatToken, PAT_FAILURE_MESSAGE } from '../copyTrading/pat.js';
+import { buildCopyPerformance } from '../copyTrading/performance.js';
 
 const INVITATION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -21,6 +22,22 @@ function followerView(record: ReturnType<SessionContext['store']['listCopyTradin
   };
 }
 
+/** The manager's view of their own copy switch. */
+function traderControlView(store: SessionContext['store'], ownerUserId: string) {
+  const record = store.getCopyTradingControl(ownerUserId);
+  const followers = store.listCopyTradingFollowers(ownerUserId);
+  const eligible = followers.filter((f) => {
+    const status = f.status ?? 'authorized';
+    return status === 'authorized' || status === 'active';
+  });
+  return {
+    enabled: Boolean(record?.enabled),
+    updatedAt: record?.updatedAt ?? null,
+    stoppedReason: record?.stoppedReason ?? null,
+    followers: { total: followers.length, eligible: eligible.length }
+  };
+}
+
 export function createCopyTradingRouter(ctx: SessionContext): Router {
   const router = Router();
   router.use(express.json({ limit: '8kb' }));
@@ -31,6 +48,60 @@ export function createCopyTradingRouter(ctx: SessionContext): Router {
 
   router.get('/api/copy-trading/followers', requireSession(ctx), (req: AuthedRequest, res: Response) => {
     res.json({ followers: ctx.store.listCopyTradingFollowers(req.user!.id).map(followerView) });
+  });
+
+  /**
+   * Profit and loss for the signed-in manager and every client they manage.
+   *
+   * Scoped to `req.user.id` as the owner, so a manager can only ever read the
+   * performance of followers they connected. Copied contracts are owned by the
+   * follower's synthetic principal, which is why this cannot reuse the
+   * owner-scoped contract listing on its own.
+   */
+  router.get('/api/copy-trading/performance', requireSession(ctx), (req: AuthedRequest, res: Response) => {
+    const days = Number.parseInt(String(req.query.days ?? '30'), 10);
+    res.json(buildCopyPerformance(ctx.store, req.user!.id, { days: Number.isFinite(days) ? days : 30 }));
+  });
+
+  /**
+   * The manager's own Start/Stop switch.
+   *
+   * A manager may start copying for the clients they connected; the engine
+   * re-reads this switch on every master trade, so stopping takes effect on the
+   * next trade and never cancels a contract already open at the broker.
+   */
+  router.get('/api/copy-trading/control', requireSession(ctx), (req: AuthedRequest, res: Response) => {
+    res.json({ control: traderControlView(ctx.store, req.user!.id) });
+  });
+
+  router.post('/api/copy-trading/control', requireSession(ctx), async (req: AuthedRequest, res: Response) => {
+    const body = (req.body ?? {}) as { enabled?: unknown };
+    if (typeof body.enabled !== 'boolean') {
+      res.status(400).json({ error: 'enabled_required', message: 'Say whether copying should start or stop.' });
+      return;
+    }
+    const ownerUserId = req.user!.id;
+    if (body.enabled && ctx.store.listCopyTradingFollowers(ownerUserId).length === 0) {
+      res.status(409).json({
+        error: 'no_followers',
+        message: 'Connect at least one client account before starting copy trading.'
+      });
+      return;
+    }
+    await ctx.store.putCopyTradingControl({
+      ownerUserId,
+      enabled: body.enabled,
+      updatedBy: ownerUserId,
+      updatedByEmail: req.user!.loginId ?? null,
+      updatedAt: Date.now(),
+      stoppedReason: null
+    });
+    res.json({
+      control: traderControlView(ctx.store, ownerUserId),
+      note: body.enabled
+        ? 'Copy trading started. Your accepted DEMO trades are mirrored onto each connected client account.'
+        : 'Copy trading stopped. New trades are no longer copied; contracts already open are unaffected.'
+    });
   });
 
   /** OAuth link option: the invited client authorizes their own Deriv account. */
