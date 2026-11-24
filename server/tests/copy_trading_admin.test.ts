@@ -1,0 +1,761 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { AddressInfo } from 'node:net';
+import { createApp } from '../index.js';
+import type { ServerConfig } from '../config.js';
+import { Store } from '../store/store.js';
+import { hashPassword } from '../admin/passwords.js';
+import { generateTotpSecret, currentTotp } from '../admin/totp.js';
+import { seal } from '../lib/crypto.js';
+import type { AdminUserRecord } from '../admin/types.js';
+
+/**
+ * Administrative Copy Trading client management.
+ *
+ * Runs against the real Express app and the real store, with a fake Deriv that
+ * answers the accounts and userinfo endpoints. The point of most of these tests
+ * is what must NOT happen: no token in a response, no token in an audit record,
+ * no duplicate follower, no assignment without consent, no privileged action by
+ * a read-only administrator.
+ */
+
+const SECRET = 'test_session_secret_at_least_32_characters_long_000';
+const PAT = 'pat_client_token_123456789';
+
+interface FakeDeriv {
+  url: string;
+  close: () => Promise<void>;
+  accounts: { account_id: string; account_type: string; currency: string; status: string }[];
+  accountsStatus: number;
+  identitySubject: string;
+  lastAppId: string | null;
+  revokeCount: number;
+}
+
+async function startFakeDeriv(): Promise<FakeDeriv> {
+  const state: FakeDeriv = {
+    url: '',
+    close: async () => {},
+    accounts: [{ account_id: 'VRTC_CLIENT_9', account_type: 'demo', currency: 'USD', status: 'active' }],
+    accountsStatus: 200,
+    identitySubject: 'deriv-client-subject-456',
+    lastAppId: null,
+    revokeCount: 0
+  };
+
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url || '/', 'http://localhost');
+
+    if (url.pathname === '/trading/v1/options/accounts') {
+      state.lastAppId = typeof req.headers['deriv-app-id'] === 'string' ? req.headers['deriv-app-id'] : null;
+      if (state.accountsStatus !== 200) {
+        res.writeHead(state.accountsStatus, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ errors: [{ code: state.accountsStatus === 401 ? 'Unauthorized' : 'AccessDenied' }] }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ data: state.accounts }));
+      return;
+    }
+
+    if (url.pathname === '/userinfo') {
+      if (!req.headers.authorization) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'invalid_token' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ sub: state.identitySubject, loginid: 'CR1234567' }));
+      return;
+    }
+
+    if (url.pathname === '/oauth2/revoke') {
+      state.revokeCount++;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{}');
+      return;
+    }
+
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end('{}');
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const addr = server.address() as AddressInfo;
+  state.url = `http://127.0.0.1:${addr.port}`;
+  state.close = () => new Promise<void>((r) => server.close(() => r()));
+  return state;
+}
+
+function makeConfig(dataDir: string, derivUrl: string, patAppId: string | null = 'PAT_APP_ID'): ServerConfig {
+  return {
+    port: 0,
+    isProduction: false,
+    dataDir,
+    storageEngine: (process.env.TEST_STORAGE_ENGINE as ServerConfig['storageEngine']) ?? 'auto',
+    deriv: {
+      appId: '34WRcFqUqhHMuCW3O9NQy',
+      patAppId,
+      redirectUri: 'http://localhost:3000/auth/deriv/callback',
+      clientSecret: null,
+      scopes: 'trade',
+      authorizationEndpoint: `${derivUrl}/oauth2/auth`,
+      tokenEndpoint: `${derivUrl}/oauth2/token`,
+      userinfoEndpoint: `${derivUrl}/userinfo`,
+      revocationEndpoint: `${derivUrl}/oauth2/revoke`,
+      apiBaseUrl: derivUrl
+    },
+    session: {
+      secret: SECRET,
+      ttlSeconds: 3600,
+      cookieName: 'ws_session',
+      oauthCookieName: 'ws_oauth',
+      oauthCookieTtlSeconds: 600
+    },
+    admin: {
+      cookieName: 'ws_admin_session',
+      sessionTtlSeconds: 3600,
+      mfaPendingTtlSeconds: 300,
+      invitationTtlSeconds: 3600,
+      resetTtlSeconds: 3600,
+      allowedOrigins: [],
+      maxFailedLogins: 5,
+      lockoutSeconds: 60
+    },
+    appOrigin: 'http://localhost:8787'
+  };
+}
+
+class Client {
+  private cookies = new Map<string, string>();
+  csrfToken: string | null = null;
+  constructor(private base: string) {}
+
+  private cookieHeader(): string {
+    return [...this.cookies.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
+  }
+
+  private capture(res: Response): void {
+    const raw = typeof (res.headers as any).getSetCookie === 'function' ? (res.headers as any).getSetCookie() : null;
+    if (!raw) return;
+    for (const c of raw) {
+      const [pair] = c.split(';');
+      const idx = pair.indexOf('=');
+      const name = pair.slice(0, idx).trim();
+      const value = pair.slice(idx + 1).trim();
+      if (value === '') this.cookies.delete(name);
+      else this.cookies.set(name, value);
+    }
+  }
+
+  async request(method: string, url: string, body?: unknown): Promise<{ status: number; json: any; text: string }> {
+    const headers: Record<string, string> = { Accept: 'application/json' };
+    if (this.cookies.size) headers['Cookie'] = this.cookieHeader();
+    if (this.csrfToken) headers['X-CSRF-Token'] = this.csrfToken;
+    let payload: string | undefined;
+    if (body !== undefined) {
+      payload = JSON.stringify(body);
+      headers['Content-Type'] = 'application/json';
+    }
+    const res = await fetch(`${this.base}${url}`, { method, headers, body: payload });
+    this.capture(res);
+    const text = await res.text();
+    let json: any = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      json = { raw: text };
+    }
+    return { status: res.status, json, text };
+  }
+
+  get(url: string) {
+    return this.request('GET', url);
+  }
+  post(url: string, body?: unknown) {
+    return this.request('POST', url, body);
+  }
+  del(url: string) {
+    return this.request('DELETE', url);
+  }
+}
+
+async function startApp(cfg: ServerConfig) {
+  const store = new Store(cfg.dataDir, { engine: cfg.storageEngine });
+  await store.load();
+  const { app } = createApp(cfg, store);
+  const server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const addr = server.address() as AddressInfo;
+  const base = `http://127.0.0.1:${addr.port}`;
+  return { store, base, close: () => new Promise<void>((r) => server.close(() => r())) };
+}
+
+async function seedAdmin(store: Store, email: string, role: AdminUserRecord['role']): Promise<string> {
+  const secret = generateTotpSecret();
+  await store.upsertAdmin({
+    id: `adm_${email}`,
+    email,
+    displayName: email.split('@')[0],
+    passwordHash: await hashPassword('Str0ng-Passw0rd!'),
+    role,
+    extraPermissions: [],
+    status: 'active',
+    mfa: {
+      enrolled: true,
+      secretSealed: seal(secret, SECRET),
+      enrolledAt: Date.now(),
+      recoveryCodeHashes: []
+    },
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    lastLoginAt: null,
+    createdBy: null
+  });
+  return secret;
+}
+
+async function login(base: string, email: string, secret: string): Promise<Client> {
+  const c = new Client(base);
+  const step1 = await c.post('/api/admin/v1/auth/login', { email, password: 'Str0ng-Passw0rd!' });
+  assert.equal(step1.status, 200, `login failed: ${JSON.stringify(step1.json)}`);
+  const step2 = await c.post('/api/admin/v1/auth/mfa/verify', { code: currentTotp(secret) });
+  assert.equal(step2.status, 200, `mfa failed: ${JSON.stringify(step2.json)}`);
+  c.csrfToken = step2.json.csrfToken;
+  return c;
+}
+
+async function seedTrader(store: Store, opts: { id: string; derivSub: string; suspended?: boolean }) {
+  await store.upsertUser({
+    id: opts.id,
+    derivSub: opts.derivSub,
+    loginId: `CR${opts.id}`,
+    accounts: [{ accountId: `VRTC${opts.id}`, type: 'demo', currency: 'USD' }],
+    createdAt: Date.now() - 5000,
+    updatedAt: Date.now(),
+    suspended: opts.suspended ?? false,
+    preferences: {}
+  });
+}
+
+async function withApp(
+  fn: (ctx: { app: Awaited<ReturnType<typeof startApp>>; deriv: FakeDeriv; admin: Client }) => Promise<void>,
+  opts: { patAppId?: string | null; role?: AdminUserRecord['role'] } = {}
+) {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ws-copyadmin-'));
+  const deriv = await startFakeDeriv();
+  const cfg = makeConfig(dataDir, deriv.url, opts.patAppId === undefined ? 'PAT_APP_ID' : opts.patAppId);
+  const app = await startApp(cfg);
+  try {
+    const secret = await seedAdmin(app.store, 'a@x.com', opts.role ?? 'SUPER_ADMIN');
+    const admin = await login(app.base, 'a@x.com', secret);
+    await fn({ app, deriv, admin });
+  } finally {
+    await app.close();
+    await deriv.close();
+  }
+}
+
+/* ================================ ONBOARDING ============================= */
+
+test('copy trading: an administrator can invite a genuinely new client', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+
+    const res = await admin.post('/api/admin/v1/copy-trading/clients/invitations', {
+      email: 'client@example.com',
+      name: 'New Client',
+      phone: '+15550001',
+      masterUserId: 'master1'
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.json));
+    assert.match(res.json.url, /\/auth\/copy-trading\/connect\//);
+
+    const stored = app.store.listAllCopyTradingInvitations();
+    assert.equal(stored.length, 1);
+    assert.equal(stored[0].invitedEmail, 'client@example.com');
+    // The single-use secret is stored only as a hash.
+    assert.notEqual(stored[0].tokenHash, new URL(res.json.url).searchParams.get('token'));
+  });
+});
+
+test('copy trading: a duplicate active invitation is rejected', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+    const body = { email: 'client@example.com', masterUserId: 'master1' };
+    const first = await admin.post('/api/admin/v1/copy-trading/clients/invitations', body);
+    assert.equal(first.status, 201);
+    const second = await admin.post('/api/admin/v1/copy-trading/clients/invitations', body);
+    assert.equal(second.status, 409);
+    assert.equal(second.json.error, 'duplicate_invitation');
+  });
+});
+
+test('copy trading: an invalid email is rejected', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+    const res = await admin.post('/api/admin/v1/copy-trading/clients/invitations', {
+      email: 'not-an-email',
+      masterUserId: 'master1'
+    });
+    assert.equal(res.status, 400);
+    assert.equal(res.json.error, 'invalid_email');
+  });
+});
+
+test('copy trading: an invitation requires an eligible master', async () => {
+  await withApp(async ({ app, admin }) => {
+    const res = await admin.post('/api/admin/v1/copy-trading/clients/invitations', { email: 'c@example.com' });
+    assert.equal(res.status, 400);
+    assert.equal(res.json.error, 'master_required');
+  });
+});
+
+test('copy trading: existing clients can be searched by login id', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedTrader(app.store, { id: 'client1', derivSub: 'sub_client1' });
+    const res = await admin.get('/api/admin/v1/copy-trading/clients/search?q=CRclient1');
+    assert.equal(res.status, 200);
+    assert.equal(res.json.items.length, 1);
+    assert.equal(res.json.items[0].id, 'client1');
+    assert.equal(res.json.items[0].hasFollowerConnection, false);
+  });
+});
+
+/* ============================== TOKEN AUTHORIZATION ====================== */
+
+test('copy trading: a valid client token connects the account and seals the credential', async () => {
+  await withApp(async ({ app, admin, deriv }) => {
+    await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+    await seedTrader(app.store, { id: 'client1', derivSub: 'deriv-client-subject-456' });
+    deriv.identitySubject = 'deriv-client-subject-456';
+
+    const res = await admin.post('/api/admin/v1/copy-trading/clients/client1/authorize-token', {
+      token: PAT,
+      consent: true,
+      masterUserId: 'master1',
+      attestedBy: 'client email 2026-11-12'
+    });
+    assert.equal(res.status, 201, JSON.stringify(res.json));
+
+    const stored = app.store.listAllCopyTradingFollowers();
+    assert.equal(stored.length, 1);
+    assert.equal(stored[0].ownerUserId, 'master1');
+    assert.equal(stored[0].authMethod, 'pat');
+    // Sealed at rest, never the plaintext token.
+    assert.notEqual(stored[0].tokenSealed, PAT);
+    // Consent recorded separately.
+    const consent = app.store.getCopyTradingConsent(stored[0].id);
+    assert.ok(consent);
+    assert.equal(consent!.method, 'pat');
+
+    // The token must not appear anywhere in the response body.
+    assert.equal(res.text.includes(PAT), false, 'the token must never be returned');
+  });
+});
+
+test('copy trading: the PAT app id is used, not the OAuth app id', async () => {
+  await withApp(async ({ app, admin, deriv }) => {
+    await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+    await seedTrader(app.store, { id: 'client1', derivSub: 'deriv-client-subject-456' });
+    deriv.identitySubject = 'deriv-client-subject-456';
+    await admin.post('/api/admin/v1/copy-trading/clients/client1/authorize-token', {
+      token: PAT,
+      consent: true,
+      masterUserId: 'master1'
+    });
+    assert.equal(deriv.lastAppId, 'PAT_APP_ID');
+  });
+});
+
+test('copy trading: an invalid token is rejected and nothing is stored', async () => {
+  await withApp(async ({ app, admin, deriv }) => {
+    await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+    await seedTrader(app.store, { id: 'client1', derivSub: 'deriv-client-subject-456' });
+    deriv.accountsStatus = 401;
+
+    const res = await admin.post('/api/admin/v1/copy-trading/clients/client1/authorize-token', {
+      token: PAT,
+      consent: true,
+      masterUserId: 'master1'
+    });
+    assert.equal(res.status, 422);
+    assert.equal(res.json.error, 'invalid_token');
+    assert.equal(app.store.listAllCopyTradingFollowers().length, 0);
+    assert.equal(res.text.includes(PAT), false);
+  });
+});
+
+test('copy trading: a token without the trade scope is rejected', async () => {
+  await withApp(async ({ app, admin, deriv }) => {
+    await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+    await seedTrader(app.store, { id: 'client1', derivSub: 'deriv-client-subject-456' });
+    deriv.accountsStatus = 403;
+
+    const res = await admin.post('/api/admin/v1/copy-trading/clients/client1/authorize-token', {
+      token: PAT,
+      consent: true,
+      masterUserId: 'master1'
+    });
+    assert.equal(res.status, 422);
+    assert.equal(res.json.error, 'trade_scope_required');
+    assert.equal(app.store.listAllCopyTradingFollowers().length, 0);
+  });
+});
+
+test('copy trading: a token belonging to a different account is refused', async () => {
+  await withApp(async ({ app, admin, deriv }) => {
+    await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+    await seedTrader(app.store, { id: 'client1', derivSub: 'deriv-client-subject-456' });
+    // Deriv says the token belongs to somebody else.
+    deriv.identitySubject = 'a-completely-different-subject';
+
+    const res = await admin.post('/api/admin/v1/copy-trading/clients/client1/authorize-token', {
+      token: PAT,
+      consent: true,
+      masterUserId: 'master1'
+    });
+    assert.equal(res.status, 409);
+    assert.equal(res.json.error, 'account_ownership_mismatch');
+    assert.equal(app.store.listAllCopyTradingFollowers().length, 0, 'no follower before ownership is proven');
+  });
+});
+
+test('copy trading: authorization without consent is refused', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+    await seedTrader(app.store, { id: 'client1', derivSub: 'deriv-client-subject-456' });
+
+    const res = await admin.post('/api/admin/v1/copy-trading/clients/client1/authorize-token', {
+      token: PAT,
+      masterUserId: 'master1'
+    });
+    assert.equal(res.status, 400);
+    assert.equal(res.json.error, 'consent_required');
+    assert.equal(app.store.listAllCopyTradingFollowers().length, 0);
+  });
+});
+
+test('copy trading: token authorization is unavailable without a PAT app id', async () => {
+  await withApp(
+    async ({ app, admin }) => {
+      await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+      await seedTrader(app.store, { id: 'client1', derivSub: 'deriv-client-subject-456' });
+      const res = await admin.post('/api/admin/v1/copy-trading/clients/client1/authorize-token', {
+        token: PAT,
+        consent: true,
+        masterUserId: 'master1'
+      });
+      assert.equal(res.status, 503);
+      assert.equal(res.json.error, 'pat_app_not_configured');
+    },
+    { patAppId: null }
+  );
+});
+
+test('copy trading: a duplicate connection is updated, not duplicated', async () => {
+  await withApp(async ({ app, admin, deriv }) => {
+    await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+    await seedTrader(app.store, { id: 'client1', derivSub: 'deriv-client-subject-456' });
+    deriv.identitySubject = 'deriv-client-subject-456';
+
+    const first = await admin.post('/api/admin/v1/copy-trading/clients/client1/authorize-token', {
+      token: PAT,
+      consent: true,
+      masterUserId: 'master1'
+    });
+    assert.equal(first.status, 201);
+
+    const second = await admin.post('/api/admin/v1/copy-trading/clients/client1/authorize-token', {
+      token: PAT,
+      consent: true,
+      masterUserId: 'master1'
+    });
+    assert.equal(second.status, 200);
+    assert.equal(app.store.listAllCopyTradingFollowers().length, 1, 'no duplicate follower record');
+  });
+});
+
+test('copy trading: a token cannot be attached to another manager', async () => {
+  await withApp(async ({ app, admin, deriv }) => {
+    await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+    await seedTrader(app.store, { id: 'master2', derivSub: 'sub_master2' });
+    await seedTrader(app.store, { id: 'client1', derivSub: 'deriv-client-subject-456' });
+    deriv.identitySubject = 'deriv-client-subject-456';
+
+    const first = await admin.post('/api/admin/v1/copy-trading/clients/client1/authorize-token', {
+      token: PAT,
+      consent: true,
+      masterUserId: 'master1'
+    });
+    assert.equal(first.status, 201);
+
+    const second = await admin.post('/api/admin/v1/copy-trading/clients/client1/authorize-token', {
+      token: PAT,
+      consent: true,
+      masterUserId: 'master2'
+    });
+    assert.equal(second.status, 409);
+    assert.equal(second.json.error, 'already_linked');
+  });
+});
+
+/* ============================== FOLLOWER LIFECYCLE ======================= */
+
+async function connectClient(admin: Client, deriv: FakeDeriv, app: { store: Store }) {
+  await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+  await seedTrader(app.store, { id: 'client1', derivSub: 'deriv-client-subject-456' });
+  deriv.identitySubject = 'deriv-client-subject-456';
+  const res = await admin.post('/api/admin/v1/copy-trading/clients/client1/authorize-token', {
+    token: PAT,
+    consent: true,
+    masterUserId: 'master1'
+  });
+  assert.equal(res.status, 201, JSON.stringify(res.json));
+  return res.json.client.id as string;
+}
+
+test('copy trading: a follower can be paused, resumed and removed', async () => {
+  await withApp(async ({ app, admin, deriv }) => {
+    const id = await connectClient(admin, deriv, app);
+
+    const paused = await admin.post(`/api/admin/v1/copy-trading/clients/${id}/status`, { status: 'paused' });
+    assert.equal(paused.status, 200);
+    assert.equal(paused.json.client.status, 'paused');
+    // The response must not claim contracts were cancelled.
+    assert.match(paused.json.note, /already accepted by the broker are unaffected/);
+
+    const resumed = await admin.post(`/api/admin/v1/copy-trading/clients/${id}/status`, { status: 'active' });
+    assert.equal(resumed.status, 200);
+    assert.equal(resumed.json.client.status, 'active');
+
+    const removed = await admin.del(`/api/admin/v1/copy-trading/clients/${id}`);
+    assert.equal(removed.status, 200);
+    assert.equal(removed.json.removed, true);
+    assert.equal(app.store.listAllCopyTradingFollowers().length, 0);
+    assert.equal(app.store.getCopyTradingConsent(id), null, 'consent is removed with the connection');
+  });
+});
+
+test('copy trading: an invalid follower status is rejected', async () => {
+  await withApp(async ({ app, admin, deriv }) => {
+    const id = await connectClient(admin, deriv, app);
+    const res = await admin.post(`/api/admin/v1/copy-trading/clients/${id}/status`, { status: 'banana' });
+    assert.equal(res.status, 400);
+    assert.equal(res.json.error, 'invalid_status');
+  });
+});
+
+test('copy trading: removing an OAuth follower revokes the grant at Deriv', async () => {
+  await withApp(async ({ app, admin, deriv }) => {
+    await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+    // Seed an OAuth follower directly, as the callback would.
+    await app.store.putCopyTradingFollower({
+      id: 'f_oauth',
+      ownerUserId: 'master1',
+      derivSub: 'deriv-client-subject-456',
+      authMethod: 'oauth',
+      loginId: 'CR1234567',
+      accounts: [{ accountId: 'VRTC_CLIENT_9', type: 'demo', currency: 'USD' }],
+      tokenSealed: seal('ory_at_client_oauth_token', SECRET),
+      tokenExpiresAt: Date.now() + 3600_000,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    });
+
+    const res = await admin.del('/api/admin/v1/copy-trading/clients/f_oauth');
+    assert.equal(res.status, 200);
+    assert.equal(res.json.providerRevoked, true);
+    assert.equal(deriv.revokeCount, 1, 'the OAuth grant must be revoked at Deriv');
+  });
+});
+
+test('copy trading: a PAT follower is not claimed to be revoked', async () => {
+  await withApp(async ({ app, admin, deriv }) => {
+    const id = await connectClient(admin, deriv, app);
+    const res = await admin.del(`/api/admin/v1/copy-trading/clients/${id}`);
+    assert.equal(res.json.providerRevoked, false);
+    assert.match(res.json.note, /must revoke the token in Deriv settings/);
+    assert.equal(deriv.revokeCount, 0);
+  });
+});
+
+/* ============================== AUTHORIZATION ============================ */
+
+test('copy trading: an unauthenticated caller is blocked', async () => {
+  await withApp(async ({ app }) => {
+    const res = await fetch(`${app.base}/api/admin/v1/copy-trading/clients`);
+    assert.equal(res.status, 401);
+  });
+});
+
+test('copy trading: a trader session cookie cannot reach the admin endpoints', async () => {
+  await withApp(async ({ app }) => {
+    const res = await fetch(`${app.base}/api/admin/v1/copy-trading/clients`, {
+      headers: { Cookie: `ws_session=forged-trader-session` }
+    });
+    assert.equal(res.status, 401);
+  });
+});
+
+test('copy trading: an analyst can read but cannot authorize or manage', async () => {
+  await withApp(
+    async ({ app, admin }) => {
+      // Seed the connection directly: the analyst cannot create one, which is
+      // exactly what the rest of this test asserts.
+      await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+      await seedTrader(app.store, { id: 'client1', derivSub: 'deriv-client-subject-456' });
+      await app.store.putCopyTradingFollower({
+        id: 'f_readonly',
+        ownerUserId: 'master1',
+        derivSub: 'deriv-client-subject-456',
+        authMethod: 'pat',
+        loginId: 'CR1234567',
+        accounts: [{ accountId: 'VRTC_CLIENT_9', type: 'demo', currency: 'USD' }],
+        tokenSealed: seal(PAT, SECRET),
+        tokenExpiresAt: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      });
+      const id = 'f_readonly';
+
+      // Read is allowed.
+      const list = await admin.get('/api/admin/v1/copy-trading/clients');
+      assert.equal(list.status, 200);
+
+      // Privileged actions are refused.
+      const authorize = await admin.post('/api/admin/v1/copy-trading/clients/client1/authorize-token', {
+        token: PAT,
+        consent: true,
+        masterUserId: 'master1'
+      });
+      assert.equal(authorize.status, 403);
+      assert.equal(authorize.json.error, 'forbidden');
+
+      const invite = await admin.post('/api/admin/v1/copy-trading/clients/invitations', {
+        email: 'x@example.com',
+        masterUserId: 'master1'
+      });
+      assert.equal(invite.status, 403);
+
+      const status = await admin.post(`/api/admin/v1/copy-trading/clients/${id}/status`, { status: 'paused' });
+      assert.equal(status.status, 403);
+
+      const remove = await admin.del(`/api/admin/v1/copy-trading/clients/${id}`);
+      assert.equal(remove.status, 403);
+    },
+    { role: 'ANALYST' }
+  );
+});
+
+test('copy trading: a support agent cannot authorize a client', async () => {
+  await withApp(
+    async ({ app, admin }) => {
+      await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+      await seedTrader(app.store, { id: 'client1', derivSub: 'deriv-client-subject-456' });
+      const res = await admin.post('/api/admin/v1/copy-trading/clients/client1/authorize-token', {
+        token: PAT,
+        consent: true,
+        masterUserId: 'master1'
+      });
+      assert.equal(res.status, 403);
+    },
+    { role: 'SUPPORT_AGENT' }
+  );
+});
+
+test('copy trading: CSRF token is required for state-changing requests', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedTrader(app.store, { id: 'master1', derivSub: 'sub_master1' });
+    admin.csrfToken = null;
+    const res = await admin.post('/api/admin/v1/copy-trading/clients/invitations', {
+      email: 'c@example.com',
+      masterUserId: 'master1'
+    });
+    assert.equal(res.status, 403);
+    assert.equal(res.json.error, 'csrf_failed');
+  });
+});
+
+/* ============================== AUDIT ==================================== */
+
+test('copy trading: actions are audited without any credential', async () => {
+  await withApp(async ({ app, admin, deriv }) => {
+    const id = await connectClient(admin, deriv, app);
+    await admin.post(`/api/admin/v1/copy-trading/clients/${id}/status`, { status: 'paused', reason: 'client request' });
+
+    const logs = app.store.listAudit();
+    const actions = logs.map((l) => l.action);
+    assert.ok(actions.includes('copytrading.token.authorize'), 'token authorization must be audited');
+    assert.ok(actions.includes('copytrading.follower.paused'), 'pause must be audited');
+
+    // No audit record may contain the token, in any field.
+    const serialised = JSON.stringify(logs);
+    assert.equal(serialised.includes(PAT), false, 'the token must never enter the audit log');
+  });
+});
+
+test('copy trading: the client listing never exposes a credential', async () => {
+  await withApp(async ({ app, admin, deriv }) => {
+    await connectClient(admin, deriv, app);
+    const res = await admin.get('/api/admin/v1/copy-trading/clients');
+    assert.equal(res.status, 200);
+    assert.equal(res.text.includes(PAT), false);
+    assert.equal(res.text.includes('tokenSealed'), false, 'the sealed token must not be serialised');
+    // Account ids are masked.
+    assert.equal(res.text.includes('VRTC_CLIENT_9'), false);
+  });
+});
+
+test('copy trading: the dashboard reports real connection counts', async () => {
+  await withApp(async ({ app, admin, deriv }) => {
+    await connectClient(admin, deriv, app);
+    const res = await admin.get('/api/admin/v1/dashboard/summary');
+    assert.equal(res.status, 200);
+    assert.equal(res.json.copyTrading.clients, 1);
+    assert.equal(res.json.copyTrading.tokenConnections, 1);
+    assert.equal(res.json.copyTrading.engine.implemented, false, 'the copy engine must not be claimed as implemented');
+  });
+});
+
+/* ============================== BOT BUILDER ============================== */
+
+test('bots: import and run records are readable and demo-only', async () => {
+  await withApp(async ({ app, admin }) => {
+    const res = await admin.get('/api/admin/v1/bots/summary');
+    assert.equal(res.status, 200);
+    assert.equal(res.json.safety.accountMode, 'demo');
+    assert.equal(res.json.bots.total, 0);
+  });
+});
+
+test('bots: the imports endpoint never upgrades a compatibility verdict', async () => {
+  await withApp(async ({ app, admin }) => {
+    await app.store.putImportedBot({
+      id: 'bot_1',
+      userId: 'client1',
+      name: 'Partial Bot',
+      sourceFormat: 'deriv-dbot-xml',
+      originalFilename: 'partial.xml',
+      sourceHash: 'hash1',
+      sourceXml: '<xml/>',
+      compatibility: 'partial',
+      compatibilityReason: 'Unsupported block: contract_check',
+      status: 'imported',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      bot: { unknownBlocks: [{ type: 'contract_check', count: 1 }] } as any,
+      warnings: [{ code: 'unsupported_block', message: 'contract_check is not supported' }],
+      executionNote: 'Imported bots are inert.'
+    });
+
+    const res = await admin.get('/api/admin/v1/bots/imports');
+    assert.equal(res.status, 200);
+    assert.equal(res.json.items[0].compatibility, 'partial');
+    assert.equal(res.json.items[0].unknownBlocks[0].type, 'contract_check');
+  });
+});

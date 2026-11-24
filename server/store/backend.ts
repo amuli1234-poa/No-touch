@@ -44,7 +44,8 @@ export const COLLECTIONS = [
   /* ---------------------- bot runtimes (Phase 3) ------------------------ */
   'botRuns',
   'copyTradingFollowers',
-  'copyTradingInvitations'
+  'copyTradingInvitations',
+  'copyTradingConsents'
 ] as const;
 
 export type CollectionName = (typeof COLLECTIONS)[number];
@@ -109,7 +110,8 @@ export const COLLECTION_SPECS: readonly CollectionSpec[] = [
   // owning user and by bot, so tenant-scoped lookups never scan other rows.
   { name: 'botRuns', kind: 'keyed', keyField: 'runId', indexFields: ['userId', 'botId'] },
   { name: 'copyTradingFollowers', kind: 'keyed', keyField: 'id', indexFields: ['ownerUserId', 'derivSub'] },
-  { name: 'copyTradingInvitations', kind: 'keyed', keyField: 'id', indexFields: ['ownerUserId', 'tokenHash'] }
+  { name: 'copyTradingInvitations', kind: 'keyed', keyField: 'id', indexFields: ['ownerUserId', 'tokenHash'] },
+  { name: 'copyTradingConsents', kind: 'keyed', keyField: 'followerId', indexFields: ['ownerUserId'] }
 ];
 
 export interface StorageBackend {

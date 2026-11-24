@@ -11,6 +11,8 @@ import { createAuditRouter } from './audit.js';
 import { createSupportRouter } from './support.js';
 import { createAnnouncementsRouter } from './announcements.js';
 import { createConfigurationRouter } from './configuration.js';
+import { createCopyTradingAdminRouter } from './copyTrading.js';
+import { createBotsRouter } from './bots.js';
 
 /**
  * Admin API v1 — mounted at `/api/admin/v1`.
@@ -34,6 +36,8 @@ export function createAdminApiRouter(ctx: AdminRouteContext): Router {
   router.use('/support', createSupportRouter(ctx));
   router.use('/announcements', createAnnouncementsRouter(ctx));
   router.use('/configuration', createConfigurationRouter(ctx));
+  router.use('/copy-trading', createCopyTradingAdminRouter(ctx));
+  router.use('/bots', createBotsRouter(ctx));
 
   router.use((_req: Request, res: Response) => {
     res.status(404).json({ error: 'admin_route_not_found' });

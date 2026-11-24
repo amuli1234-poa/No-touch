@@ -30,7 +30,11 @@ import type {
 } from '../execution/types.js';
 import type { ImportedBotRecord } from '../bots/types.js';
 import type { BotRunRecord } from '../bots/runTypes.js';
-import type { CopyTradingFollowerRecord, CopyTradingInvitationRecord } from '../copyTrading/types.js';
+import type {
+  CopyTradingFollowerRecord,
+  CopyTradingInvitationRecord,
+  CopyTradingConsentRecord
+} from '../copyTrading/types.js';
 import { JsonBackend } from './json_backend.js';
 import { SqliteBackend, sqliteFileExists } from './sqlite_backend.js';
 import type { StorageBackend, StoredRecord } from './backend.js';
@@ -161,6 +165,7 @@ interface Database {
   botRuns: Record<string, BotRunRecord>;
   copyTradingFollowers: Record<string, CopyTradingFollowerRecord>;
   copyTradingInvitations: Record<string, CopyTradingInvitationRecord>;
+  copyTradingConsents: Record<string, CopyTradingConsentRecord>;
 }
 
 const EMPTY: Database = {
@@ -192,7 +197,8 @@ const EMPTY: Database = {
   importedBots: {},
   botRuns: {},
   copyTradingFollowers: {},
-  copyTradingInvitations: {}
+  copyTradingInvitations: {},
+  copyTradingConsents: {}
 };
 
 /**
@@ -259,7 +265,8 @@ export class Store {
         importedBots: (await this.backend.loadKeyed('importedBots')) as unknown as Database['importedBots'],
         botRuns: (await this.backend.loadKeyed('botRuns')) as unknown as Database['botRuns'],
         copyTradingFollowers: (await this.backend.loadKeyed('copyTradingFollowers')) as unknown as Database['copyTradingFollowers'],
-        copyTradingInvitations: (await this.backend.loadKeyed('copyTradingInvitations')) as unknown as Database['copyTradingInvitations']
+        copyTradingInvitations: (await this.backend.loadKeyed('copyTradingInvitations')) as unknown as Database['copyTradingInvitations'],
+        copyTradingConsents: (await this.backend.loadKeyed('copyTradingConsents')) as unknown as Database['copyTradingConsents']
       };
       const platformConfig = await this.backend.loadSingleton('platformConfig');
       this.db.platformConfig = { ...EMPTY.platformConfig, ...((platformConfig ?? {}) as Partial<PlatformConfigRecord>) };
@@ -1007,6 +1014,24 @@ export class Store {
     return true;
   }
 
+  /**
+   * Every imported bot across all owners, newest first.
+   *
+   * Administrative read only — trader paths must keep using `listImportedBots`,
+   * which is owner-scoped. Returns the records as stored so the console can
+   * report compatibility and warnings without re-parsing.
+   */
+  listAllImportedBots(): ImportedBotRecord[] {
+    this.ensureLoaded();
+    return Object.values(this.db.importedBots).sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  /** Every bot run across all owners, newest first. Administrative read only. */
+  listAllBotRuns(): BotRunRecord[] {
+    this.ensureLoaded();
+    return Object.values(this.db.botRuns).sort((a, b) => b.startedAt - a.startedAt);
+  }
+
   /* ----------------------- copy trading followers ---------------------- */
 
   async putCopyTradingFollower(record: CopyTradingFollowerRecord): Promise<void> {
@@ -1068,6 +1093,52 @@ export class Store {
     record.consumedAt = Date.now();
     await this.backend.putKeyed('copyTradingInvitations', id, record as unknown as StoredRecord);
     return record;
+  }
+
+  async revokeCopyTradingInvitation(id: string): Promise<CopyTradingInvitationRecord | null> {
+    this.ensureLoaded();
+    const record = this.db.copyTradingInvitations[id];
+    if (!record || record.consumedAt !== null) return null;
+    record.revokedAt = Date.now();
+    await this.backend.putKeyed('copyTradingInvitations', id, record as unknown as StoredRecord);
+    return record;
+  }
+
+  /**
+   * Every follower connection across all owners.
+   *
+   * Administrative read only. Trader-facing paths must keep using
+   * `listCopyTradingFollowers`, which is owner-scoped; this method exists so the
+   * console can see the platform-wide picture and is reachable only behind an
+   * admin permission check.
+   */
+  listAllCopyTradingFollowers(): CopyTradingFollowerRecord[] {
+    this.ensureLoaded();
+    return Object.values(this.db.copyTradingFollowers).sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  /** Every invitation, newest first. Administrative read only. */
+  listAllCopyTradingInvitations(): CopyTradingInvitationRecord[] {
+    this.ensureLoaded();
+    return Object.values(this.db.copyTradingInvitations).sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  async putCopyTradingConsent(record: CopyTradingConsentRecord): Promise<void> {
+    this.ensureLoaded();
+    this.db.copyTradingConsents[record.followerId] = record;
+    await this.backend.putKeyed('copyTradingConsents', record.followerId, record as unknown as StoredRecord);
+  }
+
+  getCopyTradingConsent(followerId: string): CopyTradingConsentRecord | null {
+    this.ensureLoaded();
+    return this.db.copyTradingConsents[followerId] ?? null;
+  }
+
+  async deleteCopyTradingConsent(followerId: string): Promise<void> {
+    this.ensureLoaded();
+    if (!this.db.copyTradingConsents[followerId]) return;
+    delete this.db.copyTradingConsents[followerId];
+    await this.backend.deleteKeyed('copyTradingConsents', followerId);
   }
 
   /* ====================================================================== */

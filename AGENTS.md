@@ -1423,3 +1423,96 @@ figure or "Unavailable"; `client.balance` starts empty and
 account switcher shows real per-account figures. A `0.00` on screen must mean a
 real zero balance.
 
+
+## Admin console: Copy Trading client management
+
+The admin app (`admin/`, built separately to `dist-admin/`) gained a Copy Trading
+module and a read-only Bot Builder module. Both are additive; no existing route,
+record or trader-facing behaviour was changed.
+
+### Ownership model — read this before touching follower code
+
+A `CopyTradingFollowerRecord.ownerUserId` is the **master**: the WickSentinel user
+on whose behalf copied trades would be placed. The record's `derivSub` and
+`accounts` identify the **client** whose Deriv account is the source. So
+"assign a client to a master" means *setting `ownerUserId`*, and there is no
+second assignment table. `clientView()` in `server/routes/admin/copyTrading.ts`
+resolves both sides: master via `getUserById(ownerUserId)`, client via
+`getUserByDerivSub(derivSub)`.
+
+Do not confuse this with the Users module, where a user's own accounts are their
+own. Copy Trading is the only place one user's record points at another user.
+
+### There is no copy-execution engine
+
+`copyTradingFollowers` is stored and managed; nothing consumes it to submit
+orders. The admin UI says so explicitly (`engine.implemented: false` on
+`/dashboard/summary`, and a notice on the clients page). Never describe a
+follower as "copying" or "mirroring" — say the connection is stored and
+manageable. If you implement fan-out, flip that flag and update the notice; do
+not silently leave a UI that claims more than the backend does.
+
+### Two authorization paths, one validator
+
+- **OAuth** (`authMethod: 'oauth'`): the client authorizes their own account
+  through `/auth/copy-trading/connect/:id` → the callback in `routes/auth.ts`.
+  The platform never sees the credential. Removing the follower revokes the
+  grant via `revokeToken`.
+- **API token** (`authMethod: 'pat'`): an administrator submits a client-supplied
+  token. It is validated by `server/copyTrading/pat.ts` (`validatePatToken`),
+  which is the *same* function the trader route calls — there is exactly one
+  validator, so a token accepted by one path is accepted by the other. It is
+  sealed with AES-256-GCM before persistence and never returned, logged, or
+  written to an audit record. A PAT cannot be revoked by us; removal says so
+  rather than pretending the credential is dead.
+
+`pat.ts` also enforces that the PAT App ID (`DERIV_PAT_APP_ID`) is distinct from
+the OAuth App ID. When it is unset the endpoint returns `503
+pat_app_not_configured` instead of falling back to the OAuth app.
+
+### Consent is a separate record
+
+`copyTradingConsents` (keyed by `followerId`) holds the consent attestation,
+independent of the credential. Token authorization refuses with
+`consent_required` unless `consent === true`. The OAuth callback writes a consent
+record automatically, because the client approving the grant *is* the consent.
+Do not fold consent into the follower record — it has its own lifecycle and is
+deleted with the follower.
+
+### Invitations do not create accounts
+
+`UserRecord` has no email field: accounts exist only after a Deriv identity is
+verified. An invitation therefore stores the email on the invitation, not on a
+user, and "duplicate" means an outstanding invitation for that address — never a
+fabricated user. Only the SHA-256 hash of the single-use secret is stored, so the
+link is shown once and cannot be recovered.
+
+### Permissions
+
+`copytrading.read | onboard | authorize | followers.manage | risk.manage` in
+`server/admin/permissions.ts`. Only `SUPER_ADMIN` and `PLATFORM_ADMIN` mutate;
+`FINANCE_ADMIN`, `SUPPORT_AGENT` and `ANALYST` are read-only. The read-only
+roles must stay read-only — a support agent can look, not connect.
+
+### Pause and suspend stop future work only
+
+`POST /clients/:id/status` blocks *future* copied submissions. It cannot cancel a
+contract the broker has already accepted, and the response says so verbatim. Keep
+that wording: it is the difference between a truthful control and a dangerous
+one.
+
+### Bot Builder admin is read-only by design
+
+`server/routes/admin/bots.ts` lists imports and runs across all owners via
+`listAllImportedBots()` / `listAllBotRuns()`. It never executes, edits or deletes,
+and it reports the compatibility verdict *recorded at import* — it must never
+re-derive a `partial` or `unsupported` bot as supported.
+
+### Verification
+
+`npm run test:copy-admin` covers the module (28 tests), including that no token
+appears in a response or an audit record, that a mismatched token is refused
+before any record is written, and that read-only roles cannot mutate. Deriv is
+faked at the HTTP level in `server/tests/copy_trading_admin.test.ts`; the real
+`server/config.ts` hardcodes the Deriv endpoints, so a live server cannot be
+pointed at a fake — use the test harness, not a running process, for token flow.

@@ -30,7 +30,13 @@ export const PERMISSIONS = [
   'announcements.read',
   'announcements.manage',
   'configuration.read',
-  'configuration.manage'
+  'configuration.manage',
+  /* ------------------------ copy trading clients ------------------------ */
+  'copytrading.read',
+  'copytrading.onboard',
+  'copytrading.authorize',
+  'copytrading.followers.manage',
+  'copytrading.risk.manage'
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -83,7 +89,11 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'announcements.read',
     'announcements.manage',
     'configuration.read',
-    'configuration.manage'
+    'configuration.manage',
+    'copytrading.read',
+    'copytrading.onboard',
+    'copytrading.authorize',
+    'copytrading.followers.manage'
   ],
 
   FINANCE_ADMIN: [
@@ -93,12 +103,27 @@ export const ROLE_PERMISSIONS: Record<Role, readonly Permission[]> = {
     'subscriptions.manage',
     'payments.read',
     'revenue.read',
-    'analytics.read'
+    'analytics.read',
+    'copytrading.read'
   ],
 
-  SUPPORT_AGENT: ['dashboard.read', 'users.read', 'users.notes.manage', 'support.read', 'support.manage'],
+  SUPPORT_AGENT: [
+    'dashboard.read',
+    'users.read',
+    'users.notes.manage',
+    'support.read',
+    'support.manage',
+    'copytrading.read'
+  ],
 
-  ANALYST: ['dashboard.read', 'analytics.read', 'monitoring.read', 'revenue.read', 'audit.read']
+  ANALYST: [
+    'dashboard.read',
+    'analytics.read',
+    'monitoring.read',
+    'revenue.read',
+    'audit.read',
+    'copytrading.read'
+  ]
 };
 
 /** Effective permissions = role bundle plus explicitly granted extras. */

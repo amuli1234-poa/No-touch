@@ -77,7 +77,33 @@ export function createDashboardRouter(ctx: AdminRouteContext): Router {
         signalsLast24h: activity.signalsLast24h,
         engineErrorsLast24h: activity.engineErrorsLast24h,
         lastEventAt: activity.lastEventAt
-      }
+      },
+      copyTrading: (() => {
+        const followers = store.listAllCopyTradingFollowers();
+        const invitations = store.listAllCopyTradingInvitations();
+        const pending = invitations.filter(
+          (i) => i.consumedAt === null && !i.revokedAt && i.expiresAt > now
+        ).length;
+        const activeFollowers = followers.filter((f) => (f.status ?? 'authorized') === 'active').length;
+        const paused = followers.filter((f) => (f.status ?? 'authorized') === 'paused').length;
+        const suspended = followers.filter((f) => (f.status ?? 'authorized') === 'suspended').length;
+        return {
+          clients: followers.length,
+          activeFollowers,
+          pausedFollowers: paused,
+          suspendedFollowers: suspended,
+          pendingAuthorizations: pending,
+          connectedAccounts: followers.reduce((acc, f) => acc + f.accounts.length, 0),
+          oauthConnections: followers.filter((f) => f.authMethod === 'oauth').length,
+          tokenConnections: followers.filter((f) => f.authMethod === 'pat').length,
+          // The connection layer is real; the copy *engine* is not implemented,
+          // so say so rather than implying trades are being mirrored.
+          engine: {
+            implemented: false,
+            note: 'Connections are stored and manageable. Automatic trade mirroring is not implemented in this deployment.'
+          }
+        };
+      })()
     });
   });
 

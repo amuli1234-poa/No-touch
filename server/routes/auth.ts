@@ -249,8 +249,9 @@ export function createAuthRouter(ctx: SessionContext, balances?: BalanceService)
         return;
       }
       const now = Date.now();
+      const followerId = existingFollower?.id ?? createOpaqueId();
       await store.putCopyTradingFollower({
-        id: existingFollower?.id ?? createOpaqueId(),
+        id: followerId,
         ownerUserId: owner.id,
         derivSub: identity.sub,
         authMethod: 'oauth',
@@ -259,7 +260,20 @@ export function createAuthRouter(ctx: SessionContext, balances?: BalanceService)
         tokenSealed: seal(token.accessToken, cfg.session.secret),
         tokenExpiresAt: token.expiresAt,
         createdAt: existingFollower?.createdAt ?? now,
-        updatedAt: now
+        updatedAt: now,
+        status: existingFollower?.status ?? 'authorized',
+        revision: (existingFollower?.revision ?? 0) + 1
+      });
+      // The client personally approved access on Deriv, so the grant itself is
+      // the consent record. Stored separately from the credential.
+      await store.putCopyTradingConsent({
+        followerId,
+        ownerUserId: owner.id,
+        method: 'oauth',
+        recordedByAdminId: null,
+        attestedBy: `deriv-oauth:${identity.sub}`,
+        consentedAt: now,
+        note: 'Client authorized the connection in the Deriv OAuth flow.'
       });
       copyTradingLinkResult(res, true, 'Your Deriv account was linked to the manager through your authorization.');
       return;

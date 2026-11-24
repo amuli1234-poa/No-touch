@@ -3,11 +3,11 @@ import express, { Router, type Response } from 'express';
 import type { AuthedRequest, SessionContext } from '../lib/session.js';
 import { requireSession } from '../lib/session.js';
 import { open, seal } from '../lib/crypto.js';
-import { DerivRequestError, fetchAccounts, resolveIdentity, revokeToken } from '../lib/deriv.js';
+import { revokeToken } from '../lib/deriv.js';
 import { createOpaqueId } from '../lib/pkce.js';
+import { validatePatToken, PAT_FAILURE_MESSAGE } from '../copyTrading/pat.js';
 
 const INVITATION_TTL_MS = 24 * 60 * 60 * 1000;
-const MAX_PAT_LENGTH = 4096;
 
 function followerView(record: ReturnType<SessionContext['store']['listCopyTradingFollowers']>[number]) {
   return {
@@ -54,52 +54,20 @@ export function createCopyTradingRouter(ctx: SessionContext): Router {
 
   /** PAT option: validate the client's demo account before sealing their token. */
   router.post('/api/copy-trading/followers', requireSession(ctx), async (req: AuthedRequest, res: Response) => {
-    const patAppId = ctx.cfg.deriv.patAppId;
-    if (!patAppId) {
-      res.status(503).json({
-        error: 'pat_app_not_configured',
-        message: 'The server needs a separate Deriv PAT-type App ID (DERIV_PAT_APP_ID) before token entry is available.'
+    const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+    const validation = await validatePatToken(ctx.cfg, token);
+    if (!validation.ok) {
+      res.status(validation.failure.status).json({
+        error: validation.failure.error,
+        message: PAT_FAILURE_MESSAGE[validation.failure.error]
       });
       return;
     }
-    const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
-    if (token.length < 20 || token.length > MAX_PAT_LENGTH || /\s/.test(token)) {
-      res.status(400).json({ error: 'invalid_token', message: 'Paste a valid Deriv Personal Access Token.' });
-      return;
-    }
 
-    let accounts;
-    try {
-      accounts = await fetchAccounts(ctx.cfg, token, patAppId);
-    } catch (error) {
-      if (error instanceof DerivRequestError && error.status === 401) {
-        res.status(422).json({ error: 'invalid_token', message: 'Deriv rejected this token or PAT App ID. Check both and try again.' });
-        return;
-      }
-      if (error instanceof DerivRequestError && error.status === 403) {
-        res.status(422).json({ error: 'trade_scope_required', message: 'This token needs the Deriv trade scope to read the client’s trading accounts.' });
-        return;
-      }
-      res.status(503).json({ error: 'deriv_unavailable', message: 'Deriv could not validate the token right now. Try again shortly.' });
-      return;
-    }
-
-    const demoAccounts = accounts.filter((account) => account.type === 'demo' && account.accountId);
-    if (demoAccounts.length === 0) {
-      res.status(422).json({ error: 'demo_account_required', message: 'This first stage accepts demo accounts only. The token must authorize at least one Deriv demo account.' });
-      return;
-    }
+    const { demoAccounts, identity } = validation;
     const owner = req.user!;
     if (demoAccounts.some((account) => owner.accounts.some((owned) => owned.accountId === account.accountId))) {
       res.status(422).json({ error: 'manager_account', message: 'That token includes the manager’s own demo account. Use a client account token.' });
-      return;
-    }
-
-    let identity;
-    try {
-      identity = await resolveIdentity(ctx.cfg, token, accounts);
-    } catch {
-      res.status(422).json({ error: 'identity_unverified', message: 'Deriv did not return enough account information to verify this token.' });
       return;
     }
     if (identity.sub === owner.derivSub) {
@@ -130,7 +98,9 @@ export function createCopyTradingRouter(ctx: SessionContext): Router {
       tokenSealed: seal(token, ctx.cfg.session.secret),
       tokenExpiresAt: 0,
       createdAt: existing?.createdAt ?? now,
-      updatedAt: now
+      updatedAt: now,
+      status: existing?.status ?? 'authorized',
+      revision: (existing?.revision ?? 0) + 1
     };
     await ctx.store.putCopyTradingFollower(record);
     res.status(existing ? 200 : 201).json({ follower: followerView(record) });

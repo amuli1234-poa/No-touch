@@ -1,4 +1,4 @@
-import { Activity, AlertTriangle, CheckCircle2, Clock, Gauge, Server, TrendingUp, UserCheck, Users } from 'lucide-react';
+import { Activity, AlertTriangle, CheckCircle2, Clock, Gauge, Repeat, Server, TrendingUp, UserCheck, Users } from 'lucide-react';
 import { api, qs } from '../lib/api';
 import { useAsync } from '../lib/hooks';
 import { Card, Empty, LoadingBlock, PageHeader, Sparkline, StatCard, UnavailableNote } from '../components/UI';
@@ -17,6 +17,17 @@ interface Summary {
     signalsLast24h: number;
     engineErrorsLast24h: number;
     lastEventAt: number | null;
+  };
+  copyTrading: {
+    clients: number;
+    activeFollowers: number;
+    pausedFollowers: number;
+    suspendedFollowers: number;
+    pendingAuthorizations: number;
+    connectedAccounts: number;
+    oauthConnections: number;
+    tokenConnections: number;
+    engine: { implemented: boolean; note: string };
   };
 }
 
@@ -71,6 +82,35 @@ export function DashboardPage() {
               tone="blue"
               icon={<Gauge size={14} />}
               hint={`${formatNumber(s.scanner.signalsLast24h)} signals · 24h`}
+            />
+          </div>
+
+          <div className="grid grid-4 mb-lg">
+            <StatCard
+              label="Copy Trading clients"
+              value={formatNumber(s.copyTrading.clients)}
+              tone="violet"
+              icon={<Repeat size={14} />}
+              hint={`${formatNumber(s.copyTrading.activeFollowers)} active · ${formatNumber(s.copyTrading.pausedFollowers)} paused`}
+            />
+            <StatCard
+              label="Pending authorizations"
+              value={formatNumber(s.copyTrading.pendingAuthorizations)}
+              icon={<Clock size={14} />}
+              hint="Invitations awaiting acceptance"
+            />
+            <StatCard
+              label="Connected Deriv accounts"
+              value={formatNumber(s.copyTrading.connectedAccounts)}
+              icon={<UserCheck size={14} />}
+              hint={`${formatNumber(s.copyTrading.oauthConnections)} OAuth · ${formatNumber(s.copyTrading.tokenConnections)} token`}
+            />
+            <StatCard
+              label="Copy engine"
+              value={s.copyTrading.engine.implemented ? 'Active' : 'Not enabled'}
+              tone={s.copyTrading.engine.implemented ? 'success' : 'warn'}
+              icon={<Activity size={14} />}
+              hint={s.copyTrading.engine.implemented ? 'Mirroring trades' : 'Connections only'}
             />
           </div>
 
@@ -140,6 +180,7 @@ export function DashboardPage() {
               <div className="col gap">
                 {s.subscriptions.unavailable && <UnavailableNote text={s.subscriptions.unavailable} />}
                 {s.revenue.unavailable && <UnavailableNote text={s.revenue.unavailable} />}
+                {!s.copyTrading.engine.implemented && <UnavailableNote text={s.copyTrading.engine.note} />}
               </div>
             </Card>
           </div>

@@ -3,10 +3,13 @@ import {
   Activity,
   BarChart3,
   Bell,
+  Bot,
+  Link2,
   CreditCard,
   FileClock,
   Gauge,
   Headphones,
+  Repeat,
   LayoutDashboard,
   ScrollText,
   Settings,
@@ -44,6 +47,20 @@ export const NAV: NavGroup[] = [
     label: 'Customers',
     items: [
       { key: 'users', path: '/users', label: 'Users', icon: Users, permission: 'users.read' },
+      {
+        key: 'copy-clients',
+        path: '/copy-trading/clients',
+        label: 'Copy Trading',
+        icon: Repeat,
+        permission: 'copytrading.read'
+      },
+      {
+        key: 'deriv-connections',
+        path: '/copy-trading/connections',
+        label: 'Deriv Connections',
+        icon: Link2,
+        permission: 'copytrading.read'
+      },
       { key: 'subscriptions', path: '/subscriptions', label: 'Subscriptions', icon: CreditCard, permission: 'subscriptions.read' },
       { key: 'revenue', path: '/revenue', label: 'Revenue', icon: Wallet, permission: 'revenue.read' },
       { key: 'support', path: '/support', label: 'Support', icon: Headphones, permission: 'support.read' }
@@ -53,6 +70,7 @@ export const NAV: NavGroup[] = [
     label: 'Operations',
     items: [
       { key: 'scanner', path: '/scanner', label: 'Scanner Ops', icon: Gauge, permission: 'monitoring.read' },
+      { key: 'bots', path: '/bots', label: 'Bot Builder', icon: Bot, permission: 'monitoring.read' },
       { key: 'monitoring', path: '/monitoring', label: 'System Health', icon: Activity, permission: 'monitoring.read' }
     ]
   },

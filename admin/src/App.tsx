@@ -6,6 +6,9 @@ import { usePath, navigate } from './lib/router';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { UsersPage } from './pages/UsersPage';
+import { CopyTradingClientsPage } from './pages/CopyTradingClientsPage';
+import { BotsPage } from './pages/BotsPage';
+import { DerivConnectionsPage } from './pages/DerivConnectionsPage';
 import { AdministratorsPage } from './pages/AdministratorsPage';
 import { SubscriptionsPage } from './pages/SubscriptionsPage';
 import { RevenuePage } from './pages/RevenuePage';
@@ -26,6 +29,9 @@ import { ReportsPage } from './pages/ReportsPage';
 const ROUTES: { path: string; permission: string; render: () => ReactNode }[] = [
   { path: '/', permission: 'dashboard.read', render: () => <DashboardPage /> },
   { path: '/users', permission: 'users.read', render: () => <UsersPage /> },
+  { path: '/copy-trading/clients', permission: 'copytrading.read', render: () => <CopyTradingClientsPage /> },
+  { path: '/copy-trading/connections', permission: 'copytrading.read', render: () => <DerivConnectionsPage /> },
+  { path: '/bots', permission: 'monitoring.read', render: () => <BotsPage /> },
   { path: '/administrators', permission: 'admins.read', render: () => <AdministratorsPage /> },
   { path: '/subscriptions', permission: 'subscriptions.read', render: () => <SubscriptionsPage /> },
   { path: '/revenue', permission: 'revenue.read', render: () => <RevenuePage /> },
