@@ -1487,12 +1487,40 @@ user, and "duplicate" means an outstanding invitation for that address — never
 fabricated user. Only the SHA-256 hash of the single-use secret is stored, so the
 link is shown once and cannot be recovered.
 
+### Copying is opt-in, per master
+
+`copyTradingControls` (keyed by `ownerUserId`) holds one switch per master. The
+engine reads it in `mirrorMasterTrade` and returns `[]` when it is off, so a
+manager's trade is theirs alone until someone presses Start. The switch is off by
+default and is per master, not global: starting one master must never start
+another. Stopping affects the *next* trade only — it cannot cancel a contract the
+broker already accepted.
+
+Two surfaces toggle it: `POST /api/admin/v1/copy-trading/control` (needs
+`copytrading.control`) and `POST /api/copy-trading/control` for the signed-in
+manager, scoped to their own id. Starting with no connected client returns `409
+no_followers` rather than silently doing nothing.
+
+### Performance reporting reads across principals
+
+A copied contract is owned by `copy_follower_<followerId>`, a synthetic
+principal, so the manager's owner-scoped `listContracts` never sees it.
+`server/copyTrading/performance.ts` instead calls `listContractsForUsers()` with
+the master plus every follower principal and attributes each contract back to its
+account. Accounts are enumerated from the *user records*, so an account that has
+not traded still shows a zero row — the manager sees the whole book.
+
+Both surfaces expose it: `GET /api/admin/v1/copy-trading/performance?masterUserId=`
+and `GET /api/copy-trading/performance` (scoped to the session user). It is a
+read-only projection; it never places, sizes or alters a trade.
+
 ### Permissions
 
-`copytrading.read | onboard | authorize | followers.manage | risk.manage` in
-`server/admin/permissions.ts`. Only `SUPER_ADMIN` and `PLATFORM_ADMIN` mutate;
-`FINANCE_ADMIN`, `SUPPORT_AGENT` and `ANALYST` are read-only. The read-only
-roles must stay read-only — a support agent can look, not connect.
+`copytrading.read | onboard | authorize | followers.manage | risk.manage |
+control` in `server/admin/permissions.ts`. Only `SUPER_ADMIN` and `PLATFORM_ADMIN`
+mutate; `FINANCE_ADMIN`, `SUPPORT_AGENT` and `ANALYST` are read-only. The
+read-only roles must stay read-only — a support agent can look, not connect, and
+cannot start the engine.
 
 ### Pause and suspend stop future work only
 
@@ -1510,7 +1538,7 @@ re-derive a `partial` or `unsupported` bot as supported.
 
 ### Verification
 
-`npm run test:copy-admin` covers the module (28 tests), including that no token
+`npm run test:copy-admin` covers the module (35 tests), including that no token
 appears in a response or an audit record, that a mismatched token is refused
 before any record is written, and that read-only roles cannot mutate. Deriv is
 faked at the HTTP level in `server/tests/copy_trading_admin.test.ts`; the real
