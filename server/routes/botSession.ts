@@ -2,6 +2,7 @@ import { Router, type Request } from 'express';
 import type { SessionContext, AuthedRequest } from '../lib/session.js';
 import { requireSession } from '../lib/session.js';
 import { open } from '../lib/crypto.js';
+import { resolveRequestOrigin } from '../lib/http.js';
 
 export interface BotSocketAccount {
   account_id: string;
@@ -42,9 +43,22 @@ async function requestDerivSocketUrl(apiBaseUrl: string, accessToken: string, ac
   return socketUrl.toString();
 }
 
+/**
+ * The bot app calls this endpoint from its own page, so the browser always sends
+ * an Origin naming the host it was served from. Comparing that against the
+ * deployment's real origin rejects cross-site callers while still working behind
+ * a proxy that rewrites `Host`.
+ */
 function isSameOriginRequest(req: Request, appOrigin: string): boolean {
   const origin = req.get('origin');
-  return typeof origin === 'string' && origin === appOrigin;
+  if (typeof origin !== 'string' || origin === '') return false;
+  let normalized: string;
+  try {
+    normalized = new URL(origin).origin;
+  } catch {
+    return false;
+  }
+  return normalized === resolveRequestOrigin(req, appOrigin);
 }
 
 /**

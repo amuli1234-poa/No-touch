@@ -75,6 +75,35 @@ export function readJsonBody<T = unknown>(req: Request, limitBytes = 16 * 1024):
   });
 }
 
+/**
+ * Resolves the origin the browser is actually talking to.
+ *
+ * `appOrigin` is derived from the OAuth redirect URI, which is not necessarily
+ * how the deployment is reached: a preview host, a partner domain, or a proxy
+ * that rewrites `Host` all differ from it. When the request's own host matches
+ * the Origin the browser sent, that origin is the correct base for redirects and
+ * for same-origin checks. Otherwise the configured origin is used, so a
+ * cross-site request can never steer a redirect.
+ */
+export function resolveRequestOrigin(req: Request, appOrigin: string): string {
+  const origin = req.get('origin');
+  if (typeof origin !== 'string' || origin === '') return appOrigin;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(origin);
+  } catch {
+    return appOrigin;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return appOrigin;
+
+  const originHost = parsed.host.toLowerCase();
+  const forwardedHost = req.get('x-forwarded-host')?.split(',')[0]?.trim().toLowerCase();
+  const candidates = [req.get('host')?.toLowerCase(), forwardedHost];
+  const matches = candidates.some(host => typeof host === 'string' && host !== '' && host === originHost);
+  return matches ? parsed.origin : appOrigin;
+}
+
 /** Redirects a browser back to the SPA with an error code it can render. */
 export function redirectWithError(res: Response, appOrigin: string, code: string): void {
   const url = new URL('/signin-error', appOrigin);

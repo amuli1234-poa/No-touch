@@ -115,12 +115,19 @@ function stubDeriv(fetcher: typeof fetch, tracker: { calls: Array<{ url: string;
   };
 }
 
-async function postSession(base: string, cookie: string | null, body: unknown = {}, origin = 'http://localhost:3000') {
+async function postSession(
+  base: string,
+  cookie: string | null,
+  body: unknown = {},
+  origin = 'http://localhost:3000',
+  extraHeaders: Record<string, string> = {}
+) {
   return fetch(`${base}/api/bot/session`, {
     method: 'POST',
     headers: {
       ...(cookie ? { Cookie: `ws_session=${cookie}` } : {}),
       ...(origin ? { Origin: origin } : {}),
+      ...extraHeaders,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify(body)
@@ -135,6 +142,26 @@ test('Deriv Bot session requires WickSentinel authentication and same origin', a
     const crossOrigin = await postSession(app.base, cookie, {}, 'https://other.example');
     assert.equal(crossOrigin.status, 403);
     assert.equal((await crossOrigin.json()).error, 'same_origin_required');
+  } finally {
+    await app.close();
+  }
+});
+
+test('Deriv Bot session accepts the deployment host behind a proxy', async () => {
+  const app = await startApp();
+  try {
+    const cookie = await seedSession(app.store, app.cfg, [{ accountId: 'VRTC100', type: 'demo' }]);
+    // A proxy rewrites Host to the upstream address, so the browser's host only
+    // survives in X-Forwarded-Host. Rejecting that would leave the bot unable to
+    // adopt the session on any host that is not the configured OAuth origin.
+    const proxied = await postSession(
+      app.base,
+      cookie,
+      {},
+      'https://preview.example',
+      { 'X-Forwarded-Host': 'preview.example' }
+    );
+    assert.notEqual(proxied.status, 403);
   } finally {
     await app.close();
   }

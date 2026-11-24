@@ -19,9 +19,12 @@ export default defineConfig(() => {
       // Forward auth/API calls to the WickSentinel backend during development so
       // the OAuth flow and session checks work through the Vite preview.
       proxy: {
-        '/auth': { target: process.env.BACKEND_ORIGIN ?? 'http://localhost:8787', changeOrigin: true },
-        '/api': { target: process.env.BACKEND_ORIGIN ?? 'http://localhost:8787', changeOrigin: true },
-        '/healthz': { target: process.env.BACKEND_ORIGIN ?? 'http://localhost:8787', changeOrigin: true },
+        // `xfwd` forwards the browser's host so the backend can recognise the
+        // request as same-origin when the preview is served from a public
+        // hostname rather than localhost.
+        '/auth': { target: process.env.BACKEND_ORIGIN ?? 'http://localhost:8787', changeOrigin: true, xfwd: true },
+        '/api': { target: process.env.BACKEND_ORIGIN ?? 'http://localhost:8787', changeOrigin: true, xfwd: true },
+        '/healthz': { target: process.env.BACKEND_ORIGIN ?? 'http://localhost:8787', changeOrigin: true, xfwd: true },
         // The vendored Deriv bot app is served by the backend under /bot; proxy it
         // so the dev preview matches production routing.
         '/bot': { target: process.env.BACKEND_ORIGIN ?? 'http://localhost:8787', changeOrigin: true },

@@ -12,7 +12,13 @@ import {
   type DerivAccount
 } from '../lib/deriv.js';
 import { createCodeVerifier, createCodeChallenge, createState, createOpaqueId, timingSafeEqual } from '../lib/pkce.js';
-import { parseCookies, setCookie, clearCookie, redirectWithError } from '../lib/http.js';
+import {
+  parseCookies,
+  setCookie,
+  clearCookie,
+  redirectWithError,
+  resolveRequestOrigin
+} from '../lib/http.js';
 import { seal } from '../lib/crypto.js';
 import {
   issueSessionCookie,
@@ -310,7 +316,10 @@ export function createAuthRouter(ctx: SessionContext, balances?: BalanceService)
 
     // 9. Hand off to the SPA workspace, or back to the page that started sign-in
     //    (the bot app passes its own path so the trader lands where they were).
-    res.redirect(`${cfg.appOrigin}${tx.returnTo ?? '/app'}`);
+    // Redirect to the host the trader actually used, not the configured OAuth
+    // origin: behind a proxy those differ, and landing on the wrong host drops
+    // the session cookie the callback just set.
+    res.redirect(`${resolveRequestOrigin(req, cfg.appOrigin)}${tx.returnTo ?? '/app'}`);
   });
 
   /* ------------------------------- logout ------------------------------- */

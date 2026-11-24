@@ -322,6 +322,18 @@ export class DerivWSAccountsService {
         }
 
         if (response.status === 401 || response.status === 404) return null;
+
+        if (response.status === 403) {
+            const failure = await response.json().catch(() => null);
+            // Falling back to an anonymous socket here would render the signed-out
+            // header while the trader is actually signed in, which looks like the
+            // login button doing nothing. Surface it instead.
+            console.error(
+                `[WickSentinelSSO] Bot session refused (${failure?.error ?? 'forbidden'}). ` +
+                    'The bot could not adopt the WickSentinel session.'
+            );
+            throw new Error(failure?.error || 'WickSentinel bot session forbidden');
+        }
         if (!response.ok) {
             const failure = await response.json().catch(() => null);
             throw new Error(failure?.error || `WickSentinel bot session failed (${response.status})`);
