@@ -2,7 +2,6 @@ import React, { lazy, Suspense, useEffect } from 'react';
 import { observer } from 'mobx-react-lite';
 import { ToastContainer } from 'react-toastify';
 import AuthLoadingWrapper from '@/components/auth-loading-wrapper';
-import { botNotification } from '@/components/bot-notification/bot-notification';
 import useLiveChat from '@/components/chat/useLiveChat';
 import ChunkLoader from '@/components/loader/chunk-loader';
 import { getUrlBase } from '@/components/shared';
@@ -13,10 +12,10 @@ import { useApiBase } from '@/hooks/useApiBase';
 import useDevMode from '@/hooks/useDevMode';
 import { useStore } from '@/hooks/useStore';
 import useThemeSwitcher from '@/hooks/useThemeSwitcher';
-import { isPreviewMode } from '@/utils/is-preview-mode';
 import { ThemeProvider } from '@deriv-com/quill-ui';
 import { setSmartChartsPublicPath } from '@deriv-com/smartcharts-champion';
 import { localize } from '@deriv-com/translations';
+import { botNotification } from '@/components/bot-notification/bot-notification';
 import Audio from '../components/audio';
 import BlocklyLoading from '../components/blockly-loading';
 import BotStopped from '../components/bot-stopped';
@@ -31,6 +30,14 @@ import '../components/bot-notification/bot-notification.scss';
 // builds (where the BFF strips src/preview/ entirely).
 const PreviewBranding =
     process.env.NEXT_PUBLIC_APP_BUILD === 'true' ? lazy(() => import('../preview/preview-branding')) : null;
+
+// Upper bound on waiting for the socket before rendering the UI anyway. Matches
+// the guard in app-root.tsx.
+const API_INIT_TIMEOUT_MS = 5000;
+
+// Upper bound on waiting for active symbols before rendering the shell without
+// them.
+const SYMBOLS_LOAD_TIMEOUT_MS = 15000;
 
 const AppContent = observer(() => {
     const [is_api_initialized, setIsApiInitialized] = React.useState(false);
@@ -49,15 +56,9 @@ const AppContent = observer(() => {
     // Initialize dev mode keyboard shortcuts
     useDevMode();
 
-    // Warn (once) when the OAuth app id isn't configured, so a developer running
-    // locally understands why Log in / Sign up are disabled. Skipped inside the
-    // App Builder static preview, which intentionally runs without env vars.
-    useEffect(() => {
-        if (isPreviewMode()) return;
-        if (!process.env.NEXT_PUBLIC_DERIV_APP_ID) {
-            botNotification(localize('Waiting for environment variables to be set…'), undefined, { type: 'warning' });
-        }
-    }, []);
+    // The OAuth app id warning was removed with the disabled auth buttons: this
+    // build defers sign-in to WickSentinel, so a missing local app id is expected
+    // rather than a misconfiguration.
 
     const livechat_client_information = {
         is_client_store_initialized: client?.is_logged_in ? true : !!client,
@@ -86,8 +87,23 @@ const AppContent = observer(() => {
         }
     }, [common, connectionStatus]);
 
+    // The loader below is gated on `is_api_initialized`, which otherwise only
+    // flips when the WebSocket reports OPENED. A socket that never opens (blocked
+    // network, rejected authorisation) would leave the app on "Initializing Deriv
+    // Bot account..." forever, so fall through to the UI after a bounded wait.
+    // The app-root loader already uses the same guard.
     useEffect(() => {
-        if (connectionStatus === CONNECTION_STATUS.OPENED || is_api_initialized) return undefined;
+        if (is_api_initialized) return undefined;
+
+        const timeoutId = setTimeout(() => {
+            setIsApiInitialized(true);
+        }, API_INIT_TIMEOUT_MS);
+
+        return () => clearTimeout(timeoutId);
+    }, [is_api_initialized]);
+
+    useEffect(() => {
+        if (connectionStatus === CONNECTION_STATUS.OPENED) return undefined;
 
         const timeoutId = setTimeout(() => {
             if (connection_warning_shown.current) return;
@@ -104,7 +120,7 @@ const AppContent = observer(() => {
         }, 20000);
 
         return () => clearTimeout(timeoutId);
-    }, [connectionStatus, is_api_initialized]);
+    }, [connectionStatus]);
 
     const { current_language } = common;
     const html = document.documentElement;

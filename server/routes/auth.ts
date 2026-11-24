@@ -14,7 +14,13 @@ import {
 import { createCodeVerifier, createCodeChallenge, createState, createOpaqueId, timingSafeEqual } from '../lib/pkce.js';
 import { parseCookies, setCookie, clearCookie, redirectWithError } from '../lib/http.js';
 import { seal } from '../lib/crypto.js';
-import { issueSessionCookie, requireSession, type SessionContext, type AuthedRequest } from '../lib/session.js';
+import {
+  issueSessionCookie,
+  requireSession,
+  resolveSession,
+  type SessionContext,
+  type AuthedRequest
+} from '../lib/session.js';
 import type { BalanceService } from '../services/balance.js';
 import { recordServerEvent } from '../activity/service.js';
 
@@ -57,6 +63,17 @@ function copyTradingLinkResult(res: Response, success: boolean, message: string)
     .send(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WickSentinel account connection</title><body style="margin:0;background:#080d16;color:#e8edf5;font:16px system-ui,sans-serif"><main style="max-width:560px;margin:12vh auto;padding:32px;background:#162033;border:1px solid #26344b;border-radius:16px"><p style="color:#60a5fa;font-weight:700;letter-spacing:.12em;text-transform:uppercase">WickSentinel · Copy Trading</p><h1>${success ? 'Account connection complete' : 'Account connection failed'}</h1><p style="line-height:1.6;color:#bac5d5">${message}</p><p style="line-height:1.6;color:#bac5d5">You may close this page. The account manager can refresh their connected accounts list.</p></main></body></html>`);
 }
 
+/**
+ * Accepts only a same-origin absolute path, so a crafted `returnTo` can never
+ * turn the OAuth callback into an open redirect. `//host` and backslash forms are
+ * rejected because browsers treat them as protocol-relative.
+ */
+function safeReturnPath(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value === '') return undefined;
+  if (!value.startsWith('/') || value.startsWith('//') || value.includes('\\')) return undefined;
+  return value;
+}
+
 export function createAuthRouter(ctx: SessionContext, balances?: BalanceService): Router {
   const { cfg, store } = ctx;
   const router = Router();
@@ -65,9 +82,7 @@ export function createAuthRouter(ctx: SessionContext, balances?: BalanceService)
 
   router.get('/auth/start', async (req, res) => {
     const mode = req.query.mode === 'signup' ? 'signup' : 'login';
-    // Keep post-login navigation on this application origin; only allow known
-    // internal destinations so this cannot become an open redirect.
-    const returnTo = req.query.returnTo === '/bot' || req.query.returnTo === '/bot/' ? '/bot/' : '/app';
+    const returnTo = safeReturnPath(req.query.returnTo);
     const codeVerifier = createCodeVerifier();
     const codeChallenge = createCodeChallenge(codeVerifier);
     const state = createState();
@@ -294,7 +309,8 @@ export function createAuthRouter(ctx: SessionContext, balances?: BalanceService)
       // ignore — telemetry is not on the critical path
     }
 
-    // 9. Hand off to the SPA workspace.
+    // 9. Hand off to the SPA workspace, or back to the page that started sign-in
+    //    (the bot app passes its own path so the trader lands where they were).
     res.redirect(`${cfg.appOrigin}${tx.returnTo ?? '/app'}`);
   });
 
@@ -407,6 +423,80 @@ export function createAuthRouter(ctx: SessionContext, balances?: BalanceService)
       await store.revokeUserSessions(req.user!.id);
       clearCookie(res, cfg.session.cookieName, { path: '/' });
       res.status(401).json({ error: 'deriv_authorization_revoked' });
+    }
+  });
+
+  /* ---------------------- bot app single sign-on ------------------------ */
+
+  /**
+   * The bot app is served from the same origin, so it shares this session
+   * cookie. These two endpoints let it adopt the WickSentinel login instead of
+   * asking the trader to authorise Deriv a second time.
+   *
+   * The OAuth access token is never returned. The bot app gets the account list
+   * and, on demand, a single-use OTP WebSocket URL minted server-side for one of
+   * the accounts this session actually owns.
+   */
+  router.get('/api/bot/session', (req: AuthedRequest, res: Response) => {
+    const session = resolveSession(ctx, req);
+    const user = session ? store.getUserById(session.userId) : undefined;
+    if (!session || !user) {
+      res.json({ authenticated: false });
+      return;
+    }
+    const accounts = user.accounts.map((a) => ({
+      accountId: a.accountId,
+      type: a.type,
+      currency: a.currency ?? null
+    }));
+    // Prefer a demo account: the bot app is for building and testing strategies,
+    // and defaulting a real-money account would be the riskier choice.
+    const preferred = accounts.find((a) => a.type === 'demo') ?? accounts[0];
+    res.json({
+      authenticated: true,
+      accounts,
+      defaultAccountId: preferred?.accountId ?? null,
+      tokenExpiresAt: session.derivTokenExpiresAt
+    });
+  });
+
+  router.post('/api/bot/ws-url', requireSession(ctx), async (req: AuthedRequest, res: Response) => {
+    const { open } = await import('../lib/crypto.js');
+    const { fetchOtpWebSocketUrl } = await import('../lib/deriv.js');
+    const { readJsonBody } = await import('../lib/http.js');
+
+    const token = open(req.session!.derivTokenSealed, cfg.session.secret);
+    if (!token) {
+      res.status(401).json({ error: 'deriv_authorization_revoked' });
+      return;
+    }
+
+    let accountId: string | undefined;
+    try {
+      const body = await readJsonBody<{ accountId?: string }>(req);
+      accountId = typeof body?.accountId === 'string' ? body.accountId : undefined;
+    } catch {
+      accountId = undefined;
+    }
+
+    // Never mint a socket for an account this user does not own.
+    const owned = req.user!.accounts;
+    const target = accountId
+      ? owned.find((a) => a.accountId === accountId)
+      : (owned.find((a) => a.type === 'demo') ?? owned[0]);
+    if (!target) {
+      res.status(400).json({ error: 'no_account', message: 'No Deriv account is linked to this session.' });
+      return;
+    }
+
+    try {
+      const url = await fetchOtpWebSocketUrl(cfg, token, target.accountId);
+      res.json({ url, accountId: target.accountId });
+    } catch (err: any) {
+      res.status(err?.status === 401 ? 401 : 502).json({
+        error: err?.code ?? 'otp_failed',
+        message: 'Could not open a trading session for this account.'
+      });
     }
   });
 

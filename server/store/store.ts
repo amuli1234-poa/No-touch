@@ -113,8 +113,12 @@ export interface OAuthTransaction {
   codeVerifier: string;
   redirectUri: string;
   mode: 'login' | 'signup';
-  /** Internal application path to return to after a successful login. */
-  returnTo?: '/app' | '/bot/';
+  /**
+   * Same-origin path to return to after sign-in (e.g. `/bot/`). Validated as a
+   * relative path when the transaction is created, so it can never become an
+   * open redirect.
+   */
+  returnTo?: string;
   flow?: 'copy_trading_follower';
   ownerUserId?: string;
   invitationId?: string;
