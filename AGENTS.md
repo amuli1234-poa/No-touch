@@ -1535,11 +1535,20 @@ or an empty roster must not hide a broken credential or a stuck purchase.
 
 `state` collapses several situations that all leave copying with nothing to do,
 so the payload reports the roster shape separately in `roster`:
-`EMPTY` (no records), `AWAITING_AUTHORIZATION` (invitations outstanding),
-`ALL_HELD` (records exist, every one paused/suspended), `NONE_ELIGIBLE` (records
-exist, none held, none usable) and `HAS_ELIGIBLE`. `counts` reports `followers`,
+`EMPTY` (no records), `AWAITING_AUTHORIZATION` (no records *and* invitations
+outstanding), `ALL_HELD` (records exist, every one paused/suspended),
+`NONE_ELIGIBLE` (records exist, none held, none usable) and `HAS_ELIGIBLE`.
+`AWAITING_AUTHORIZATION` deliberately requires zero records: once a record
+exists, an unusable client is a credential problem rather than a wait, and
+calling it "awaiting" would hide the record. `counts` reports `followers`,
 `eligible`, `held`, `disconnected` and `pendingInvitations` directly, and every
 follower lands in exactly one of eligible / held / disconnected.
+
+Credential readability is checked for every follower, held or not. A hold means
+the engine skips the client, not that its sealed token is irrelevant: gating the
+check on the hold would let `connection` report "readable" about a credential
+that provably is not, and would hide a rotated session secret behind an admin
+hold.
 
 When the state is DEGRADED, `degraded` names the source so the console can say
 *why*: `by` (which scopes failed), `follower` and `execution` (the failing check

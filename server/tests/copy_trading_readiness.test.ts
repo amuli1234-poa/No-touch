@@ -1153,3 +1153,297 @@ test('admin route: the payload exposes roster and degraded source', async () => 
     await app.close();
   }
 });
+
+/* ====================================================================== */
+/*  Credential faults are independent of an administrative hold           */
+/*                                                                        */
+/*  A held client is skipped by the engine, so it is tempting to stop      */
+/*  diagnosing it. That would let the connection check report "readable"   */
+/*  about a credential that provably is not, and would hide a rotated      */
+/*  session secret behind an admin hold. These pin the independence.       */
+/* ====================================================================== */
+
+test('held: an unreadable credential is still a connection fault', async () => {
+  const { store } = newStore();
+  await store.load();
+  await seedMaster(store);
+  await seedFollower(store, { id: 'f_held_bad', status: 'paused', tokenSealed: 'not-a-sealed-token' });
+  await enableControl(store);
+
+  const view = readiness(store);
+  const connection = view.health.find((c) => c.key === 'connection');
+  assert.equal(connection?.status, 'fail', 'an admin hold must not mask an unreadable credential');
+  assert.match(connection?.detail ?? '', /could not be opened/i);
+  assert.equal(view.state, 'DEGRADED');
+  assert.deepEqual(view.degraded?.by, ['follower']);
+  assert.deepEqual(view.degraded?.follower, ['connection']);
+  assert.equal(view.roster, 'ALL_HELD', 'the roster is still accurately described as held');
+  assert.equal(view.counts.held, 1);
+  assert.equal(view.counts.disconnected, 0, 'a hold is still not counted as a fault');
+});
+
+test('held: a readable credential keeps the connection check ok', async () => {
+  const { store } = newStore();
+  await store.load();
+  await seedMaster(store);
+  await seedFollower(store, { id: 'f_held_ok', status: 'paused' });
+  await enableControl(store);
+
+  const view = readiness(store);
+  assert.equal(view.health.find((c) => c.key === 'connection')?.status, 'ok');
+  assert.equal(view.state, 'NO_FOLLOWERS', 'a held client is not a fault on its own');
+  assert.equal(view.roster, 'ALL_HELD');
+});
+
+test('held: a suspended client is diagnosed exactly like a paused one', async () => {
+  const { store } = newStore();
+  await store.load();
+  await seedMaster(store);
+  await seedFollower(store, { id: 'f_susp_bad', status: 'suspended', tokenSealed: 'broken' });
+
+  const view = readiness(store);
+  assert.equal(view.health.find((c) => c.key === 'connection')?.status, 'fail');
+  assert.equal(view.roster, 'ALL_HELD');
+});
+
+test('held: mixing a broken held client with a good one still degrades', async () => {
+  const { store } = newStore();
+  await store.load();
+  await seedMaster(store);
+  await seedFollower(store, { id: 'f_mix_ok' });
+  await seedFollower(store, { id: 'f_mix_held_bad', status: 'paused', tokenSealed: 'broken' });
+  await enableControl(store);
+
+  const view = readiness(store);
+  assert.equal(view.state, 'DEGRADED', 'one good client does not excuse a broken credential');
+  assert.deepEqual(view.degraded?.follower, ['connection']);
+  assert.equal(view.counts.eligible, 1, 'the good client is still counted as eligible');
+  assert.equal(view.counts.held, 1);
+  assert.equal(view.roster, 'HAS_ELIGIBLE');
+});
+
+/* ====================================================================== */
+/*  AWAITING_AUTHORIZATION means nobody has connected                     */
+/* ====================================================================== */
+
+test('awaiting: records plus an invitation is not AWAITING_AUTHORIZATION', async () => {
+  const { store } = newStore();
+  await store.load();
+  await seedMaster(store);
+  // Connected, but the credential is dead: a fault, not a wait.
+  await seedFollower(store, { id: 'f_exp_inv', tokenExpiresAt: NOW - 1 });
+  await store.putCopyTradingInvitation({
+    id: 'inv_with_records',
+    ownerUserId: MASTER_ID,
+    tokenHash: 'h',
+    createdAt: NOW,
+    expiresAt: NOW + 60_000,
+    consumedAt: null,
+    revokedAt: null
+  });
+
+  const view = readiness(store);
+  assert.notEqual(view.roster, 'AWAITING_AUTHORIZATION', 'a record exists, so nobody is merely awaited');
+  assert.equal(view.roster, 'NONE_ELIGIBLE');
+  assert.equal(view.state, 'DEGRADED');
+  assert.equal(view.counts.pendingInvitations, 1, 'the invitation is still counted');
+  assert.equal(view.counts.followers, 1, 'the existing record is not hidden');
+});
+
+test('awaiting: an ineligible-but-not-held client with an invitation reads NONE_ELIGIBLE', async () => {
+  const { store } = newStore();
+  await store.load();
+  await seedMaster(store);
+  await seedFollower(store, {
+    id: 'f_real_only',
+    accounts: [{ accountId: 'CR_REAL', type: 'real', currency: 'USD', status: 'active' }]
+  });
+  await store.putCopyTradingInvitation({
+    id: 'inv_real',
+    ownerUserId: MASTER_ID,
+    tokenHash: 'h2',
+    createdAt: NOW,
+    expiresAt: NOW + 60_000,
+    consumedAt: null,
+    revokedAt: null
+  });
+
+  const view = readiness(store);
+  assert.equal(view.roster, 'NONE_ELIGIBLE');
+  assert.equal(view.counts.followers, 1);
+  assert.equal(view.counts.eligible, 0);
+  assert.equal(view.counts.held, 0);
+  assert.equal(view.counts.pendingInvitations, 1);
+});
+
+test('awaiting: state and roster agree that nobody has connected', async () => {
+  const { store } = newStore();
+  await store.load();
+  await seedMaster(store);
+  await store.putCopyTradingInvitation({
+    id: 'inv_only',
+    ownerUserId: MASTER_ID,
+    tokenHash: 'h3',
+    createdAt: NOW,
+    expiresAt: NOW + 60_000,
+    consumedAt: null,
+    revokedAt: null
+  });
+
+  const view = readiness(store);
+  assert.equal(view.state, 'AWAITING_AUTHORIZATION');
+  assert.equal(view.roster, 'AWAITING_AUTHORIZATION');
+  assert.equal(view.counts.followers, 0, 'awaiting implies zero records');
+  assert.equal(view.counts.pendingInvitations, 1);
+});
+
+test('awaiting: state is never AWAITING while records exist', async () => {
+  const { store } = newStore();
+  await store.load();
+  await seedMaster(store);
+  await seedFollower(store, { id: 'f_present', status: 'paused' });
+  await store.putCopyTradingInvitation({
+    id: 'inv_held',
+    ownerUserId: MASTER_ID,
+    tokenHash: 'h4',
+    createdAt: NOW,
+    expiresAt: NOW + 60_000,
+    consumedAt: null,
+    revokedAt: null
+  });
+
+  const view = readiness(store);
+  assert.notEqual(view.state, 'AWAITING_AUTHORIZATION');
+  assert.equal(view.state, 'NO_FOLLOWERS');
+  assert.equal(view.roster, 'ALL_HELD');
+  assert.equal(view.counts.followers, 1);
+  assert.equal(view.counts.held, 1);
+  assert.equal(view.counts.pendingInvitations, 1);
+});
+
+/* ====================================================================== */
+/*  The four required roster distinctions, side by side                    */
+/* ====================================================================== */
+
+test('roster: the four required distinctions are mutually exclusive and complete', async () => {
+  // Each scenario is built from real persisted records, then labelled.
+  const build = async (seed: (s: Store) => Promise<void>) => {
+    const { store } = newStore();
+    await store.load();
+    await seedMaster(store);
+    await seed(store);
+    return readiness(store);
+  };
+
+  const invite = async (s: Store, id: string) =>
+    s.putCopyTradingInvitation({
+      id,
+      ownerUserId: MASTER_ID,
+      tokenHash: `h_${id}`,
+      createdAt: NOW,
+      expiresAt: NOW + 60_000,
+      consumedAt: null,
+      revokedAt: null
+    });
+
+  const none = await build(async () => {});
+  const awaiting = await build(async (s) => { await invite(s, 'i_a'); });
+  const allHeld = await build(async (s) => {
+    await seedFollower(s, { id: 'f_r1', status: 'paused' });
+    await seedFollower(s, { id: 'f_r2', status: 'suspended' });
+  });
+  const noneEligible = await build(async (s) => {
+    await seedFollower(s, { id: 'f_r3', tokenExpiresAt: NOW - 1 });
+  });
+
+  assert.deepEqual(
+    [none.roster, awaiting.roster, allHeld.roster, noneEligible.roster],
+    ['EMPTY', 'AWAITING_AUTHORIZATION', 'ALL_HELD', 'NONE_ELIGIBLE']
+  );
+
+  // Counts are the thing an operator acts on, so assert them explicitly.
+  assert.deepEqual(
+    [none.counts.followers, awaiting.counts.followers, allHeld.counts.followers, noneEligible.counts.followers],
+    [0, 0, 2, 1],
+    'roster count reflects real records, not eligibility'
+  );
+  assert.deepEqual(
+    [none.counts.pendingInvitations, awaiting.counts.pendingInvitations, allHeld.counts.pendingInvitations, noneEligible.counts.pendingInvitations],
+    [0, 1, 0, 0]
+  );
+  assert.deepEqual(
+    [allHeld.counts.held, noneEligible.counts.held],
+    [2, 0],
+    'held counts administrative holds only, never credential faults'
+  );
+  for (const view of [none, awaiting, allHeld, noneEligible]) {
+    assert.equal(view.counts.eligible, 0);
+    assert.equal(view.state === 'READY', false, 'none of these may ever report READY');
+  }
+});
+
+test('counts: followers, eligible and held are accurate across a mixed roster', async () => {
+  const { store } = newStore();
+  await store.load();
+  await seedMaster(store);
+  await seedFollower(store, { id: 'c_ok1' });
+  await seedFollower(store, { id: 'c_ok2' });
+  await seedFollower(store, { id: 'c_held1', status: 'paused' });
+  await seedFollower(store, { id: 'c_held2', status: 'suspended' });
+  await seedFollower(store, { id: 'c_exp', tokenExpiresAt: NOW - 1 });
+  await enableControl(store);
+
+  const view = readiness(store);
+  assert.equal(view.counts.followers, 5);
+  assert.equal(view.counts.eligible, 2);
+  assert.equal(view.counts.held, 2);
+  assert.equal(view.counts.disconnected, 1);
+  assert.equal(view.counts.eligible, 2, 'held clients are never also eligible');
+  assert.equal(view.roster, 'HAS_ELIGIBLE');
+  assert.equal(view.state, 'DEGRADED', 'the expired client still degrades the whole view');
+});
+
+test('counts: only this master\'s followers are counted', async () => {
+  const { store } = newStore();
+  await store.load();
+  await seedMaster(store);
+  await seedMaster(store, OTHER_MASTER_ID);
+  await seedFollower(store, { id: 'own_1' });
+  await seedFollower(store, { id: 'own_held', status: 'paused' });
+  await seedFollower(store, { id: 'theirs_1', ownerUserId: OTHER_MASTER_ID });
+  await seedFollower(store, { id: 'theirs_2', ownerUserId: OTHER_MASTER_ID });
+
+  const view = readiness(store);
+  assert.equal(view.counts.followers, 2, 'another master\'s clients are not counted');
+  assert.equal(view.counts.eligible, 1);
+  assert.equal(view.counts.held, 1);
+});
+
+test('counts: an expired invitation is not counted as pending', async () => {
+  const { store } = newStore();
+  await store.load();
+  await seedMaster(store);
+  await seedFollower(store, { id: 'f_pending_ok' });
+  await store.putCopyTradingInvitation({
+    id: 'inv_old',
+    ownerUserId: MASTER_ID,
+    tokenHash: 'hx',
+    createdAt: NOW - 200_000,
+    expiresAt: NOW - 1,
+    consumedAt: null,
+    revokedAt: null
+  });
+  await store.putCopyTradingInvitation({
+    id: 'inv_live',
+    ownerUserId: MASTER_ID,
+    tokenHash: 'hy',
+    createdAt: NOW,
+    expiresAt: NOW + 60_000,
+    consumedAt: null,
+    revokedAt: null
+  });
+
+  const view = readiness(store);
+  assert.equal(view.counts.pendingInvitations, 1, 'only the live one counts');
+  assert.equal(view.roster, 'HAS_ELIGIBLE', 'a live invitation does not change a healthy roster');
+});

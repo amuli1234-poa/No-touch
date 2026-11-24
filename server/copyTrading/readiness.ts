@@ -180,7 +180,12 @@ function diagnose(
 
   // `open` returns null rather than throwing, so a null here is the only
   // "cannot decrypt" signal. The plaintext is discarded immediately.
-  const tokenUnopenable = !held && !tokenExpired && open(follower.tokenSealed, deps.cfg.session.secret) === null;
+  //
+  // Deliberately not gated on `held` or `tokenExpired`: an unreadable credential
+  // is a real fault whether or not an admin also holds the client, and gating it
+  // would let the `connection` check report "readable" about a credential that is
+  // provably not — and would hide a rotated session secret behind an admin hold.
+  const tokenUnopenable = open(follower.tokenSealed, deps.cfg.session.secret) === null;
 
   const eligible =
     !held && !tokenExpired && !tokenUnopenable && !missingConsent && tradableDemoAccounts > 0;
@@ -435,15 +440,17 @@ function compute(deps: ReadinessDeps, ownerUserId: string): CopyReadiness {
    * different operator action: invite somebody, release a hold, fix a
    * credential, or wait for a client to finish authorizing.
    *
-   * An invitation with no records is AWAITING_AUTHORIZATION rather than EMPTY:
-   * somebody has been asked and nobody has arrived, which is a different
-   * situation from never having invited anyone.
+   * AWAITING_AUTHORIZATION is reserved for the case where nobody has connected
+   * yet and an invitation is outstanding. It deliberately does not apply once
+   * records exist: a connected-but-unusable client is a credential problem, not
+   * a wait, and reporting it as "awaiting" would hide the record that is already
+   * there. The invitation is still counted in `counts.pendingInvitations`, so
+   * nothing is lost by describing the roster as it actually is.
    */
   let roster: RosterStatus;
   if (followers.length === 0) roster = invitations > 0 ? 'AWAITING_AUTHORIZATION' : 'EMPTY';
   else if (eligible.length > 0) roster = 'HAS_ELIGIBLE';
   else if (held.length === followers.length) roster = 'ALL_HELD';
-  else if (invitations > 0) roster = 'AWAITING_AUTHORIZATION';
   else roster = 'NONE_ELIGIBLE';
 
   /*
@@ -479,7 +486,9 @@ function compute(deps: ReadinessDeps, ownerUserId: string): CopyReadiness {
     const summary = `${parts.join(' and ')} failing.`;
     degraded = { by, follower: failingFollower, execution: failingExecution, summary };
     explanation = `${summary} Copying may fail or be skipped until this is resolved.`;
-  } else if (eligible.length === 0 && invitations > 0 && roster !== 'ALL_HELD') {
+  } else if (roster === 'AWAITING_AUTHORIZATION') {
+    // Keyed off `roster` so the two can never disagree about whether anyone has
+    // connected: AWAITING_AUTHORIZATION means zero records plus an invitation.
     state = 'AWAITING_AUTHORIZATION';
     explanation = `${invitations} invitation(s) are outstanding and no client has finished authorizing yet. Copying stays off until one connects.`;
   } else if (eligible.length === 0) {
