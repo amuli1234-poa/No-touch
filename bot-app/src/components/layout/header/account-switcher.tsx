@@ -56,7 +56,11 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
         if (!accountList) return [];
         return accountList
             .map(account => {
-                const rawBalance = account.balance as number | string | undefined;
+                // Prefer the live per-account figure pushed over the socket. The
+                // account list only carries a balance when the login flow supplied
+                // one, so it is a fallback rather than the source of truth.
+                const liveBalance = client?.all_accounts_balance?.accounts?.[account.loginid]?.balance;
+                const rawBalance = (liveBalance ?? account.balance) as number | string | undefined;
                 const balanceValue = rawBalance === '' || rawBalance == null ? NaN : Number(rawBalance);
                 return {
                     loginid: account.loginid,
@@ -69,7 +73,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                 };
             })
             .sort((a, b) => (a.isActive ? -1 : b.isActive ? 1 : 0));
-    }, [accountList, activeLoginid]);
+    }, [accountList, activeLoginid, client?.all_accounts_balance]);
 
     if (!activeAccount) return null;
 
@@ -136,6 +140,8 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                                 >
                                     {!currency ? (
                                         <Localize i18n_default_text='No currency assigned' />
+                                    ) : balance === null ? (
+                                        <Localize i18n_default_text='Unavailable' />
                                     ) : (
                                         `${balance} ${getCurrencyDisplayCode(currency)}`
                                     )}

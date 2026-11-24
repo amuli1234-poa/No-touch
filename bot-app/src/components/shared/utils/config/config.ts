@@ -9,7 +9,6 @@ import {
 import type { AuthConfig } from '@/external/deriv-core';
 import { getInitialLanguage } from '@deriv-com/translations';
 import { DerivWSAccountsService } from '@/services/derivws-accounts.service';
-import { getWickSentinelWebSocketUrl } from '@/services/wicksentinel-sso';
 import brandConfig from '../../../../../brand.config.json';
 
 // =============================================================================
@@ -82,9 +81,13 @@ const getDefaultServerURL = () => {
  * @returns Promise with WebSocket URL or fallback to default server
  */
 export const getSocketURL = async (): Promise<string> => {
+    // When the bot is embedded in WickSentinel, reuse the authenticated
+    // server-side session and receive only a short-lived, account-bound socket
+    // URL. The OAuth access token never reaches this app. A standalone Deriv Bot
+    // still falls through to its own OAuth token below.
     try {
-        const ssoUrl = await getWickSentinelWebSocketUrl();
-        if (ssoUrl) return ssoUrl;
+        const wickSentinelSocketUrl = await DerivWSAccountsService.getWickSentinelWebSocketURL();
+        if (wickSentinelSocketUrl) return wickSentinelSocketUrl;
     } catch (error) {
         console.error('[WickSentinelSSO] Error resolving session WebSocket URL:', error);
     }

@@ -39,6 +39,9 @@ const AppHeader = observer(() => {
     const { data: activeAccount } = useActiveAccount({
         allBalanceData: client?.all_accounts_balance,
         directBalance: client?.balance,
+        // The socket reports the balance of the account it is authenticated as,
+        // which is not the newly selected one until re-authorisation finishes.
+        directBalanceLoginid: client?.loginid,
     });
 
     const handleLogout = useLogout();

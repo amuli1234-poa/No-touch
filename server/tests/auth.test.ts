@@ -128,7 +128,11 @@ async function startFakeDeriv(): Promise<FakeDeriv> {
           return;
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ data: { url: `wss://fake.derivws.test/ws/${state.lastOtpAccountId}?otp=abc` } }));
+        res.end(
+          JSON.stringify({
+            data: { url: `wss://api.derivws.com/trading/v1/options/ws/demo?otp=${state.lastOtpAccountId}` }
+          })
+        );
         return;
       }
 
@@ -693,60 +697,81 @@ test('17. Copy Trading accepts a PAT, validates it with the PAT App ID, and stor
 });
 
 /* ------------------- bot app single sign-on (shared session) ----------- */
+/* The bot app shares WickSentinel's session cookie, so it adopts the signed-in
+ * trader instead of asking for a second Deriv authorisation. One endpoint both
+ * reports the session and mints the account-bound socket URL, and it enforces
+ * same-origin, token expiry and account ownership on every call. */
 
-test('18. Bot app sees the WickSentinel session and mints a socket for an owned account', async () => {
+async function botSession(
+  base: string,
+  cj: { header(): string },
+  body: unknown = {},
+  origin: string | null = 'http://localhost:8787'
+) {
+  return fetch(`${base}/api/bot/session`, {
+    method: 'POST',
+    headers: {
+      ...(cj.header() ? { Cookie: cj.header() } : {}),
+      ...(origin ? { Origin: origin } : {}),
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+}
+
+async function signIn(app: { base: string }) {
+  const cj = jar();
+  const start = await get(app.base, '/auth/start?mode=login', cj);
+  const state = new URL(start.headers.get('location')!).searchParams.get('state')!;
+  await get(app.base, `/auth/deriv/callback?code=C&state=${state}`, cj);
+  return cj;
+}
+
+test('18. Bot app adopts the WickSentinel session and gets a socket for an owned account', async () => {
   const deriv = await startFakeDeriv();
   const app = await startApp(deriv);
-  const cj = jar();
   try {
-    const start = await get(app.base, '/auth/start?mode=login', cj);
-    const state = new URL(start.headers.get('location')!).searchParams.get('state')!;
-    await get(app.base, `/auth/deriv/callback?code=C&state=${state}`, cj);
+    const cj = await signIn(app);
 
-    // The bot app asks the same origin who is signed in.
-    const sessionRes = await get(app.base, '/api/bot/session', cj);
-    assert.equal(sessionRes.status, 200);
-    const session = await sessionRes.json();
-    assert.equal(session.authenticated, true);
-    assert.equal(session.accounts.length, 2);
-    assert.equal(session.defaultAccountId, 'VRTC90001', 'demo account is preferred');
-    assert.equal(session.tokenExpiresAt > Date.now(), true);
+    const res = await botSession(app.base, cj, { accountId: 'VRTC90001' });
+    assert.equal(res.status, 200);
+    const session = await res.json();
 
-    // It never receives the Deriv access token.
+    // The trader is recognised without a second login: the demo account is the
+    // default, and every account this session owns is listed.
+    assert.equal(session.account.account_id, 'VRTC90001');
+    assert.deepEqual(
+      session.accounts.map((a: any) => a.account_id),
+      ['VRTC90001', 'CR90002']
+    );
+    assert.equal(session.accounts[0].account_type, 'demo');
+
+    // A real, account-bound socket URL is returned; the long-lived OAuth token is not.
+    assert.match(session.websocket_url, /^wss:\/\/api\.derivws\.com\//);
     assert.equal(JSON.stringify(session).includes('ory_at_test_token'), false);
-
-    const wsRes = await fetch(`${app.base}/api/bot/ws-url`, {
-      method: 'POST',
-      headers: { Cookie: cj.header(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accountId: 'VRTC90001' })
-    });
-    assert.equal(wsRes.status, 200);
-    const ws = await wsRes.json();
-    assert.match(ws.url, /^wss:\/\/fake\.derivws\.test\//);
-    assert.equal(ws.accountId, 'VRTC90001');
     assert.equal(deriv.lastOtpAccountId, 'VRTC90001');
+
+    // The response must not be cached, since it is per-session.
+    assert.equal(res.headers.get('cache-control'), 'no-store');
   } finally {
     await app.close();
     await deriv.close();
   }
 });
 
-test('19. Bot app endpoints refuse anonymous callers', async () => {
+test('19. Bot app endpoints refuse anonymous and cross-origin callers', async () => {
   const deriv = await startFakeDeriv();
   const app = await startApp(deriv);
   try {
-    const anon = jar();
-    const sessionRes = await get(app.base, '/api/bot/session', anon);
-    assert.equal(sessionRes.status, 200);
-    assert.equal((await sessionRes.json()).authenticated, false);
+    const anonymous = await botSession(app.base, { header: () => '' });
+    assert.equal(anonymous.status, 401);
 
-    const wsRes = await fetch(`${app.base}/api/bot/ws-url`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accountId: 'VRTC90001' })
-    });
-    assert.equal(wsRes.status, 401);
-    assert.equal(deriv.lastOtpAccountId, null, 'no socket minted without a session');
+    const cj = await signIn(app);
+    const crossOrigin = await botSession(app.base, cj, {}, 'https://evil.example');
+    assert.equal(crossOrigin.status, 403);
+    assert.equal((await crossOrigin.json()).error, 'same_origin_required');
+
+    assert.equal(deriv.lastOtpAccountId, null, 'no socket minted without a same-origin session');
   } finally {
     await app.close();
     await deriv.close();
@@ -756,20 +781,12 @@ test('19. Bot app endpoints refuse anonymous callers', async () => {
 test('20. Bot app cannot mint a socket for an account it does not own', async () => {
   const deriv = await startFakeDeriv();
   const app = await startApp(deriv);
-  const cj = jar();
   try {
-    const start = await get(app.base, '/auth/start?mode=login', cj);
-    const state = new URL(start.headers.get('location')!).searchParams.get('state')!;
-    await get(app.base, `/auth/deriv/callback?code=C&state=${state}`, cj);
+    const cj = await signIn(app);
 
-    // `CR99999` is not in this session's account set.
-    const res = await fetch(`${app.base}/api/bot/ws-url`, {
-      method: 'POST',
-      headers: { Cookie: cj.header(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accountId: 'CR99999' })
-    });
-    assert.equal(res.status, 400);
-    assert.equal((await res.json()).error, 'no_account');
+    const res = await botSession(app.base, cj, { accountId: 'CR99999' });
+    assert.equal(res.status, 403);
+    assert.equal((await res.json()).error, 'account_not_authorized');
     assert.equal(deriv.lastOtpAccountId, null, 'nothing minted for an unowned account');
   } finally {
     await app.close();
@@ -780,19 +797,12 @@ test('20. Bot app cannot mint a socket for an account it does not own', async ()
 test('21. Bot app falls back to the default account when none is named', async () => {
   const deriv = await startFakeDeriv();
   const app = await startApp(deriv);
-  const cj = jar();
   try {
-    const start = await get(app.base, '/auth/start?mode=login', cj);
-    const state = new URL(start.headers.get('location')!).searchParams.get('state')!;
-    await get(app.base, `/auth/deriv/callback?code=C&state=${state}`, cj);
+    const cj = await signIn(app);
 
-    const res = await fetch(`${app.base}/api/bot/ws-url`, {
-      method: 'POST',
-      headers: { Cookie: cj.header(), 'Content-Type': 'application/json' },
-      body: '{}'
-    });
+    const res = await botSession(app.base, cj);
     assert.equal(res.status, 200);
-    assert.equal((await res.json()).accountId, 'VRTC90001');
+    assert.equal((await res.json()).account.account_id, 'VRTC90001', 'demo is preferred');
   } finally {
     await app.close();
     await deriv.close();
@@ -802,19 +812,13 @@ test('21. Bot app falls back to the default account when none is named', async (
 test('22. A revoked Deriv token makes the bot app socket request fail closed', async () => {
   const deriv = await startFakeDeriv();
   const app = await startApp(deriv);
-  const cj = jar();
   try {
-    const start = await get(app.base, '/auth/start?mode=login', cj);
-    const state = new URL(start.headers.get('location')!).searchParams.get('state')!;
-    await get(app.base, `/auth/deriv/callback?code=C&state=${state}`, cj);
+    const cj = await signIn(app);
 
     deriv.otpBehaviour = 'unauthorized';
-    const res = await fetch(`${app.base}/api/bot/ws-url`, {
-      method: 'POST',
-      headers: { Cookie: cj.header(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accountId: 'VRTC90001' })
-    });
-    assert.equal(res.status, 401);
+    const res = await botSession(app.base, cj, { accountId: 'VRTC90001' });
+    assert.equal(res.status, 502);
+    assert.equal((await res.json()).error, 'deriv_connection_rejected');
   } finally {
     await app.close();
     await deriv.close();

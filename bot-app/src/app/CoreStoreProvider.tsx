@@ -142,6 +142,37 @@ const CoreStoreProvider: React.FC<{ children: React.ReactNode }> = observer(({ c
                     if (balance.currency) {
                         client.setCurrency(balance.currency);
                     }
+
+                    // Deriv reports a balance for one account per message. Keep the
+                    // per-account view current so the switcher can show the real
+                    // figure for each account instead of a placeholder.
+                    if (balance.loginid) {
+                        // The message names the account the socket is authorised for,
+                        // which can arrive before the authorize event records it.
+                        if (client.loginid !== balance.loginid) {
+                            client.setLoginId(balance.loginid);
+                        }
+                        const current = client.all_accounts_balance;
+                        const isDemo = balance.loginid.startsWith('VR');
+                        client.setAllAccountsBalance({
+                            ...(current ?? {
+                                balance: balance.balance,
+                                currency: balance.currency ?? '',
+                                loginid: balance.loginid,
+                            }),
+                            accounts: {
+                                ...(current?.accounts ?? {}),
+                                [balance.loginid]: {
+                                    balance: balance.balance,
+                                    converted_amount: balance.balance,
+                                    currency: balance.currency ?? '',
+                                    demo_account: isDemo ? 1 : 0,
+                                    status: 1,
+                                    type: 'deriv',
+                                },
+                            },
+                        });
+                    }
                 }
             }
         },

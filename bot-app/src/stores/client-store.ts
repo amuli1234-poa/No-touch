@@ -22,7 +22,9 @@ import type RootStore from './root-store';
 export default class ClientStore {
     loginid = '';
     account_list: TAuthData['account_list'] = [];
-    balance = '0';
+    // Empty until a balance has actually been reported. An unknown balance is
+    // not the same as a zero balance, and showing '0' would misstate the account.
+    balance = '';
     currency = 'AUD';
     is_logged_in = false;
     is_account_regenerating = false;
@@ -262,7 +264,7 @@ export default class ClientStore {
             this.accounts = {};
             this.is_logged_in = false;
             this.loginid = '';
-            this.balance = '0';
+            this.balance = '';
             this.currency = 'USD';
             this.all_accounts_balance = null;
 
@@ -383,7 +385,7 @@ export default class ClientStore {
                 this.accounts = {};
                 this.setIsLoggedIn(false);
 
-                this.balance = '0';
+                this.balance = '';
                 this.currency = 'USD';
 
                 this.all_accounts_balance = null;

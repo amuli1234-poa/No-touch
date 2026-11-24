@@ -35,10 +35,6 @@ const PreviewBranding =
 // the guard in app-root.tsx.
 const API_INIT_TIMEOUT_MS = 5000;
 
-// Upper bound on waiting for active symbols before rendering the shell without
-// them.
-const SYMBOLS_LOAD_TIMEOUT_MS = 15000;
-
 const AppContent = observer(() => {
     const [is_api_initialized, setIsApiInitialized] = React.useState(false);
     const [is_loading, setIsLoading] = React.useState(true);
@@ -103,7 +99,7 @@ const AppContent = observer(() => {
     }, [is_api_initialized]);
 
     useEffect(() => {
-        if (connectionStatus === CONNECTION_STATUS.OPENED) return undefined;
+        if (connectionStatus === CONNECTION_STATUS.OPENED || is_api_initialized) return undefined;
 
         const timeoutId = setTimeout(() => {
             if (connection_warning_shown.current) return;
@@ -120,7 +116,7 @@ const AppContent = observer(() => {
         }, 20000);
 
         return () => clearTimeout(timeoutId);
-    }, [connectionStatus]);
+    }, [connectionStatus, is_api_initialized]);
 
     const { current_language } = common;
     const html = document.documentElement;

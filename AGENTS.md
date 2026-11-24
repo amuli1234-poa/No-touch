@@ -1398,17 +1398,28 @@ variable, or it will escape into the WickSentinel shell. Build with
 ### The bot app reuses the WickSentinel session
 
 Because `/bot` is served from the same origin, a trader already signed in to the
-scanner must not be asked to authorise Deriv again. `bot-app/src/services/wicksentinel-sso.ts`
-adopts the existing session via two endpoints in `server/routes/auth.ts`:
-`GET /api/bot/session` (the accounts this session owns) and `POST /api/bot/ws-url`
-(a single-use OTP WebSocket URL, behind `requireSession`).
+scanner must not be asked to authorise Deriv again. There is exactly one SSO
+path: `POST /api/bot/session` in `server/routes/botSession.ts`, called from
+`DerivWSAccountsService.getWickSentinelWebSocketURL()`
+(`bot-app/src/services/derivws-accounts.service.ts`).
+
+That one request both identifies the session and mints the socket: it returns
+the selected account, the accounts the session owns, and an account-bound
+WebSocket URL. It enforces `requireSession`, an exact same-origin `Origin`, a
+live (unexpired) Deriv token, and account ownership on every call, and it sets
+`Cache-Control: no-store`. The OTP exchange happens server-side in
+`requestDerivSocketUrl` precisely so the OAuth access token never reaches the
+browser — keep it that way. Do not add a second session endpoint.
 
 `getSocketURL` in `bot-app/.../config/config.ts` prefers that URL and only falls
 back to the app's own OAuth token when there is no session, so the bot app still
-works standalone. The OTP exchange happens server-side in `fetchOtpWebSocketUrl`
-(`server/lib/deriv.ts`) precisely so the OAuth access token never reaches the
-browser — keep it that way.
+works standalone.
 
-The bridge seeds `active_loginid`, `account_type` and `deriv_accounts` and marks
-them with `ws_sso_adopted`, so signing out clears only keys it wrote and never
-disturbs a genuine bot-app OAuth login.
+### Balances are never fabricated
+
+An unknown balance is `null`/`''`, never `0`. `useActiveAccount` renders a known
+figure or "Unavailable"; `client.balance` starts empty and
+`client.all_accounts_balance` is filled from live `balance` messages so the
+account switcher shows real per-account figures. A `0.00` on screen must mean a
+real zero balance.
+

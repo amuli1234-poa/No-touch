@@ -17,7 +17,6 @@ import { seal } from '../lib/crypto.js';
 import {
   issueSessionCookie,
   requireSession,
-  resolveSession,
   type SessionContext,
   type AuthedRequest
 } from '../lib/session.js';
@@ -423,80 +422,6 @@ export function createAuthRouter(ctx: SessionContext, balances?: BalanceService)
       await store.revokeUserSessions(req.user!.id);
       clearCookie(res, cfg.session.cookieName, { path: '/' });
       res.status(401).json({ error: 'deriv_authorization_revoked' });
-    }
-  });
-
-  /* ---------------------- bot app single sign-on ------------------------ */
-
-  /**
-   * The bot app is served from the same origin, so it shares this session
-   * cookie. These two endpoints let it adopt the WickSentinel login instead of
-   * asking the trader to authorise Deriv a second time.
-   *
-   * The OAuth access token is never returned. The bot app gets the account list
-   * and, on demand, a single-use OTP WebSocket URL minted server-side for one of
-   * the accounts this session actually owns.
-   */
-  router.get('/api/bot/session', (req: AuthedRequest, res: Response) => {
-    const session = resolveSession(ctx, req);
-    const user = session ? store.getUserById(session.userId) : undefined;
-    if (!session || !user) {
-      res.json({ authenticated: false });
-      return;
-    }
-    const accounts = user.accounts.map((a) => ({
-      accountId: a.accountId,
-      type: a.type,
-      currency: a.currency ?? null
-    }));
-    // Prefer a demo account: the bot app is for building and testing strategies,
-    // and defaulting a real-money account would be the riskier choice.
-    const preferred = accounts.find((a) => a.type === 'demo') ?? accounts[0];
-    res.json({
-      authenticated: true,
-      accounts,
-      defaultAccountId: preferred?.accountId ?? null,
-      tokenExpiresAt: session.derivTokenExpiresAt
-    });
-  });
-
-  router.post('/api/bot/ws-url', requireSession(ctx), async (req: AuthedRequest, res: Response) => {
-    const { open } = await import('../lib/crypto.js');
-    const { fetchOtpWebSocketUrl } = await import('../lib/deriv.js');
-    const { readJsonBody } = await import('../lib/http.js');
-
-    const token = open(req.session!.derivTokenSealed, cfg.session.secret);
-    if (!token) {
-      res.status(401).json({ error: 'deriv_authorization_revoked' });
-      return;
-    }
-
-    let accountId: string | undefined;
-    try {
-      const body = await readJsonBody<{ accountId?: string }>(req);
-      accountId = typeof body?.accountId === 'string' ? body.accountId : undefined;
-    } catch {
-      accountId = undefined;
-    }
-
-    // Never mint a socket for an account this user does not own.
-    const owned = req.user!.accounts;
-    const target = accountId
-      ? owned.find((a) => a.accountId === accountId)
-      : (owned.find((a) => a.type === 'demo') ?? owned[0]);
-    if (!target) {
-      res.status(400).json({ error: 'no_account', message: 'No Deriv account is linked to this session.' });
-      return;
-    }
-
-    try {
-      const url = await fetchOtpWebSocketUrl(cfg, token, target.accountId);
-      res.json({ url, accountId: target.accountId });
-    } catch (err: any) {
-      res.status(err?.status === 401 ? 401 : 502).json({
-        error: err?.code ?? 'otp_failed',
-        message: 'Could not open a trading session for this account.'
-      });
     }
   });
 
