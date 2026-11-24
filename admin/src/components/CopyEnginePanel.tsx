@@ -3,6 +3,7 @@ import { Activity, AlertTriangle, Pause, Play, RefreshCw } from 'lucide-react';
 import { useAsync } from '../lib/hooks';
 import { copyControlApi, copyTradingApi, type ClientBalanceAccount, type CopyControlView } from '../lib/copyTrading';
 import { Badge, Card, Empty, LoadingBlock, Notice, StatCard } from './UI';
+import { CopyReadinessPanel } from './CopyReadinessPanel';
 import { formatCurrency, formatDateTime, formatNumber } from '../lib/format';
 
 /**
@@ -30,6 +31,12 @@ export function CopyEnginePanel({
   );
   const performance = useAsync(
     () => (masterId ? copyControlApi.performance(masterId) : Promise.resolve(null)),
+    [masterId]
+  );
+  // Read-only: this asks the backend what it can prove about readiness. It never
+  // creates or enables a control, so it is safe to load alongside the switch.
+  const readiness = useAsync(
+    () => (masterId ? copyControlApi.readiness(masterId) : Promise.resolve(null)),
     [masterId]
   );
 
@@ -75,6 +82,7 @@ export function CopyEnginePanel({
       onNotify('success', next ? 'Copy trading started' : 'Copy trading stopped', result.note);
       control.reload();
       performance.reload();
+      readiness.reload();
     } catch (err) {
       const code = err && typeof err === 'object' && 'code' in err ? String((err as { code: unknown }).code) : '';
       onNotify(
@@ -125,6 +133,7 @@ export function CopyEnginePanel({
             onClick={() => {
               control.reload();
               performance.reload();
+              readiness.reload();
             }}
             aria-label="Refresh copy engine status"
           >
@@ -182,6 +191,14 @@ export function CopyEnginePanel({
           {view.stoppedReason && !view.enabled && (
             <Notice kind="warn">Stopped: {view.stoppedReason}</Notice>
           )}
+
+          <div className="mb">
+            <CopyReadinessPanel
+              readiness={readiness.data?.readiness ?? null}
+              loading={readiness.loading}
+              error={readiness.error}
+            />
+          </div>
 
           {performance.loading ? (
             <LoadingBlock label="Loading performance…" />

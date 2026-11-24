@@ -79,13 +79,13 @@ export interface MirrorInput {
  * `suspended` are the administrative holds a copy engine must consult, so a
  * freshly connected follower (`authorized`) copies unless an admin holds it.
  */
-function isHeld(follower: CopyTradingFollowerRecord): boolean {
+export function isHeld(follower: CopyTradingFollowerRecord): boolean {
   const status = follower.status ?? 'authorized';
   return status === 'paused' || status === 'suspended';
 }
 
 /** Deriv marks an account unusable for trading when its status is not active. */
-function isTradable(account: DerivAccountRef): boolean {
+export function isTradable(account: DerivAccountRef): boolean {
   const status = account.status?.toLowerCase();
   return status === undefined || status === 'active';
 }

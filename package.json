@@ -22,6 +22,7 @@
     "test:telemetry": "tsx server/tests/telemetry.test.ts",
     "test:balance": "tsx server/tests/balance.test.ts",
     "test:copy-balance": "tsx server/tests/copy_trading_balance.test.ts",
+    "test:copy-readiness": "tsx --test server/tests/copy_trading_readiness.test.ts",
     "test:isolation": "tsx server/tests/isolation.test.ts",
     "test:market": "tsx server/tests/market_data.test.ts",
     "test:signals": "tsx server/tests/signals.test.ts",

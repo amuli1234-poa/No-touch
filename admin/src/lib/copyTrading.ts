@@ -213,6 +213,77 @@ export interface CopyPerformance {
   daily: { date: string; realisedPnl: number; trades: number }[];
 }
 
+export interface CopyReadinessCounts {
+  followers: number;
+  eligible: number;
+  held: number;
+  disconnected: number;
+  pendingInvitations: number;
+  eligibleDerivAccounts: number;
+}
+
+export interface CopyReadinessHealth {
+  key: 'connection' | 'authorization' | 'broker' | 'reconciliation';
+  /** Which half of the picture this check belongs to. */
+  scope: 'follower' | 'execution';
+  status: 'ok' | 'fail' | 'unknown';
+  detail: string;
+}
+
+/** Roster shape with the Copy Trading switch factored out. */
+export type CopyRosterStatus =
+  | 'UNKNOWN'
+  | 'EMPTY'
+  | 'AWAITING_AUTHORIZATION'
+  | 'ALL_HELD'
+  | 'NONE_ELIGIBLE'
+  | 'HAS_ELIGIBLE';
+
+/** Why the state is DEGRADED, split by the half that failed. */
+export interface CopyReadinessDegraded {
+  by: ('follower' | 'execution')[];
+  follower: string[];
+  execution: string[];
+  summary: string;
+}
+
+/**
+ * Operational readiness for one master, projected from persisted state.
+ *
+ * `READY` means the prerequisites are satisfied, not that a future trade will
+ * execute — the kill switches, risk engine and broker still apply. `guarantee`
+ * is always false and the UI must not imply otherwise.
+ */
+export interface CopyReadiness {
+  generatedAt: number;
+  ownerUserId: string;
+  master: { userId: string; loginId: string | null } | null;
+  state: 'NO_FOLLOWERS' | 'AWAITING_AUTHORIZATION' | 'PAUSED' | 'READY' | 'DEGRADED' | 'UNKNOWN';
+  explanation: string;
+  guarantee: false;
+  /** Roster shape with the switch factored out. */
+  roster: CopyRosterStatus;
+  /** Which half failed when `state` is DEGRADED; null otherwise. */
+  degraded: CopyReadinessDegraded | null;
+  counts: CopyReadinessCounts;
+  control: {
+    exists: boolean;
+    enabled: boolean;
+    updatedAt: number | null;
+    updatedByEmail: string | null;
+    stoppedReason: string | null;
+  };
+  health: CopyReadinessHealth[];
+  lastCopy: { at: number; followerId: string | null; accountId: string | null; contractId: number | null } | null;
+  lastFailure: {
+    at: number;
+    followerId: string | null;
+    accountId: string | null;
+    reason: string | null;
+    detail: Record<string, unknown>;
+  } | null;
+}
+
 export const copyControlApi = {
   get: (masterUserId: string) =>
     api.get<{ control: CopyControlView }>(`/copy-trading/control${qs({ masterUserId })}`),
@@ -220,5 +291,7 @@ export const copyControlApi = {
   set: (body: { masterUserId: string; enabled: boolean; reason?: string }) =>
     api.post<{ control: CopyControlView; note: string }>('/copy-trading/control', body),
   performance: (masterUserId: string, days = 30) =>
-    api.get<CopyPerformance>(`/copy-trading/performance${qs({ masterUserId, days })}`)
+    api.get<CopyPerformance>(`/copy-trading/performance${qs({ masterUserId, days })}`),
+  readiness: (masterUserId: string) =>
+    api.get<{ readiness: CopyReadiness }>(`/copy-trading/readiness${qs({ masterUserId })}`)
 };

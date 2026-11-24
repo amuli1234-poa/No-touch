@@ -9,6 +9,7 @@ import { seal, open } from '../../lib/crypto.js';
 import { revokeToken } from '../../lib/deriv.js';
 import { validatePatToken, PAT_FAILURE_MESSAGE } from '../../copyTrading/pat.js';
 import { buildCopyPerformance } from '../../copyTrading/performance.js';
+import { buildCopyReadiness, listReadinessOwners } from '../../copyTrading/readiness.js';
 import type {
   CopyTradingFollowerRecord,
   CopyFollowerStatus,
@@ -767,6 +768,31 @@ export function createCopyTradingAdminRouter(ctx: AdminRouteContext): Router {
       note: body.enabled
         ? 'Copy trading started. Each accepted DEMO trade is mirrored onto every eligible follower DEMO account.'
         : 'Copy trading stopped. New master trades are no longer mirrored; contracts already open are unaffected.'
+    });
+  });
+
+  /* ==================================================================== */
+  /*  Operational readiness (read-only projection)                        */
+  /* ==================================================================== */
+
+  /**
+   * Whether copying is operationally ready for one master, derived only from
+   * persisted state.
+   *
+   * This route is deliberately read-only. It never creates a missing
+   * `copyTradingControl`, never enables one, and never resumes copying — a
+   * missing control is reported as `enabled: false` because that is how the
+   * engine reads it. `READY` describes prerequisites only and is not a promise
+   * that a trade will execute.
+   */
+  router.get('/readiness', requireAdmin(ctx, 'copytrading.read'), (req: AdminAuthedRequest, res: Response) => {
+    const ownerUserId = String(req.query.masterUserId ?? '').trim();
+    if (ownerUserId) {
+      if (!store.getUserById(ownerUserId)) return fail(res, 404, 'master_not_found');
+      return res.json({ readiness: buildCopyReadiness({ store, cfg }, ownerUserId) });
+    }
+    return res.json({
+      items: listReadinessOwners(store).map((id) => buildCopyReadiness({ store, cfg }, id))
     });
   });
 

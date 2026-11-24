@@ -1510,6 +1510,55 @@ Two surfaces toggle it: `POST /api/admin/v1/copy-trading/control` (needs
 manager, scoped to their own id. Starting with no connected client returns `409
 no_followers` rather than silently doing nothing.
 
+### Readiness is a read-only projection
+
+`server/copyTrading/readiness.ts` answers "would a new DEMO trade be mirrored to
+anyone right now?" from persisted state alone. It **never writes**: it does not
+create a missing `copyTradingControl` and does not enable one. A missing control
+is reported as `enabled: false` because that is literally how the engine reads it
+(`getCopyTradingControl` → `null`, falsy `enabled`, `mirrorMasterTrade` returns
+`[]`). This is why a data wipe can never surface as ready: with no followers the
+state is `NO_FOLLOWERS`, and a leftover enabled switch with an empty roster is
+still not ready.
+
+Each check carries a `scope`. `connection` and `authorization` are **follower**
+checks — the client roster. `broker` and `reconciliation` are **execution**
+checks — the master's own ledger, and they are evaluated even when no client is
+connected. This matters because the two call for different action, and because
+execution faults must not be mistaken for a client problem.
+
+States, in precedence order: `DEGRADED`, `AWAITING_AUTHORIZATION` (invitations
+out, none connected), `NO_FOLLOWERS`, `PAUSED` (eligible clients, switch off or
+absent), `READY`. `UNKNOWN` covers a master that cannot be resolved or a store
+read that throws. DEGRADED outranks PAUSED and NO_FOLLOWERS deliberately: a pause
+or an empty roster must not hide a broken credential or a stuck purchase.
+
+`state` collapses several situations that all leave copying with nothing to do,
+so the payload reports the roster shape separately in `roster`:
+`EMPTY` (no records), `AWAITING_AUTHORIZATION` (invitations outstanding),
+`ALL_HELD` (records exist, every one paused/suspended), `NONE_ELIGIBLE` (records
+exist, none held, none usable) and `HAS_ELIGIBLE`. `counts` reports `followers`,
+`eligible`, `held`, `disconnected` and `pendingInvitations` directly, and every
+follower lands in exactly one of eligible / held / disconnected.
+
+When the state is DEGRADED, `degraded` names the source so the console can say
+*why*: `by` (which scopes failed), `follower` and `execution` (the failing check
+keys) and a one-line `summary`. It is `null` in every other state, so a consumer
+cannot read a stale reason.
+
+Fail-safe rule, unchanged and load-bearing: unresolved master purchase outcomes
+(`UNKNOWN` intents) and `RECONCILIATION_REQUIRED` intents are execution checks
+that take part in the ordinary failing-check test, so they keep the state out of
+READY even when every client is eligible. Readiness never *causes* replication —
+it only reports on it.
+
+Eligibility reuses the engine's own `isHeld` / `isTradable` predicates so the two
+cannot drift. `READY` carries `guarantee: false` — it means prerequisites are
+satisfied, not that a trade will execute; the kill switches, risk engine and
+broker all still apply. Surfaced at
+`GET /api/admin/v1/copy-trading/readiness` (`copytrading.read`) and rendered by
+`admin/src/components/CopyReadinessPanel.tsx`, which has no controls of its own.
+
 ### Performance reporting reads across principals
 
 A copied contract is owned by `copy_follower_<followerId>`, a synthetic
