@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Activity, AlertTriangle, Pause, Play, RefreshCw } from 'lucide-react';
 import { useAsync } from '../lib/hooks';
-import { copyControlApi, copyTradingApi, type CopyControlView } from '../lib/copyTrading';
+import { copyControlApi, copyTradingApi, type ClientBalanceAccount, type CopyControlView } from '../lib/copyTrading';
 import { Badge, Card, Empty, LoadingBlock, Notice, StatCard } from './UI';
 import { formatCurrency, formatDateTime, formatNumber } from '../lib/format';
 
@@ -34,6 +34,38 @@ export function CopyEnginePanel({
   );
 
   const view = control.data?.control ?? null;
+
+  // Balances are read live from Deriv, separately from the P/L figures, so a
+  // missing figure renders as "—" rather than delaying the table.
+  const [balances, setBalances] = useState<Record<string, ClientBalanceAccount>>({});
+  const accountKey = (performance.data?.accounts ?? [])
+    .map((row) => `${row.followerId ?? 'master'}:${row.accountId}`)
+    .join('|');
+
+  useEffect(() => {
+    const rows = performance.data?.accounts ?? [];
+    if (rows.length === 0) {
+      setBalances({});
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const next: Record<string, ClientBalanceAccount> = {};
+      const followerIds = [
+        ...new Set(rows.map((r) => r.followerId).filter((id): id is string => id !== null))
+      ];
+      for (const followerId of followerIds) {
+        try {
+          const result = await copyTradingApi.balance(followerId);
+          for (const account of result.accounts) next[account.accountId] = account;
+        } catch {
+          // Leave the cell as "—"; the read is advisory, not part of the P/L.
+        }
+      }
+      if (!cancelled) setBalances(next);
+    })();
+    return () => { cancelled = true; };
+  }, [accountKey]);
 
   const toggle = async (next: boolean) => {
     if (!masterId) return;
@@ -170,6 +202,7 @@ export function CopyEnginePanel({
                     <th>Losses</th>
                     <th>Staked</th>
                     <th>Profit / loss</th>
+                    <th>Balance</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -200,6 +233,18 @@ export function CopyEnginePanel({
                         >
                           {formatCurrency(row.realisedPnl, row.currency)}
                         </strong>
+                      </td>
+                      <td>
+                        {(() => {
+                          const balance = balances[row.accountId];
+                          if (!balance || balance.balance === null) return <span className="muted">—</span>;
+                          return (
+                            <strong>
+                              {formatCurrency(balance.balance, balance.currency ?? row.currency)}
+                              {balance.state !== 'ok' && <span className="tiny muted"> {balance.state}</span>}
+                            </strong>
+                          );
+                        })()}
                       </td>
                     </tr>
                   ))}

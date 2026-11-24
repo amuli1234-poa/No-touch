@@ -8,6 +8,7 @@ import {
   Link2,
   Pause,
   Play,
+  RefreshCw,
   Search,
   ShieldCheck,
   Trash2,
@@ -28,7 +29,7 @@ import {
 } from '../lib/copyTrading';
 import { Badge, Card, Empty, LoadingBlock, Modal, Notice, PageHeader, Pagination, StatCard } from '../components/UI';
 import { CopyEnginePanel } from '../components/CopyEnginePanel';
-import { formatDateTime, formatNumber, formatRelative } from '../lib/format';
+import { formatCurrency, formatDateTime, formatNumber, formatRelative } from '../lib/format';
 
 const PAGE_SIZE = 20;
 
@@ -850,6 +851,8 @@ function ManageClientModal({
   const [busy, setBusy] = useState(false);
   const [reason, setReason] = useState('');
   const risk = useAsync(() => copyTradingApi.risk(client.id), [client.id]);
+  const [balanceRefresh, setBalanceRefresh] = useState(0);
+  const balance = useAsync(() => copyTradingApi.balance(client.id, balanceRefresh > 0), [client.id, balanceRefresh]);
 
   async function setStatus(status: 'active' | 'paused' | 'suspended') {
     setBusy(true);
@@ -913,6 +916,58 @@ function ManageClientModal({
           )}
         </div>
       </div>
+
+      <h4 className="small muted mt">Client account balance</h4>
+      {balance.loading ? (
+        <div className="tiny muted">Reading from Deriv…</div>
+      ) : balance.data ? (
+        <>
+          {balance.data.accounts.length === 0 ? (
+            <Notice kind="warn">{balance.data.note ?? 'No balance could be read for this client.'}</Notice>
+          ) : (
+            <div className="table-wrap">
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>Account</th>
+                    <th>Mode</th>
+                    <th>Balance</th>
+                    <th>State</th>
+                    <th>Updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {balance.data.accounts.map((a) => (
+                    <tr key={a.accountId}>
+                      <td className="num tiny">{a.accountId}</td>
+                      <td>
+                        <Badge tone={a.mode === 'demo' ? 'slate' : 'amber'}>{a.mode}</Badge>
+                      </td>
+                      <td className="num strong">
+                        {a.balance === null ? '—' : formatCurrency(a.balance, a.currency ?? 'USD')}
+                      </td>
+                      <td>
+                        <Badge tone={a.state === 'ok' ? 'green' : a.state === 'stale' ? 'amber' : 'red'}>{a.state}</Badge>
+                      </td>
+                      <td className="tiny muted">{a.lastUpdated ? formatRelative(a.lastUpdated) : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="row gap-sm wrap" style={{ marginTop: 8 }}>
+            <button className="btn btn-ghost" disabled={balance.loading} onClick={() => setBalanceRefresh((n) => n + 1)}>
+              <RefreshCw size={14} /> Refresh balance
+            </button>
+            <span className="tiny muted">{balance.data.note}</span>
+          </div>
+        </>
+      ) : (
+        <Notice kind="warn">
+          {balance.error?.code.replace(/_/g, ' ') ?? 'The client balance could not be read.'}
+        </Notice>
+      )}
 
       <h4 className="small muted mt">Risk limits (enforced by the existing engine)</h4>
       {risk.loading ? (

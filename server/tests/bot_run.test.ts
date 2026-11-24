@@ -1580,3 +1580,91 @@ test('sell: the entry ceiling does not strand an open contract', async () => {
     assert.equal(after.run.counters.entries, 1, 'the ceiling still capped entries');
   });
 });
+
+/* --------------------------- copy trading fan-out -------------------------- */
+
+test('copy: a bot entry is mirrored to a connected follower when copying is on', async () => {
+  const { CopyExecutionEngine } = await import('../copyTrading/engine.js');
+  const { seal } = await import('../lib/crypto.js');
+
+  await withHarness(async ({ deps, user, store }) => {
+    const cfg = makeConfig();
+    const auditor = new ExecutionAuditor(store);
+    const engine = new CopyExecutionEngine({ store, cfg, gateway: deps.gateway, auditor });
+    const bot = await importFixture(store, user.id, RISING_CALL_BOT);
+
+    // Copying is opt-in per manager: the switch must be on for anything to fan out.
+    await store.putCopyTradingControl({
+      ownerUserId: user.id,
+      enabled: true,
+      updatedBy: 'adm_test',
+      updatedByEmail: 'admin@test',
+      updatedAt: Date.now(),
+      stoppedReason: null
+    });
+    await store.putCopyTradingFollower({
+      id: 'f_bot_1',
+      ownerUserId: user.id,
+      derivSub: 'sub_follower_bot',
+      authMethod: 'pat',
+      loginId: 'CR_BOT',
+      accounts: [{ accountId: 'F_BOT_DEMO', type: 'demo', currency: 'USD', status: 'active' }],
+      tokenSealed: seal('follower-token', cfg.session.secret),
+      tokenExpiresAt: 0,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      status: 'active',
+      revision: 1
+    });
+
+    const run = await startBotRun({ ...deps, copyEngine: engine }, user, bot.id, { accountId: 'DEMO' }, 'token');
+    const result = await tickBotRun({ ...deps, copyEngine: engine }, user, run.runId, 'token', 'tick-1');
+
+    assert.equal(result.verdict, 'entry', 'the bot bought its own contract');
+
+    // The follower trades under a synthetic principal, so their copy is stored
+    // against that id rather than the manager's.
+    const followerIntents = store.listTradeIntents('copy_follower_f_bot_1');
+    assert.equal(followerIntents.length, 1, 'the follower copied the bot entry');
+    assert.equal(followerIntents[0].accountId, 'F_BOT_DEMO');
+    assert.notEqual(followerIntents[0].contractId, result.contractId, 'a distinct contract');
+  });
+});
+
+test('copy: a bot entry does not fan out while the copy switch is off', async () => {
+  const { CopyExecutionEngine } = await import('../copyTrading/engine.js');
+  const { seal } = await import('../lib/crypto.js');
+
+  await withHarness(async ({ deps, user, store }) => {
+    const cfg = makeConfig();
+    const engine = new CopyExecutionEngine({
+      store,
+      cfg,
+      gateway: deps.gateway,
+      auditor: new ExecutionAuditor(store)
+    });
+    const bot = await importFixture(store, user.id, RISING_CALL_BOT);
+
+    // No control record at all: copying is off until an administrator starts it.
+    await store.putCopyTradingFollower({
+      id: 'f_bot_2',
+      ownerUserId: user.id,
+      derivSub: 'sub_follower_bot_2',
+      authMethod: 'pat',
+      loginId: 'CR_BOT2',
+      accounts: [{ accountId: 'F_BOT_DEMO2', type: 'demo', currency: 'USD', status: 'active' }],
+      tokenSealed: seal('follower-token', cfg.session.secret),
+      tokenExpiresAt: 0,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      status: 'active',
+      revision: 1
+    });
+
+    const run = await startBotRun({ ...deps, copyEngine: engine }, user, bot.id, { accountId: 'DEMO' }, 'token');
+    const result = await tickBotRun({ ...deps, copyEngine: engine }, user, run.runId, 'token', 'tick-1');
+
+    assert.equal(result.verdict, 'entry');
+    assert.equal(store.listTradeIntents('copy_follower_f_bot_2').length, 0, 'nothing copied');
+  });
+});

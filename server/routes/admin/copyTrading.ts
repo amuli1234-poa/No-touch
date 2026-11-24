@@ -677,7 +677,7 @@ export function createCopyTradingAdminRouter(ctx: AdminRouteContext): Router {
         note: 'OAuth and API-token connections use separate Deriv App IDs.'
       },
       balancesUnavailable:
-        'Balances are not shown here. This view does not call Deriv, so it cannot present a verified figure.'
+        'Balances are not listed here because this view does not call Deriv. Open a client (Copy Trading → Clients → Manage) to read their live balance per account.'
     });
   });
 
@@ -782,6 +782,86 @@ export function createCopyTradingAdminRouter(ctx: AdminRouteContext): Router {
   /* ==================================================================== */
   /*  Risk configuration (existing engine, read-through)                  */
   /* ==================================================================== */
+
+  /* ==================================================================== */
+  /*  Client balance (read-through to Deriv, never cached in the store)    */
+  /* ==================================================================== */
+
+  /**
+   * Reads the client's own Deriv account balances.
+   *
+   * The figure comes from Deriv over the follower's sealed credential — the
+   * same one the copy engine uses — and is never stored. DEMO and REAL stay
+   * separate, exactly as `/api/balances` presents them, so an administrator
+   * cannot mistake demo funds for real funds. Nothing here grants execution
+   * authority; it is a read.
+   */
+  router.get('/clients/:id/balance', requireAdmin(ctx, 'copytrading.read'), async (req: AdminAuthedRequest, res: Response) => {
+    const record = store.listAllCopyTradingFollowers().find((f) => f.id === req.params.id);
+    if (!record) return fail(res, 404, 'client_not_found');
+
+    if (!ctx.balances) {
+      return res.json({
+        followerId: record.id,
+        accounts: [],
+        available: false,
+        reason: 'balance_service_unavailable',
+        note: 'This build has no balance service wired, so no figure can be shown.'
+      });
+    }
+
+    if (record.tokenExpiresAt > 0 && record.tokenExpiresAt <= Date.now()) {
+      return res.json({
+        followerId: record.id,
+        accounts: [],
+        available: false,
+        reason: 'authorization_expired',
+        note: 'The client authorization has expired, so Deriv cannot be asked for a balance.'
+      });
+    }
+
+    const accessToken = open(record.tokenSealed, cfg.session.secret);
+    if (!accessToken) {
+      return res.json({
+        followerId: record.id,
+        accounts: [],
+        available: false,
+        reason: 'token_unavailable',
+        note: 'The stored credential could not be opened, so no balance can be read.'
+      });
+    }
+
+    // The follower's own accounts are the ones that may be read: a follower
+    // record carries no other identity, and BalanceService re-checks ownership
+    // against this principal before it calls Deriv.
+    const principal: UserRecord = {
+      id: `copy_follower_${record.id}`,
+      derivSub: record.derivSub,
+      loginId: record.loginId,
+      accounts: record.accounts,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+      preferences: {}
+    };
+
+    const force = req.query.refresh === '1';
+    const accounts = await ctx.balances.readAll(principal, accessToken, { force });
+    return res.json({
+      followerId: record.id,
+      accounts: accounts.map((a) => ({
+        accountId: maskAccountId(a.accountId),
+        mode: a.mode,
+        currency: a.currency,
+        balance: a.balance,
+        state: a.state,
+        lastUpdated: a.lastUpdated,
+        ...(a.reason ? { reason: a.reason } : {})
+      })),
+      available: accounts.some((a) => a.state === 'ok' || a.state === 'stale'),
+      fetchedAt: Date.now(),
+      note: 'Read live from Deriv with the client credential. DEMO and REAL accounts are listed separately.'
+    });
+  });
 
   router.get('/clients/:id/risk', requireAdmin(ctx, 'copytrading.read'), (req: AdminAuthedRequest, res: Response) => {
     const record = store.listAllCopyTradingFollowers().find((f) => f.id === req.params.id);

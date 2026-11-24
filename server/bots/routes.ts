@@ -33,6 +33,7 @@ import { planStrategy } from './evaluator.js';
 import type { ExecutionGateway } from '../execution/gateway.js';
 import type { AutoExecutionRunner } from '../execution/autoRunner.js';
 import type { ContractMonitor } from '../execution/contractMonitor.js';
+import type { CopyExecutionEngine } from '../copyTrading/engine.js';
 import type { ExecutionAuditor } from '../execution/audit.js';
 import type { MarketDataService } from '../services/marketData.js';
 import type { ExecutionFlags } from '../config/flags.js';
@@ -70,6 +71,8 @@ export interface BotRuntimeDeps {
   auditor: ExecutionAuditor;
   market: MarketDataService;
   flags: ExecutionFlags;
+  /** Present when copy trading is enabled; bot entries mirror to followers. */
+  copyEngine?: CopyExecutionEngine;
 }
 
 /** JSON bodies are the raw XML text, so allow the parser ceiling plus overhead. */
@@ -419,7 +422,8 @@ export function createBotsRouter(ctx: SessionContext, store: Store, runtime?: Bo
           runner: runtime.runner,
           monitor: runtime.monitor,
           auditor: runtime.auditor,
-          flags: runtime.flags
+          flags: runtime.flags,
+          ...(runtime.copyEngine ? { copyEngine: runtime.copyEngine } : {})
         }
       : null;
 

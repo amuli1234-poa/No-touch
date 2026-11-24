@@ -35,6 +35,7 @@ npm run lint:admin    # admin typecheck (tsc -p admin/tsconfig.json)
 npm run test:admin    # admin test suite (20 tests)
 npm run test:telemetry # telemetry ingest + admin read-path (8 tests)
 npm run test:balance   # account balances: isolation, DEMO/REAL, stale (16 tests)
+npm run test:copy-balance # client balances on the admin + manager copy surfaces (6 tests)
 npm run admin:bootstrap   # seed the first Super Admin (prints otpauth URI)
 ```
 
@@ -1443,14 +1444,22 @@ resolves both sides: master via `getUserById(ownerUserId)`, client via
 Do not confuse this with the Users module, where a user's own accounts are their
 own. Copy Trading is the only place one user's record points at another user.
 
-### There is no copy-execution engine
+### The copy-execution engine
 
-`copyTradingFollowers` is stored and managed; nothing consumes it to submit
-orders. The admin UI says so explicitly (`engine.implemented: false` on
-`/dashboard/summary`, and a notice on the clients page). Never describe a
-follower as "copying" or "mirroring" — say the connection is stored and
-manageable. If you implement fan-out, flip that flag and update the notice; do
-not silently leave a UI that claims more than the backend does.
+`CopyExecutionEngine` (`server/copyTrading/engine.ts`) fans a DEMO manager trade
+out to the manager's connected followers. It is reached from two places: the
+manual/auto execution path and `tickBotRun` in `server/bots/runService.ts`, which
+mirrors a bot's entry like any other manager trade. Both pass the engine in as an
+optional dependency (`copyEngine?`), so a build without it still trades.
+
+`mirrorMasterTrade` returns early unless the signal is DEMO and the master's
+switch is on, and it never throws for a normal skip or rejection: a refused
+follower is audited and the rest still copy. The bot call site swallows a mirror
+failure on purpose — the bot's own contract is already open by then.
+
+The old "no engine" wording is gone from the admin UI; `engine.implemented` is
+true on `/dashboard/summary`. Do not reintroduce a notice that claims less than
+the backend does.
 
 ### Two authorization paths, one validator
 
@@ -1513,6 +1522,28 @@ not traded still shows a zero row — the manager sees the whole book.
 Both surfaces expose it: `GET /api/admin/v1/copy-trading/performance?masterUserId=`
 and `GET /api/copy-trading/performance` (scoped to the session user). It is a
 read-only projection; it never places, sizes or alters a trade.
+
+### Client balances are read through the client's own credential
+
+A client balance is not in the store and is not derived from P/L. Both surfaces
+read it live from Deriv over the follower's sealed token, reusing `BalanceService`
+(so the per-account cache, the 8-second timeout and the Deriv-host guard apply):
+
+- `GET /api/admin/v1/copy-trading/clients/:id/balance` (`copytrading.read`) —
+  masks account ids; `?refresh=1` bypasses the cache.
+- `GET /api/copy-trading/followers/:id/balance` — the id is looked up inside
+  `listCopyTradingFollowers(req.user.id)`, so ownership is proven by the manager's
+  own list and a foreign id is a 404, not a read.
+
+The principal is `copy_follower_<followerId>` with the follower's own accounts, so
+`BalanceService`'s ownership and mode checks still apply. DEMO and REAL are always
+reported separately, a null balance is never rendered as zero, and an expired or
+unreadable token returns `available: false` with a reason rather than a figure.
+Both surfaces render "—" for a missing number.
+
+The balance columns sit next to the profit/loss column on the manager's
+performance table and on the admin copy-engine panel; the admin client drawer
+shows the full per-account breakdown.
 
 ### Permissions
 

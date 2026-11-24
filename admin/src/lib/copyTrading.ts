@@ -96,6 +96,27 @@ export interface RiskProfileView {
   unavailable?: string;
 }
 
+/** One client account's live balance, read from Deriv with the client credential. */
+export interface ClientBalanceAccount {
+  accountId: string;
+  mode: 'demo' | 'real';
+  currency: string | null;
+  /** Null unless state is 'ok' or 'stale'. Never a fabricated 0. */
+  balance: number | null;
+  state: 'ok' | 'unavailable' | 'stale' | 'disconnected';
+  lastUpdated: number | null;
+  reason?: string;
+}
+
+export interface ClientBalanceView {
+  followerId: string;
+  accounts: ClientBalanceAccount[];
+  available: boolean;
+  reason?: string;
+  note?: string;
+  fetchedAt?: number;
+}
+
 export const copyTradingApi = {
   listClients: (query: string) => api.get<AdminCopyClientPage>(`/copy-trading/clients${query}`),
   listInvitations: () => api.get<{ items: AdminInvitation[]; pending: number; total: number }>('/copy-trading/invitations'),
@@ -135,7 +156,12 @@ export const copyTradingApi = {
   remove: (id: string) =>
     api.del<{ removed: boolean; providerRevoked: boolean; note: string }>(`/copy-trading/clients/${encodeURIComponent(id)}`),
 
-  risk: (id: string) => api.get<RiskProfileView>(`/copy-trading/clients/${encodeURIComponent(id)}/risk`)
+  risk: (id: string) => api.get<RiskProfileView>(`/copy-trading/clients/${encodeURIComponent(id)}/risk`),
+
+  balance: (id: string, refresh = false) =>
+    api.get<ClientBalanceView>(
+      `/copy-trading/clients/${encodeURIComponent(id)}/balance${refresh ? '?refresh=1' : ''}`
+    )
 };
 
 export interface CopyControlView {

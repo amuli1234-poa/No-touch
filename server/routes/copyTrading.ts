@@ -7,6 +7,7 @@ import { revokeToken } from '../lib/deriv.js';
 import { createOpaqueId } from '../lib/pkce.js';
 import { validatePatToken, PAT_FAILURE_MESSAGE } from '../copyTrading/pat.js';
 import { buildCopyPerformance } from '../copyTrading/performance.js';
+import type { BalanceService } from '../services/balance.js';
 
 const INVITATION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -38,7 +39,7 @@ function traderControlView(store: SessionContext['store'], ownerUserId: string) 
   };
 }
 
-export function createCopyTradingRouter(ctx: SessionContext): Router {
+export function createCopyTradingRouter(ctx: SessionContext, balances?: BalanceService): Router {
   const router = Router();
   router.use(express.json({ limit: '8kb' }));
 
@@ -48,6 +49,85 @@ export function createCopyTradingRouter(ctx: SessionContext): Router {
 
   router.get('/api/copy-trading/followers', requireSession(ctx), (req: AuthedRequest, res: Response) => {
     res.json({ followers: ctx.store.listCopyTradingFollowers(req.user!.id).map(followerView) });
+  });
+
+  /**
+   * Balances for one client the signed-in manager owns.
+   *
+   * Ownership is proven by reading the follower out of the manager's own list,
+   * not by trusting the id in the path. The figure is read live from Deriv over
+   * the client's sealed credential and is never stored. DEMO and REAL are
+   * reported separately, and a null balance is never presented as zero.
+   */
+  router.get('/api/copy-trading/followers/:id/balance', requireSession(ctx), async (req: AuthedRequest, res: Response) => {
+    const record = ctx.store
+      .listCopyTradingFollowers(req.user!.id)
+      .find((f) => f.id === req.params.id);
+    if (!record) {
+      res.status(404).json({ error: 'follower_not_found' });
+      return;
+    }
+
+    if (!balances) {
+      res.json({
+        followerId: record.id,
+        accounts: [],
+        available: false,
+        reason: 'balance_service_unavailable',
+        note: 'This build has no balance service wired, so no figure can be shown.'
+      });
+      return;
+    }
+
+    if (record.tokenExpiresAt > 0 && record.tokenExpiresAt <= Date.now()) {
+      res.json({
+        followerId: record.id,
+        accounts: [],
+        available: false,
+        reason: 'authorization_expired',
+        note: 'This client authorization has expired, so Deriv cannot be asked for a balance.'
+      });
+      return;
+    }
+
+    const accessToken = open(record.tokenSealed, ctx.cfg.session.secret);
+    if (!accessToken) {
+      res.json({
+        followerId: record.id,
+        accounts: [],
+        available: false,
+        reason: 'token_unavailable',
+        note: 'The stored credential could not be opened, so no balance can be read.'
+      });
+      return;
+    }
+
+    const principal = {
+      id: `copy_follower_${record.id}`,
+      derivSub: record.derivSub,
+      loginId: record.loginId,
+      accounts: record.accounts,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+      preferences: {}
+    };
+
+    const accounts = await balances.readAll(principal, accessToken, { force: req.query.refresh === '1' });
+    res.json({
+      followerId: record.id,
+      accounts: accounts.map((a) => ({
+        accountId: a.accountId,
+        mode: a.mode,
+        currency: a.currency,
+        balance: a.balance,
+        state: a.state,
+        lastUpdated: a.lastUpdated,
+        ...(a.reason ? { reason: a.reason } : {})
+      })),
+      available: accounts.some((a) => a.state === 'ok' || a.state === 'stale'),
+      fetchedAt: Date.now(),
+      note: 'Read live from Deriv with the client credential. DEMO and REAL accounts are listed separately.'
+    });
   });
 
   /**

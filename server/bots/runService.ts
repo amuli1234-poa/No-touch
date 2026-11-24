@@ -29,6 +29,7 @@ import { ExecutionError } from '../execution/gateway.js';
 import type { AutoExecutionRunner } from '../execution/autoRunner.js';
 import type { ExecutionAuditor } from '../execution/audit.js';
 import type { ContractMonitor } from '../execution/contractMonitor.js';
+import type { CopyExecutionEngine } from '../copyTrading/engine.js';
 import { createSignal, SignalError } from '../services/signals.js';
 
 import { resolveTradableAccountForUser, AccountAccessError } from '../execution/accountGuard.js';
@@ -113,6 +114,8 @@ export interface BotRunDeps {
   monitor: ContractMonitor;
   auditor: ExecutionAuditor;
   flags: ExecutionFlags;
+  /** Present when copy trading is enabled; mirrors a bot entry to followers. */
+  copyEngine?: CopyExecutionEngine;
   now?: () => number;
 }
 
@@ -1308,6 +1311,27 @@ export async function tickBotRun(
       intentId: auto.result.intent.id,
       detail: { runId: run.runId, botId: run.botId, contractId: auto.result.contractId }
     });
+
+    // A bot entry is a manager trade like any other, so it fans out to the
+    // manager's connected followers under the same rules as a manual or scanner
+    // trade: the engine re-checks DEMO mode and the Start control, and a copy
+    // failure is audited per follower instead of failing the bot's own entry.
+    if (deps.copyEngine) {
+      try {
+        await deps.copyEngine.mirrorMasterTrade({
+          master: user,
+          signal,
+          masterIntentId: auto.result.intent.id,
+          stake: auto.result.intent.stake,
+          basis: auto.result.intent.basis,
+          currency: auto.result.intent.currency,
+          parameters: auto.result.intent.parameters
+        });
+      } catch {
+        // Swallowed deliberately: the bot's own contract is already open.
+      }
+    }
+
     return {
       run,
       verdict: 'entry',

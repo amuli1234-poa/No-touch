@@ -79,6 +79,40 @@ export async function listCopyFollowers(): Promise<CopyFollower[]> {
   return Array.isArray(body?.followers) ? body.followers as CopyFollower[] : [];
 }
 
+/** One client account's live balance, read from Deriv with the client credential. */
+export interface CopyFollowerBalanceAccount {
+  accountId: string;
+  mode: 'demo' | 'real';
+  currency: string | null;
+  /** Null unless state is 'ok' or 'stale'. Never a fabricated 0. */
+  balance: number | null;
+  state: 'ok' | 'unavailable' | 'stale' | 'disconnected';
+  lastUpdated: number | null;
+  reason?: string;
+}
+
+export interface CopyFollowerBalance {
+  followerId: string;
+  accounts: CopyFollowerBalanceAccount[];
+  available: boolean;
+  reason?: string;
+  note?: string;
+  fetchedAt?: number;
+}
+
+export async function fetchFollowerBalance(
+  followerId: string,
+  refresh = false
+): Promise<CopyFollowerBalance> {
+  const query = refresh ? '?refresh=1' : '';
+  const res = await fetch(
+    `/api/copy-trading/followers/${encodeURIComponent(followerId)}/balance${query}`,
+    { credentials: 'same-origin' }
+  );
+  if (!res.ok) throw await readError(res);
+  return await res.json() as CopyFollowerBalance;
+}
+
 export async function fetchCopyTradingStatus(): Promise<CopyTradingStatus> {
   const res = await fetch('/api/copy-trading/status', { credentials: 'same-origin' });
   if (!res.ok) throw await readError(res);

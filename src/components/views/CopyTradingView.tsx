@@ -6,11 +6,14 @@ import {
   disconnectCopyFollower,
   fetchCopyControl,
   fetchCopyPerformance,
+  fetchFollowerBalance,
   fetchCopyTradingStatus,
   listCopyFollowers,
   setCopyControl,
   type CopyControl,
   type CopyFollower,
+  type CopyFollowerBalance,
+  type CopyFollowerBalanceAccount,
   type CopyPerformance
 } from '../../lib/copyTrading';
 
@@ -27,6 +30,140 @@ function pnlClass(value: number): string {
   return 'text-muted';
 }
 
+/**
+ * Live balance for one connected client.
+ *
+ * Fetched on demand rather than with the follower list: the read goes to Deriv
+ * over the client's own credential, so it is a separate, slower call. A null
+ * balance is rendered as "—" and never as zero, and the reason is shown when
+ * the figure cannot be read.
+ */
+function FollowerBalance({ followerId }: { followerId: string }) {
+  const [state, setState] = useState<CopyFollowerBalance | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async (refresh: boolean) => {
+    setLoading(true);
+    setError(null);
+    try {
+      setState(await fetchFollowerBalance(followerId, refresh));
+    } catch {
+      setError('The client balance could not be read.');
+    } finally {
+      setLoading(false);
+    }
+  }, [followerId]);
+
+  useEffect(() => { void load(false); }, [load]);
+
+  return (
+    <div className="mt-3 rounded-lg border border-line bg-elevated p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-muted">Account balance</p>
+        <button
+          type="button"
+          disabled={loading}
+          onClick={() => void load(true)}
+          className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[11px] font-semibold text-muted hover:text-ink disabled:opacity-50"
+        >
+          <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} /> Refresh
+        </button>
+      </div>
+      {loading && !state ? (
+        <p className="mt-2 text-xs text-muted">Reading from Deriv…</p>
+      ) : error ? (
+        <p className="mt-2 text-xs text-danger">{error}</p>
+      ) : state && state.accounts.length > 0 ? (
+        <ul className="mt-2 space-y-1.5">
+          {state.accounts.map((account) => (
+            <li key={account.accountId} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span className="inline-flex items-center gap-2">
+                <span className="text-muted">{account.accountId}</span>
+                <span className="rounded bg-accent/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-accent">{account.mode}</span>
+                {account.state !== 'ok' && (
+                  <span className="text-[10px] font-semibold uppercase text-warning">{account.state}</span>
+                )}
+              </span>
+              <span className="font-semibold text-ink">
+                {account.balance === null ? '—' : money(account.balance, account.currency ?? 'USD')}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-xs text-muted">{state?.note ?? 'No balance is available for this client.'}</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Balances keyed by account id for every account in the performance table.
+ *
+ * The manager's own accounts come from `/api/balances` (the session's Deriv
+ * credential); a client's accounts come from that client's own balance route.
+ * Both are read live, so this is a separate, slower call than the performance
+ * figures, and a row with no figure shows "—" rather than zero.
+ */
+function usePerformanceBalances(performance: CopyPerformance | null) {
+  const [byAccount, setByAccount] = useState<Record<string, CopyFollowerBalanceAccount>>({});
+
+  const accountKey = (performance?.accounts ?? [])
+    .map((row) => `${row.followerId ?? 'self'}:${row.accountId}`)
+    .join('|');
+
+  useEffect(() => {
+    if (!performance || performance.accounts.length === 0) {
+      setByAccount({});
+      return;
+    }
+    let cancelled = false;
+
+    void (async () => {
+      const next: Record<string, CopyFollowerBalanceAccount> = {};
+      const followerIds = [
+        ...new Set(performance.accounts.map((r) => r.followerId).filter((id): id is string => id !== null))
+      ];
+
+      const own = performance.accounts.some((r) => r.followerId === null);
+      if (own) {
+        try {
+          const res = await fetch('/api/balances', {
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json' }
+          });
+          if (res.ok) {
+            const body = await res.json();
+            for (const account of Array.isArray(body?.accounts) ? body.accounts : []) {
+              next[account.accountId] = account;
+            }
+          }
+        } catch {
+          // A failed read leaves the cells as "—".
+        }
+      }
+
+      for (const followerId of followerIds) {
+        try {
+          const balance = await fetchFollowerBalance(followerId);
+          for (const account of balance.accounts) {
+            next[account.accountId] = account;
+          }
+        } catch {
+          // A failed read leaves the cells as "—".
+        }
+      }
+
+      if (!cancelled) setByAccount(next);
+    })();
+
+    return () => { cancelled = true; };
+  }, [accountKey]);
+
+  return byAccount;
+}
+
 export function CopyTradingView() {
   const [followers, setFollowers] = useState<CopyFollower[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,6 +178,7 @@ export function CopyTradingView() {
   const [control, setControl] = useState<CopyControl | null>(null);
   const [performance, setPerformance] = useState<CopyPerformance | null>(null);
   const [starting, setStarting] = useState(false);
+  const balancesByAccount = usePerformanceBalances(performance);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -233,7 +371,7 @@ export function CopyTradingView() {
 
         {performance && performance.accounts.length > 0 ? (
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[38rem] border-collapse text-sm">
+            <table className="w-full min-w-[44rem] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-muted">
                   <th className="py-2 pr-3 font-semibold">Account</th>
@@ -241,6 +379,7 @@ export function CopyTradingView() {
                   <th className="py-2 pr-3 font-semibold">Open</th>
                   <th className="py-2 pr-3 font-semibold">W / L</th>
                   <th className="py-2 pr-3 text-right font-semibold">Profit / loss</th>
+                  <th className="py-2 pr-3 text-right font-semibold">Balance</th>
                 </tr>
               </thead>
               <tbody>
@@ -264,6 +403,20 @@ export function CopyTradingView() {
                         {row.realisedPnl > 0 ? <TrendingUp className="h-3.5 w-3.5" /> : row.realisedPnl < 0 ? <TrendingDown className="h-3.5 w-3.5" /> : null}
                         {money(row.realisedPnl, row.currency)}
                       </span>
+                    </td>
+                    <td className="py-2.5 pr-3 text-right">
+                      {(() => {
+                        const balance = balancesByAccount[row.accountId];
+                        if (!balance || balance.balance === null) return <span className="text-muted">—</span>;
+                        return (
+                          <span className="inline-flex items-center gap-1 font-semibold text-ink">
+                            {money(balance.balance, balance.currency ?? row.currency)}
+                            {balance.state !== 'ok' && (
+                              <span className="text-[10px] font-semibold uppercase text-warning">{balance.state}</span>
+                            )}
+                          </span>
+                        );
+                      })()}
                     </td>
                   </tr>
                 ))}
@@ -358,6 +511,7 @@ export function CopyTradingView() {
                 </li>
               ))}
             </ul>
+            <FollowerBalance followerId={follower.id} />
           </article>
         ))}
       </section>

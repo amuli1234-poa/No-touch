@@ -4,12 +4,19 @@ import type { ServerConfig } from '../../config.js';
 import type { AdminAuthedRequest } from '../../lib/adminSession.js';
 import { writeAudit, type AuditInput } from '../../services/admin/audit.js';
 import type { Telemetry } from '../../services/admin/telemetry.js';
+import type { BalanceService } from '../../services/balance.js';
 
 /** Shared context handed to every admin route module. */
 export interface AdminRouteContext {
   cfg: ServerConfig;
   store: Store;
   telemetry: Telemetry;
+  /**
+   * Present when the app wires balance reads. Optional so a route module can be
+   * mounted without Deriv connectivity; a missing service is reported as an
+   * unavailable balance rather than guessed at.
+   */
+  balances?: BalanceService;
 }
 
 export interface Page<T> {

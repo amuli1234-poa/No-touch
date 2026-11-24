@@ -46,12 +46,13 @@ export interface AppBundle {
 }
 
 /** Builds the Express app. Exported separately so tests can drive it directly. */
-export function createApp(cfg: ServerConfig, store: Store, cache?: Cache): AppBundle {
+export function createApp(cfg: ServerConfig, store: Store, cache?: Cache, balancesOverride?: BalanceService): AppBundle {
   const ctx: SessionContext = { cfg, store };
   const telemetry = new Telemetry();
   // One balance service per process so the auth router and the balance router
-  // share the same cache and invalidation (reauthorization clears it).
-  const balances = new BalanceService(cfg);
+  // share the same cache and invalidation (reauthorization clears it). Tests may
+  // inject one whose Deriv reader is stubbed, since the real reader dials Deriv.
+  const balances = balancesOverride ?? new BalanceService(cfg);
   // Server-side market data on the public options gateway, plus the execution
   // layer. Kill switches default off, so nothing trades until explicitly enabled.
   const resolvedCache = cache ?? new MemoryCache(cfg.redis?.ttlSeconds ?? 60);
@@ -79,7 +80,7 @@ export function createApp(cfg: ServerConfig, store: Store, cache?: Cache): AppBu
   // Admin API needs a JSON body parser (its routes read structured payloads).
   // Mounted before the session middleware so CORS preflight short-circuits.
   app.use('/api/admin/v1', adminCors({ cfg, store, telemetry }), express.json({ limit: '64kb' }));
-  app.use('/api/admin/v1', createAdminApiRouter({ cfg, store, telemetry }));
+  app.use('/api/admin/v1', createAdminApiRouter({ cfg, store, telemetry, balances }));
 
   app.use(attachSession(ctx));
 
@@ -94,13 +95,13 @@ export function createApp(cfg: ServerConfig, store: Store, cache?: Cache): AppBu
   app.use('/api/telemetry', express.json({ limit: '32kb' }));
   app.use(createTelemetryRouter(ctx));
   app.use(createBalancesRouter(ctx, balances));
-  app.use(createCopyTradingRouter(ctx));
+  app.use(createCopyTradingRouter(ctx, balances));
   // Deriv Bot receives a short-lived account-bound WebSocket URL through the
   // signed WickSentinel session. The long-lived OAuth token stays server-side.
   app.use('/api/bot', express.json({ limit: '4kb' }));
   app.use(createBotSessionRouter(ctx));
-  // Bot importer. Session-guarded and tenant-scoped; imports are inert records
-  // and are never wired to the execution gateway.
+  // Bot importer and runner. Session-guarded and tenant-scoped; an imported bot
+  // is inert data until a run starts, and every entry goes through the gateway.
   app.use(
     createBotsRouter(ctx, store, {
       gateway: execution.gateway,
@@ -108,7 +109,8 @@ export function createApp(cfg: ServerConfig, store: Store, cache?: Cache): AppBu
       monitor: execution.monitor,
       auditor: new ExecutionAuditor(store),
       market,
-      flags: execution.flags
+      flags: execution.flags,
+      copyEngine: execution.copyEngine
     })
   );
   app.use(
