@@ -9,7 +9,7 @@ import MobileWrapper from '../shared_ui/mobile-wrapper';
 import Modal from '../shared_ui/modal';
 import Text from '../shared_ui/text';
 
-const ModalContent = () => (
+const ModalContent = ({ error_message }: { error_message?: string }) => (
     <div className='unhandled-error'>
         <DerivLightUserErrorIcon height='120px' width='120px' />
 
@@ -34,11 +34,16 @@ const ModalContent = () => (
         >
             {getDefaultError().description}
         </Text>
+        {error_message && (
+            <Text className='da-icon-with-message__text__desc' as='p' size='xs' color='general' align='center'>
+                {error_message}
+            </Text>
+        )}
         <Button onClick={reloadPage} has_effect primary large text={getDefaultError().cta_label} />
     </div>
 );
 
-const UnhandledErrorModal = () => {
+const UnhandledErrorModal = ({ error_message }: { error_message?: string }) => {
     const [is_page_error_modal_open, setPageErrorModalOpen] = React.useState<boolean>(false);
 
     React.useEffect(() => {
@@ -59,7 +64,7 @@ const UnhandledErrorModal = () => {
         >
             <DesktopWrapper>
                 <Modal.Body>
-                    <ModalContent />
+                    <ModalContent error_message={error_message} />
                 </Modal.Body>
             </DesktopWrapper>
             <MobileWrapper>
@@ -70,7 +75,7 @@ const UnhandledErrorModal = () => {
                     onClose={togglePageErrorModal}
                 >
                     <Modal.Body>
-                        <ModalContent />
+                        <ModalContent error_message={error_message} />
                     </Modal.Body>
                 </MobileDialog>
             </MobileWrapper>

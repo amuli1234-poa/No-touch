@@ -149,9 +149,13 @@ export async function fetchIdentity(cfg: ServerConfig, accessToken: string): Pro
  * Lists the user's Options accounts (demo + real). Requires the `trade` scope;
  * callers treat any failure as "accounts unavailable" rather than fatal.
  */
-export async function fetchAccounts(cfg: ServerConfig, accessToken: string): Promise<DerivAccount[]> {
+export async function fetchAccounts(cfg: ServerConfig, accessToken: string, patAppId?: string): Promise<DerivAccount[]> {
   const res = await fetch(`${cfg.deriv.apiBaseUrl}/trading/v1/options/accounts`, {
-    headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' }
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/json',
+      ...(patAppId ? { 'Deriv-App-ID': patAppId } : {})
+    }
   });
   if (!res.ok) {
     throw new DerivRequestError(res.status, 'accounts_failed', 'Could not read Deriv accounts.');

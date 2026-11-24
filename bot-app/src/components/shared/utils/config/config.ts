@@ -52,6 +52,12 @@ export const isProduction = () => {
 
 export const isLocal = () => /localhost(:\d+)?$/i.test(window.location.hostname);
 
+/** The bot may be deployed below the origin (for example at /bot). */
+export const getOAuthRedirectUri = () => {
+    const basePath = (process.env.NEXT_PUBLIC_BASE_PATH || '').replace(/\/+$/, '');
+    return `${window.location.origin}${basePath}`;
+};
+
 const getDefaultServerURL = () => {
     const isProductionEnv = isProduction();
 
@@ -73,6 +79,12 @@ const getDefaultServerURL = () => {
  */
 export const getSocketURL = async (): Promise<string> => {
     try {
+        // When the bot is embedded in WickSentinel, reuse the authenticated
+        // server session and receive only a short-lived, account-bound socket
+        // URL. A standalone Deriv Bot still falls through to its OAuth token.
+        const wickSentinelSocketUrl = await DerivWSAccountsService.getWickSentinelWebSocketURL();
+        if (wickSentinelSocketUrl) return wickSentinelSocketUrl;
+
         const authInfo = getAuthInfo();
         if (!authInfo || !authInfo.access_token) {
             return getDefaultServerURL();
@@ -101,12 +113,28 @@ export const getDebugServiceWorker = () => {
  */
 export const generateOAuthURL = async (prompt?: string): Promise<string> => {
     try {
+        const botBasePath = (process.env.NEXT_PUBLIC_BASE_PATH || '').replace(/\/+$/, '');
+        const isEmbeddedBot =
+            !!botBasePath &&
+            (window.location.pathname === botBasePath || window.location.pathname.startsWith(`${botBasePath}/`));
+
+        // The embedded bot shares WickSentinel's server-side Deriv session.
+        // Start OAuth through the backend so the registered callback, PKCE
+        // verifier and session cookie all belong to the same authentication flow.
+        if (isEmbeddedBot) {
+            const params = new URLSearchParams({
+                mode: prompt === 'registration' ? 'signup' : 'login',
+                returnTo: '/bot/',
+            });
+            return `${window.location.origin}/auth/start?${params.toString()}`;
+        }
+
         const clientId = process.env.NEXT_PUBLIC_DERIV_APP_ID;
         if (!clientId) return '';
 
         const config: AuthConfig = {
             clientId,
-            redirectUri: window.location.origin,
+            redirectUri: getOAuthRedirectUri(),
             scopes: 'trade',
             // Without this a Bot deployed in ES/FR/PT sends its clients to an
             // English login (#804). `getInitialLanguage()` is the same reader

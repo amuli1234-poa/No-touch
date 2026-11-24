@@ -447,8 +447,13 @@ export default class LoadModalStore {
                 this.local_workspace.dispose();
                 this.local_workspace = null;
             }
-            this.loadStrategyOnModalLocalPreview(load_options);
-            this.setOpenButtonDisabled(false);
+            try {
+                await this.loadStrategyOnModalLocalPreview(load_options);
+            } catch (error) {
+                console.error('Failed to preview imported DBot strategy:', error);
+                this.setOpenButtonDisabled(false);
+                botNotification(notification_message().invalid_xml, undefined, { className: 'error-toast' });
+            }
         });
 
         reader.readAsText(file);
@@ -539,5 +544,6 @@ export default class LoadModalStore {
         const result = await load({ ...load_options, show_snackbar: false });
         /* [AI] - Analytics event tracking removed - see migrate-docs/MONITORING_PACKAGES.md for re-implementation guide */
         /* [/AI] */
+        return result;
     };
 }

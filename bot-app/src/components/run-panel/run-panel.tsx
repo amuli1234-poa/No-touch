@@ -38,6 +38,7 @@ type TStatisticsSummary = {
 };
 type TDrawerHeader = {
     is_clear_stat_disabled: boolean;
+    reset_blocked_message?: string;
     is_mobile: boolean;
     is_drawer_open: boolean;
     onClearStatClick: () => void;
@@ -52,6 +53,7 @@ type TDrawerContent = {
 
 type TDrawerFooter = {
     is_clear_stat_disabled: boolean;
+    reset_blocked_message?: string;
     onClearStatClick: () => void;
 };
 
@@ -116,13 +118,20 @@ export const StatisticsSummary = ({
     </div>
 );
 
-const DrawerHeader = ({ is_clear_stat_disabled, is_mobile, is_drawer_open, onClearStatClick }: TDrawerHeader) =>
+const DrawerHeader = ({
+    is_clear_stat_disabled,
+    reset_blocked_message,
+    is_mobile,
+    is_drawer_open,
+    onClearStatClick,
+}: TDrawerHeader) =>
     is_mobile &&
     is_drawer_open && (
         <Button
             id='db-run-panel__clear-button'
             className='run-panel__clear-button'
             disabled={is_clear_stat_disabled}
+            title={reset_blocked_message}
             text={localize('Reset')}
             onClick={onClearStatClick}
             secondary
@@ -158,17 +167,18 @@ const DrawerContent = ({ active_index, is_drawer_open, active_tour, setActiveTab
                     <Journal />
                 </div>
             </Tabs>
-            {((is_drawer_open && active_index !== 2) || active_tour) && <StatisticsSummary {...props} />}
+            {(is_drawer_open || active_tour) && <StatisticsSummary {...props} />}
         </>
     );
 };
 
-const DrawerFooter = ({ is_clear_stat_disabled, onClearStatClick }: TDrawerFooter) => (
+const DrawerFooter = ({ is_clear_stat_disabled, reset_blocked_message, onClearStatClick }: TDrawerFooter) => (
     <div className='run-panel__footer'>
         <Button
             id='db-run-panel__clear-button'
             className='run-panel__footer-button'
             disabled={is_clear_stat_disabled}
+            title={reset_blocked_message}
             onClick={onClearStatClick}
             has_effect
             secondary
@@ -267,6 +277,10 @@ const RunPanel = observer(() => {
     } = run_panel;
     const { statistics } = transactions;
     const { active_tour, active_tab } = dashboard;
+    const reset_blocked_message =
+        run_panel.is_running || run_panel.has_open_contract
+            ? localize('Stop the bot and wait for any open trade to settle before resetting the summary.')
+            : undefined;
     const { total_payout, total_profit, total_stake, won_contracts, lost_contracts, number_of_runs } = statistics;
     const { BOT_BUILDER, CHART } = DBOT_TABS;
 
@@ -300,11 +314,18 @@ const RunPanel = observer(() => {
         />
     );
 
-    const footer = <DrawerFooter is_clear_stat_disabled={is_clear_stat_disabled} onClearStatClick={onClearStatClick} />;
+    const footer = (
+        <DrawerFooter
+            is_clear_stat_disabled={is_clear_stat_disabled}
+            reset_blocked_message={reset_blocked_message}
+            onClearStatClick={onClearStatClick}
+        />
+    );
 
     const header = (
         <DrawerHeader
             is_clear_stat_disabled={is_clear_stat_disabled}
+            reset_blocked_message={reset_blocked_message}
             is_mobile={!isDesktop}
             is_drawer_open={is_drawer_open}
             onClearStatClick={onClearStatClick}

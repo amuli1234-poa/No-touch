@@ -4,10 +4,14 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
+    color: var(--text-general);
+    background: var(--general-main-1);
 
     .deriv-header {
-        background: var(--general-main-1);
+        background: var(--general-main-2);
         height: 5.6rem;
+        border-bottom: 1px solid var(--general-section-1);
+        box-shadow: 0 8px 24px color-mix(in srgb, var(--general-main-1) 72%, transparent);
     }
 
     &.quick-strategy-active {

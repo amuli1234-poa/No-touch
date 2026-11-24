@@ -1,5 +1,5 @@
 {
-    "brand_name": "YourBrand",
+    "brand_name": "WickSentinel",
     "brand_domain": "yourbrand.com",
     "brand_hostname": {
         "staging": "staging.yourbrand.com/dashboard",
@@ -7,9 +7,9 @@
     },
     "domain_name": "YourBrand.com",
     "colors": {
-        "primary": "#3B82F6",
-        "secondary": "#64748b",
-        "tertiary": "#8b5cf6",
+        "primary": "#0068B5",
+        "secondary": "#60A5FA",
+        "tertiary": "#2E8AD8",
         "success": "#10b981",
         "danger": "#ef4444",
         "warning": "#f59e0b",
@@ -79,7 +79,7 @@
         "css_variable_prefix": "--brand"
     },
     "platform": {
-        "name": "wicksentinel",
+    "name": "WickSentinel Bot",
         "i18n": {
             "default_language": "EN"
         },

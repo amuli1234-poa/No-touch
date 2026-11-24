@@ -149,7 +149,9 @@ const Transactions = observer(({ is_drawer_open }: TTransactions) => {
                             keyMapper={row => {
                                 switch (row.type) {
                                     case transaction_elements.CONTRACT: {
-                                        return row.data.transaction_ids.buy;
+                                        // Recovered/open contracts can predate transaction IDs. A missing ID
+                                        // must not crash the whole Transactions view during list rendering.
+                                        return row.data?.transaction_ids?.buy ?? row.data?.contract_id ?? null;
                                     }
                                     case transaction_elements.DIVIDER: {
                                         return row.data;
@@ -161,7 +163,7 @@ const Transactions = observer(({ is_drawer_open }: TTransactions) => {
                             }}
                             getRowSize={({ index }) => {
                                 const row = transaction_list?.[index];
-                                switch (row.type) {
+                                switch (row?.type) {
                                     case transaction_elements.CONTRACT: {
                                         return 50;
                                     }

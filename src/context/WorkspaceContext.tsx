@@ -57,9 +57,9 @@ export type NavSection =
   | 'training'
   | 'history'
   | 'settings'
-  /* ------------------- visual strategy workspace (Phase 1) ------------------- */
-  | 'botbuilder'
-  | 'mybots'
+  | 'freebots'
+  | 'premiumbots'
+  | 'copytrading'
   | 'aiintelligence';
 
 export interface WorkspaceValue {

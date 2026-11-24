@@ -30,6 +30,7 @@ import type {
 } from '../execution/types.js';
 import type { ImportedBotRecord } from '../bots/types.js';
 import type { BotRunRecord } from '../bots/runTypes.js';
+import type { CopyTradingFollowerRecord, CopyTradingInvitationRecord } from '../copyTrading/types.js';
 import { JsonBackend } from './json_backend.js';
 import { SqliteBackend, sqliteFileExists } from './sqlite_backend.js';
 import type { StorageBackend, StoredRecord } from './backend.js';
@@ -112,6 +113,11 @@ export interface OAuthTransaction {
   codeVerifier: string;
   redirectUri: string;
   mode: 'login' | 'signup';
+  /** Internal application path to return to after a successful login. */
+  returnTo?: '/app' | '/bot/';
+  flow?: 'copy_trading_follower';
+  ownerUserId?: string;
+  invitationId?: string;
   createdAt: number;
   /** Set when the transaction is used, so a duplicate callback cannot replay it. */
   consumedAt: number | null;
@@ -149,6 +155,8 @@ interface Database {
   importedBots: Record<string, ImportedBotRecord>;
   /* ---------------------- bot runtimes (Phase 3) ------------------------ */
   botRuns: Record<string, BotRunRecord>;
+  copyTradingFollowers: Record<string, CopyTradingFollowerRecord>;
+  copyTradingInvitations: Record<string, CopyTradingInvitationRecord>;
 }
 
 const EMPTY: Database = {
@@ -178,7 +186,9 @@ const EMPTY: Database = {
   notifications: {},
   executionAudit: [],
   importedBots: {},
-  botRuns: {}
+  botRuns: {},
+  copyTradingFollowers: {},
+  copyTradingInvitations: {}
 };
 
 /**
@@ -243,7 +253,9 @@ export class Store {
         notifications: (await this.backend.loadKeyed('notifications')) as unknown as Database['notifications'],
         executionAudit: (await this.backend.loadAppend('executionAudit')) as unknown as Database['executionAudit'],
         importedBots: (await this.backend.loadKeyed('importedBots')) as unknown as Database['importedBots'],
-        botRuns: (await this.backend.loadKeyed('botRuns')) as unknown as Database['botRuns']
+        botRuns: (await this.backend.loadKeyed('botRuns')) as unknown as Database['botRuns'],
+        copyTradingFollowers: (await this.backend.loadKeyed('copyTradingFollowers')) as unknown as Database['copyTradingFollowers'],
+        copyTradingInvitations: (await this.backend.loadKeyed('copyTradingInvitations')) as unknown as Database['copyTradingInvitations']
       };
       const platformConfig = await this.backend.loadSingleton('platformConfig');
       this.db.platformConfig = { ...EMPTY.platformConfig, ...((platformConfig ?? {}) as Partial<PlatformConfigRecord>) };
@@ -989,6 +1001,69 @@ export class Store {
     delete this.db.importedBots[id];
     await this.backend.deleteKeyed('importedBots', id);
     return true;
+  }
+
+  /* ----------------------- copy trading followers ---------------------- */
+
+  async putCopyTradingFollower(record: CopyTradingFollowerRecord): Promise<void> {
+    this.ensureLoaded();
+    this.db.copyTradingFollowers[record.id] = record;
+    await this.backend.putKeyed('copyTradingFollowers', record.id, record as unknown as StoredRecord);
+  }
+
+  getCopyTradingFollower(ownerUserId: string, id: string): CopyTradingFollowerRecord | null {
+    this.ensureLoaded();
+    const record = this.db.copyTradingFollowers[id];
+    return record?.ownerUserId === ownerUserId ? record : null;
+  }
+
+  listCopyTradingFollowers(ownerUserId: string): CopyTradingFollowerRecord[] {
+    this.ensureLoaded();
+    return Object.values(this.db.copyTradingFollowers)
+      .filter((record) => record.ownerUserId === ownerUserId)
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  findCopyTradingFollowerByIdentity(derivSub: string): CopyTradingFollowerRecord | null {
+    this.ensureLoaded();
+    return Object.values(this.db.copyTradingFollowers).find((record) => record.derivSub === derivSub) ?? null;
+  }
+
+  findCopyTradingFollowerByAccountIds(accountIds: string[]): CopyTradingFollowerRecord | null {
+    this.ensureLoaded();
+    const requested = new Set(accountIds);
+    return Object.values(this.db.copyTradingFollowers).find(
+      (record) => record.accounts.some((account) => requested.has(account.accountId))
+    ) ?? null;
+  }
+
+  async deleteCopyTradingFollower(ownerUserId: string, id: string): Promise<CopyTradingFollowerRecord | null> {
+    this.ensureLoaded();
+    const record = this.db.copyTradingFollowers[id];
+    if (!record || record.ownerUserId !== ownerUserId) return null;
+    delete this.db.copyTradingFollowers[id];
+    await this.backend.deleteKeyed('copyTradingFollowers', id);
+    return record;
+  }
+
+  async putCopyTradingInvitation(record: CopyTradingInvitationRecord): Promise<void> {
+    this.ensureLoaded();
+    this.db.copyTradingInvitations[record.id] = record;
+    await this.backend.putKeyed('copyTradingInvitations', record.id, record as unknown as StoredRecord);
+  }
+
+  getCopyTradingInvitation(id: string): CopyTradingInvitationRecord | null {
+    this.ensureLoaded();
+    return this.db.copyTradingInvitations[id] ?? null;
+  }
+
+  async consumeCopyTradingInvitation(id: string): Promise<CopyTradingInvitationRecord | null> {
+    this.ensureLoaded();
+    const record = this.db.copyTradingInvitations[id];
+    if (!record || record.consumedAt !== null || record.expiresAt <= Date.now()) return null;
+    record.consumedAt = Date.now();
+    await this.backend.putKeyed('copyTradingInvitations', id, record as unknown as StoredRecord);
+    return record;
   }
 
   /* ====================================================================== */

@@ -1,8 +1,8 @@
 import {
   ArrowDownRight,
   ArrowUpRight,
-  Blocks,
   Bot,
+  Activity,
   Clock,
   Gauge,
   GraduationCap,
@@ -26,7 +26,6 @@ import { LiveFeedDiagnostics } from '../dashboard/LiveFeedDiagnostics';
 import { MarketCard } from '../dashboard/MarketCard';
 import { PerformanceStats } from '../dashboard/PerformanceStats';
 import { splitByMode, useBalances, useSelectedBalance } from '../../lib/balances';
-import { useBots } from '../../lib/bots';
 import { formatCandleTime, formatPrice } from '../../utils/derivParser';
 import { SIGNAL_STATUS_STYLE } from '../../utils/signalStatus';
 import { eligibleMarkets } from '../../utils/eligibleMarkets';
@@ -105,28 +104,12 @@ function PlatformStatusStrip() {
 function AccountModeStrip() {
   const { accounts } = useBalances();
   const selected = useSelectedBalance();
-  const { bots, status: botsStatus } = useBots();
   const { demo, real } = splitByMode(accounts);
-
-  const counts =
-    botsStatus === 'ready'
-      ? {
-          active: bots.filter((b) => b.status === 'imported').length,
-          paused: bots.filter((b) => b.status === 'paused').length,
-        }
-      : null;
-  const activeHint =
-    botsStatus === 'error'
-      ? 'Bot list unavailable'
-      : counts
-        ? `${counts.active} ready to review`
-        : 'Loading bots…';
-  const pausedHint = counts ? `${counts.paused} paused by you` : 'Loading bots…';
 
   const mode = selected?.mode ?? (demo.length > 0 ? 'demo' : null);
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+    <div className="grid grid-cols-1 gap-3">
       <div className="bg-surface border border-line rounded-xl px-3 py-2.5">
         <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">
           Account mode
@@ -144,24 +127,6 @@ function AccountModeStrip() {
           </span>
         </div>
       </div>
-      <div className="bg-surface border border-line rounded-xl px-3 py-2.5">
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">
-          Active bots
-        </div>
-        <div className="text-sm font-bold font-mono text-ink mt-0.5">
-          {counts ? counts.active : '—'}
-        </div>
-        <div className="text-[11px] text-faint mt-0.5">{activeHint}</div>
-      </div>
-      <div className="bg-surface border border-line rounded-xl px-3 py-2.5">
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-faint">
-          Paused bots
-        </div>
-        <div className="text-sm font-bold font-mono text-ink mt-0.5">
-          {counts ? counts.paused : '—'}
-        </div>
-        <div className="text-[11px] text-faint mt-0.5">{pausedHint}</div>
-      </div>
     </div>
   );
 }
@@ -173,18 +138,30 @@ function AccountModeStrip() {
 function QuickAccess() {
   const ws = useWorkspace();
   const entries: {
-    section: 'botbuilder' | 'scanner' | 'mybots';
+    section: 'freebots' | 'premiumbots' | 'copytrading' | 'scanner';
     title: string;
     detail: string;
-    icon: typeof Blocks;
+    icon: typeof Bot;
     primary?: boolean;
   }[] = [
     {
-      section: 'botbuilder',
-      title: 'Bot Importer',
-      detail: 'Bring a Deriv DBot strategy in, validate it and review exactly what No-touch understands.',
-      icon: Blocks,
+      section: 'freebots',
+      title: 'Free Bots',
+      detail: 'Browse and download sample Deriv DBot strategies from the free strategy library.',
+      icon: Bot,
       primary: true,
+    },
+    {
+      section: 'premiumbots',
+      title: 'Premium Bots',
+      detail: 'Open the dedicated catalog for curated premium strategies.',
+      icon: Bot,
+    },
+    {
+      section: 'copytrading',
+      title: 'Copy Trading',
+      detail: 'Open the copy trading workspace and follow strategy providers.',
+      icon: Activity,
     },
     {
       section: 'scanner',
@@ -192,16 +169,10 @@ function QuickAccess() {
       detail: 'Sweep eligible markets with the live engines and review opportunities.',
       icon: Sparkles,
     },
-    {
-      section: 'mybots',
-      title: 'My Bots',
-      detail: 'Saved strategies, their lifecycle state and verified performance.',
-      icon: Bot,
-    },
   ];
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
       {entries.map((entry) => {
         const Icon = entry.icon;
         return (

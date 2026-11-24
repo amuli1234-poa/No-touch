@@ -27,6 +27,9 @@ interface FakeDeriv {
   userinfoBehaviour: 'ok' | 'unauthorized';
   accountsBehaviour: 'ok' | 'forbidden' | 'unauthorized';
   accountsData: { account_id: string; account_type: string; currency?: string; status?: string }[];
+  patAccountsData: { account_id: string; account_type: string; currency?: string; status?: string }[];
+  identitySubject: string;
+  lastAccountsAppId: string | null;
   lastTokenRequest: Record<string, string> | null;
   tokenRequestCount: number;
 }
@@ -42,6 +45,9 @@ async function startFakeDeriv(): Promise<FakeDeriv> {
       { account_id: 'VRTC90001', account_type: 'demo', currency: 'USD', status: 'active' },
       { account_id: 'CR90002', account_type: 'real', currency: 'USD', status: 'active' }
     ],
+    identitySubject: 'deriv-subject-abc-123',
+    patAccountsData: [],
+    lastAccountsAppId: null,
     lastTokenRequest: null,
     tokenRequestCount: 0
   };
@@ -78,11 +84,21 @@ async function startFakeDeriv(): Promise<FakeDeriv> {
           return;
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ sub: 'deriv-subject-abc-123', loginid: 'CR1234567' }));
+        const subject = req.headers.authorization === 'Bearer pat_client_token_123456789'
+          ? 'deriv-pat-client-456'
+          : state.identitySubject;
+        res.end(JSON.stringify({ sub: subject, loginid: 'CR1234567' }));
+        return;
+      }
+
+      if (url.pathname === '/oauth2/revoke') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end('{}');
         return;
       }
 
       if (url.pathname === '/trading/v1/options/accounts') {
+        state.lastAccountsAppId = typeof req.headers['deriv-app-id'] === 'string' ? req.headers['deriv-app-id'] : null;
         if (state.accountsBehaviour === 'unauthorized') {
           res.writeHead(401, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ errors: [{ code: 'Unauthorized' }] }));
@@ -94,7 +110,8 @@ async function startFakeDeriv(): Promise<FakeDeriv> {
           return;
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ data: state.accountsData }));
+        const rows = req.headers.authorization === 'Bearer pat_client_token_123456789' ? state.patAccountsData : state.accountsData;
+        res.end(JSON.stringify({ data: rows }));
         return;
       }
 
@@ -117,6 +134,7 @@ function makeConfig(deriv: FakeDeriv, dataDir: string): ServerConfig {
     storageEngine: (process.env.TEST_STORAGE_ENGINE as ServerConfig['storageEngine']) ?? 'auto',
     deriv: {
       appId: '34WRcFqUqhHMuCW3O9NQy',
+      patAppId: 'PAT_TEST_APP_ID',
       redirectUri: 'http://localhost:3000/auth/deriv/callback',
       clientSecret: null,
       scopes: 'openid trade',
@@ -545,6 +563,112 @@ test('15. Revoked Deriv authorization invalidates the application session', asyn
     // The application session is gone.
     assert.equal((await get(app.base, '/auth/session', cj)).status, 401);
     assert.equal(app.store.countActiveSessions(), 0);
+  } finally {
+    await app.close();
+    await deriv.close();
+  }
+});
+
+test('16. Copy Trading invitation connects a client account without replacing the manager session', async () => {
+  const deriv = await startFakeDeriv();
+  const app = await startApp(deriv);
+  const managerCookies = jar();
+  const clientCookies = jar();
+  try {
+    const login = await get(app.base, '/auth/start?mode=login', managerCookies);
+    const loginState = new URL(login.headers.get('location')!).searchParams.get('state')!;
+    const managerCallback = await get(app.base, `/auth/deriv/callback?code=MANAGER&state=${loginState}`, managerCookies);
+    assert.equal(managerCallback.status, 302);
+    const managerId = app.store.getUserByDerivSub('deriv-subject-abc-123')!.id;
+
+    const invitationResponse = await fetch(`${app.base}/api/copy-trading/invitations`, {
+      method: 'POST',
+      headers: { Cookie: managerCookies.header(), 'Content-Type': 'application/json' },
+      body: '{}'
+    });
+    assert.equal(invitationResponse.status, 201);
+    const invitation = await invitationResponse.json() as { url: string; expiresAt: number };
+    const invitationUrl = new URL(invitation.url);
+
+    const beginLink = await get(app.base, `${invitationUrl.pathname}${invitationUrl.search}`, clientCookies);
+    assert.equal(beginLink.status, 302);
+    const authUrl = new URL(beginLink.headers.get('location')!);
+    assert.equal(authUrl.searchParams.get('scope'), 'openid trade');
+
+    deriv.identitySubject = 'deriv-client-subject-456';
+    deriv.accountsData = [
+      { account_id: 'VRTC_CLIENT_1', account_type: 'demo', currency: 'USD', status: 'active' },
+      { account_id: 'CR_CLIENT_2', account_type: 'real', currency: 'USD', status: 'active' }
+    ];
+    const callback = await get(
+      app.base,
+      `/auth/deriv/callback?code=CLIENT&state=${authUrl.searchParams.get('state')}`,
+      clientCookies
+    );
+    assert.equal(callback.status, 200);
+    assert.match(await callback.text(), /Account connection complete/);
+    assert.equal(clientCookies.header().includes('ws_session='), false, 'client linking must not create or replace a manager session');
+
+    const listResponse = await get(app.base, '/api/copy-trading/followers', managerCookies);
+    assert.equal(listResponse.status, 200);
+    const listBody = await listResponse.json() as { followers: { id: string; accounts: { accountId: string }[] }[] };
+    assert.equal(listBody.followers.length, 1);
+    assert.deepEqual(listBody.followers[0].accounts.map((account) => account.accountId), ['VRTC_CLIENT_1']);
+    assert.equal(JSON.stringify(listBody).includes('ory_at_test_token'), false, 'access tokens must never be returned to the browser');
+    const stored = app.store.listCopyTradingFollowers(managerId)[0];
+    assert.notEqual(stored.tokenSealed, 'ory_at_test_token', 'follower token must be sealed at rest');
+
+    const reused = await get(app.base, `${invitationUrl.pathname}${invitationUrl.search}`, clientCookies);
+    assert.equal(reused.status, 410, 'a successful invitation can only be used once');
+
+    const disconnected = await fetch(`${app.base}/api/copy-trading/followers/${stored.id}`, {
+      method: 'DELETE', headers: { Cookie: managerCookies.header() }
+    });
+    assert.equal(disconnected.status, 200);
+    assert.equal((await disconnected.json()).providerRevoked, true);
+    assert.equal(app.store.listCopyTradingFollowers(managerId).length, 0);
+  } finally {
+    await app.close();
+    await deriv.close();
+  }
+});
+
+test('17. Copy Trading accepts a PAT, validates it with the PAT App ID, and stores demo accounts only', async () => {
+  const deriv = await startFakeDeriv();
+  deriv.patAccountsData = [
+    { account_id: 'VRTC_PAT_CLIENT', account_type: 'demo', currency: 'USD', status: 'active' },
+    { account_id: 'CR_PAT_CLIENT', account_type: 'real', currency: 'USD', status: 'active' }
+  ];
+  const app = await startApp(deriv);
+  const managerCookies = jar();
+  try {
+    const login = await get(app.base, '/auth/start?mode=login', managerCookies);
+    const loginState = new URL(login.headers.get('location')!).searchParams.get('state')!;
+    const callback = await get(app.base, `/auth/deriv/callback?code=MANAGER&state=${loginState}`, managerCookies);
+    assert.equal(callback.status, 302);
+    const managerId = app.store.getUserByDerivSub('deriv-subject-abc-123')!.id;
+
+    const added = await fetch(`${app.base}/api/copy-trading/followers`, {
+      method: 'POST',
+      headers: { Cookie: managerCookies.header(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: 'pat_client_token_123456789' })
+    });
+    assert.equal(added.status, 201);
+    assert.equal(deriv.lastAccountsAppId, 'PAT_TEST_APP_ID');
+    const body = await added.json() as { follower: { id: string; authMethod: string; accounts: { accountId: string; type: string }[] } };
+    assert.equal(body.follower.authMethod, 'pat');
+    assert.deepEqual(body.follower.accounts, [{ accountId: 'VRTC_PAT_CLIENT', type: 'demo', currency: 'USD' }]);
+    assert.equal(JSON.stringify(body).includes('pat_client_token'), false);
+    const stored = app.store.listCopyTradingFollowers(managerId)[0];
+    assert.notEqual(stored.tokenSealed, 'pat_client_token_123456789');
+    assert.deepEqual(stored.accounts.map((account) => account.type), ['demo']);
+
+    const removed = await fetch(`${app.base}/api/copy-trading/followers/${stored.id}`, {
+      method: 'DELETE', headers: { Cookie: managerCookies.header() }
+    });
+    assert.equal(removed.status, 200);
+    assert.equal((await removed.json()).providerRevoked, false);
+    assert.equal(app.store.listCopyTradingFollowers(managerId).length, 0);
   } finally {
     await app.close();
     await deriv.close();

@@ -73,12 +73,16 @@ window.Blockly.Blocks.after_purchase = {
 
 window.Blockly.JavaScript.javascriptGenerator.forBlock.after_purchase = block => {
     const stack = window.Blockly.JavaScript.javascriptGenerator.statementToCode(block, 'AFTERPURCHASE_STACK');
+    const has_trade_again_block = block
+        .getDescendants()
+        .some(descendant => descendant.type === 'trade_again' && descendant.isEnabled());
+    const repeat_by_default = !has_trade_again_block;
     const code = `
     BinaryBotPrivateAfterPurchase = function BinaryBotPrivateAfterPurchase() {
         Bot.highlightBlock('${block.id}');
         ${stack}
-        Bot.isTradeAgain(false);
-        return false;
+        Bot.isTradeAgain(${repeat_by_default});
+        return ${repeat_by_default};
     };`;
     return code;
 };

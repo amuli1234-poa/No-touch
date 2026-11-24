@@ -5,7 +5,8 @@
     width: 23.6rem;
     height: 100%;
     padding: 0.8rem;
-    background: var(--general-main-1);
+    background: var(--general-main-2);
+    border-inline-end: 1px solid var(--general-section-1);
     z-index: 1;
 
     $toolbox: &;
@@ -80,6 +81,8 @@
         z-index: 1;
         visibility: visible;
         border: solid 1px var(--general-section-1);
+        border-radius: 0.8rem;
+        background: var(--general-main-2);
     }
 
     &__content-wrapper {
@@ -97,7 +100,8 @@
         font-size: 1.6em;
         text-align: center;
         color: var(--text-general);
-        background-color: var(--general-section-5);
+        background-color: var(--general-main-3);
+        border-bottom: 1px solid var(--general-section-1);
     }
 
     &__item {
@@ -211,4 +215,17 @@
     width: 16px;
     height: 16px;
     animation: spin 1s linear infinite;
+}
+
+.blocklyMainBackground {
+    fill: var(--general-main-1);
+    stroke: var(--general-section-1);
+}
+
+.blocklyFlyoutBackground {
+    fill: var(--general-main-2);
+}
+
+.blocklyScrollbarHandle {
+    fill: var(--general-section-3);
 }

@@ -63,8 +63,11 @@ Then `npm run dev:all` (or `npm run server`) serves:
 | `/bot`   | Deriv bot app (`bot-app/out/bot`, own browser router) |
 | `/api/*` | WickSentinel backend                                  |
 
-`bot-app` is built with `assetPrefix: '/bot/'` and a matching router `basename`
-(see `bot-app/rsbuild.bot.config.ts`), so its internal links and assets stay
-inside `/bot` instead of escaping to the WickSentinel shell. The **Deriv Bot**
-entry in the sidebar links there. Until `build:bot` has been run, `/bot` logs a
-warning and the route falls through to the WickSentinel shell.
+`bot-app` is built with a matching asset prefix and router `basename` (see
+`bot-app/rsbuild.bot.config.ts`), so its internal links and assets stay inside
+its mount path instead of escaping to the WickSentinel shell. The **Deriv Bot**
+entry in the sidebar includes the Vite base path, which is required on
+GitHub Pages project sites. The Pages workflow builds the bot with that same
+base path and includes it in `dist/bot`; local Express deployments continue to
+serve `bot-app/out/bot` directly. Until `build:bot` has been run locally,
+`/bot` logs a warning and falls through to the WickSentinel shell.

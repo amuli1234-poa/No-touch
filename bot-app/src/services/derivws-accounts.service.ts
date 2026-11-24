@@ -35,6 +35,12 @@ interface OTPResponse {
     // JSON string containing OTPResponseData
 }
 
+interface WickSentinelBotSessionResponse {
+    account: Pick<DerivAccount, 'account_id' | 'account_type' | 'currency' | 'status'>;
+    accounts: Array<Pick<DerivAccount, 'account_id' | 'account_type' | 'currency' | 'status'>>;
+    websocket_url: string;
+}
+
 /**
  * Service for handling DerivWS account operations and WebSocket URL retrieval
  *
@@ -275,5 +281,77 @@ export class DerivWSAccountsService {
             console.error('[DerivWS] Error in authenticated WebSocket URL flow:', error);
             throw error;
         }
+    }
+
+    /**
+     * Uses the WickSentinel HttpOnly session to obtain an account-bound Deriv
+     * socket URL. The long-lived OAuth token is never sent to this app.
+     * Returns null when this bot is running without a WickSentinel session so
+     * the standalone Deriv OAuth flow can continue to work.
+     */
+    static async getWickSentinelWebSocketURL(): Promise<string | null> {
+        const request = async (accountId?: string) =>
+            fetch('/api/bot/session', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(accountId ? { accountId } : {}),
+            });
+
+        let activeLoginId = localStorage.getItem('active_loginid') || undefined;
+        let response: Response;
+        try {
+            response = await request(activeLoginId);
+        } catch {
+            // Standalone bot deployments may not have the WickSentinel API.
+            return null;
+        }
+
+        if (response.status === 401 || response.status === 404) return null;
+
+        if (response.status === 403 && activeLoginId) {
+            const failure = await response.json().catch(() => null);
+            if (failure?.error === 'account_not_authorized') {
+                localStorage.removeItem('active_loginid');
+                activeLoginId = undefined;
+                response = await request();
+            }
+        }
+
+        if (response.status === 401 || response.status === 404) return null;
+        if (!response.ok) {
+            const failure = await response.json().catch(() => null);
+            throw new Error(failure?.error || `WickSentinel bot session failed (${response.status})`);
+        }
+
+        const session = (await response.json()) as WickSentinelBotSessionResponse;
+        if (!session?.account?.account_id || !Array.isArray(session.accounts) || !session.websocket_url) {
+            throw new Error('WickSentinel returned an incomplete Deriv bot session');
+        }
+
+        const websocketUrl = new URL(session.websocket_url);
+        const host = websocketUrl.hostname.toLowerCase();
+        if (websocketUrl.protocol !== 'wss:' || !(host === 'derivws.com' || host.endsWith('.derivws.com'))) {
+            throw new Error('WickSentinel returned an invalid Deriv socket URL');
+        }
+
+        const accounts: DerivAccount[] = session.accounts.map(account => ({
+            account_id: account.account_id,
+            account_type: account.account_type,
+            currency: account.currency || '',
+            // The server intentionally returns no balances from this connection
+            // bootstrap; the live socket supplies the selected account's balance.
+            balance: '',
+            group: '',
+            status: account.status || 'active',
+        }));
+        this.storeAccounts(accounts);
+        localStorage.setItem('active_loginid', session.account.account_id);
+        localStorage.setItem('account_type', session.account.account_type);
+
+        return websocketUrl.toString();
     }
 }

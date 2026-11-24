@@ -33,17 +33,69 @@
     width: 100%;
     height: calc(100vh - 9rem);
     padding: 1.6rem;
+    gap: 1.2rem;
 
     @include mobile-or-tablet-screen {
         height: calc(100vh - 6rem);
         padding: 0;
+        gap: 0;
     }
 
     &__container {
         position: relative;
-        border: none;
+        border: 1px solid var(--general-section-1);
+        border-radius: 1.2rem;
         max-width: 100%;
         width: 100%;
+        background: var(--general-main-2);
+        box-shadow: 0 16px 40px color-mix(in srgb, var(--general-main-1) 60%, transparent);
+
+        .dc-tabs {
+            &__list {
+                align-items: center;
+                gap: 0.4rem;
+                padding-inline: 1.2rem;
+                background: var(--general-main-2);
+                border-bottom: 1px solid var(--general-section-1);
+            }
+
+            &__item {
+                min-height: 4.4rem;
+                border-radius: 0.8rem 0.8rem 0 0;
+                font-weight: 600;
+                transition:
+                    color 160ms ease,
+                    background-color 160ms ease;
+
+                &:hover {
+                    color: var(--text-prominent);
+                    background: var(--general-hover);
+                }
+            }
+
+            &__active {
+                color: var(--text-prominent);
+            }
+
+            &__active-line {
+                height: 3px;
+                border-radius: 3px 3px 0 0;
+            }
+
+            &__content {
+                background: var(--general-main-2);
+            }
+        }
+
+        @include mobile-or-tablet-screen {
+            border: 0;
+            border-radius: 0;
+            box-shadow: none;
+
+            .dc-tabs__list {
+                padding-inline: 0.8rem;
+            }
+        }
 
         &.no-scroll {
             overflow: hidden;
@@ -66,16 +118,16 @@
 
         .dc-tabs {
             &__active-line {
-                background-color: var(--general-main-1);
+                background-color: var(--brand-primary);
                 transition: none;
             }
 
             &__active {
-                background: var(--general-main-1);
+                background: var(--general-main-2);
             }
 
             &__list {
-                background: var(--general-section-1);
+                background: var(--general-main-2);
                 justify-content: start;
 
                 @include mobile-or-tablet-screen {
@@ -192,7 +244,11 @@
                 }
 
                 &__stop-button {
-                    background-color: var(--button-primary-hover);
+                    background-color: var(--status-danger);
+
+                    &:hover {
+                        background-color: color-mix(in srgb, var(--status-danger) 82%, white);
+                    }
                 }
             }
 
@@ -222,7 +278,11 @@
             }
 
             &__stop-button {
-                background-color: var(--button-primary-hover);
+                background-color: var(--status-danger);
+
+                &:hover {
+                    background-color: color-mix(in srgb, var(--status-danger) 82%, white);
+                }
             }
         }
     }

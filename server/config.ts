@@ -40,6 +40,8 @@ export interface ServerConfig {
   };
   deriv: {
     appId: string;
+    /** Separate Deriv PAT-type app id, required when clients submit PATs. */
+    patAppId: string | null;
     redirectUri: string;
     clientSecret: string | null;
     scopes: string;
@@ -137,6 +139,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     },
     deriv: {
       appId,
+      patAppId: env.DERIV_PAT_APP_ID?.trim() || null,
       redirectUri,
       // Deriv's OAuth 2.0 + PKCE flow does not use a client secret for public
       // clients (token_endpoint_auth_methods_supported includes "none"). It is

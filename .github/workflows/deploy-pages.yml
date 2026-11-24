@@ -32,6 +32,21 @@ jobs:
         env:
           VITE_BASE: /${{ github.event.repository.name }}/
 
+      - name: Setup Node.js for Deriv Bot
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build Deriv Bot
+        run: npm run build:bot
+        env:
+          BOT_BASE_PATH: /${{ github.event.repository.name }}/bot
+
+      - name: Include Deriv Bot in Pages artifact
+        run: |
+          mkdir -p dist/bot
+          cp -R bot-app/out/bot/. dist/bot/
+
       - name: Add SPA fallback
         run: cp dist/index.html dist/404.html
 

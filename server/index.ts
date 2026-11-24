@@ -9,6 +9,8 @@ import { createAuthRouter } from './routes/auth.js';
 import { createWhatsAppRouter } from './routes/whatsapp.js';
 import { createTelemetryRouter } from './routes/telemetry.js';
 import { createBalancesRouter } from './routes/balances.js';
+import { createBotSessionRouter } from './routes/botSession.js';
+import { createCopyTradingRouter } from './routes/copyTrading.js';
 import { createExecutionRouter } from './routes/execution.js';
 import { createBotsRouter } from './bots/routes.js';
 import { ExecutionAuditor } from './execution/audit.js';
@@ -92,6 +94,11 @@ export function createApp(cfg: ServerConfig, store: Store, cache?: Cache): AppBu
   app.use('/api/telemetry', express.json({ limit: '32kb' }));
   app.use(createTelemetryRouter(ctx));
   app.use(createBalancesRouter(ctx, balances));
+  app.use(createCopyTradingRouter(ctx));
+  // Deriv Bot receives a short-lived account-bound WebSocket URL through the
+  // signed WickSentinel session. The long-lived OAuth token stays server-side.
+  app.use('/api/bot', express.json({ limit: '4kb' }));
+  app.use(createBotSessionRouter(ctx));
   // Bot importer. Session-guarded and tenant-scoped; imports are inert records
   // and are never wired to the execution gateway.
   app.use(
@@ -137,6 +144,9 @@ export function createApp(cfg: ServerConfig, store: Store, cache?: Cache): AppBu
 
   if (hasBotApp) {
     app.use('/bot', express.static(botAppDir, { index: false, maxAge: '1h' }));
+    // Compatibility for previously cached bot shells that requested lazy
+    // chunks from /static instead of the current /bot/static asset prefix.
+    app.use('/static', express.static(path.join(botAppDir, 'static'), { maxAge: '1h' }));
     app.get(/^\/bot(\/.*)?$/, (req, res, next) => {
       if (/\.[a-z0-9]+$/i.test(req.path)) return next();
       res.sendFile(botAppIndex);

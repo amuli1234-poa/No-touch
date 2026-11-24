@@ -1,5 +1,6 @@
 // @ts-nocheck — vendored bot code with known upstream type gaps; see AGENTS.md
 import { action, makeObservable, reaction } from 'mobx';
+import { botNotification } from '@/components/bot-notification/bot-notification';
 import { api_base, ApiHelpers, DBot, runIrreversibleEvents } from '@/external/bot-skeleton';
 import { setCurrency } from '@/external/bot-skeleton/scratch/utils';
 import { TApiHelpersStore } from '@/types/stores.types';
@@ -57,19 +58,26 @@ export default class AppStore {
         if (!this.dbot_store) return;
 
         blockly_store.setLoading(true);
-        await DBot.initWorkspace('/', this.dbot_store, this.api_helpers_store, ui.is_mobile, false);
+        try {
+            await DBot.initWorkspace('/', this.dbot_store, this.api_helpers_store, ui.is_mobile, false);
 
-        blockly_store.setContainerSize();
-        blockly_store.setLoading(false);
-
-        this.registerCurrencyReaction.call(this);
-        this.registerOnAccountSwitch.call(this);
-
-        this.registerResidenceChangeReaction.call(this);
-
-        window.addEventListener('click', this.onClickOutsideBlockly);
-
-        blockly_store.getCachedActiveTab();
+            blockly_store.setContainerSize();
+            this.registerCurrencyReaction.call(this);
+            this.registerOnAccountSwitch.call(this);
+            this.registerResidenceChangeReaction.call(this);
+            window.addEventListener('click', this.onClickOutsideBlockly);
+            blockly_store.getCachedActiveTab();
+        } catch (error) {
+            console.error('Failed to initialize the Deriv Bot workspace:', error);
+            // Let the rest of the app render and report the failure rather than
+            // leaving the Blockly overlay active forever.
+            botNotification('The Deriv Bot workspace could not be initialized. Please refresh and try again.', undefined, {
+                type: 'error',
+            });
+            this.core.ui.setPromptHandler(false);
+        } finally {
+            blockly_store.setLoading(false);
+        }
     };
 
     onUnmount = () => {

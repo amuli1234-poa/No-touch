@@ -12,17 +12,18 @@ type TPageErrorContainer = {
     setError?: (has_error: boolean, error: React.ReactNode) => void;
     should_clear_error_on_click?: boolean;
     should_redirect?: boolean;
+    error_message?: string;
 };
 
-const PageErrorContainer = ({ error_header, error_messages, ...props }: TPageErrorContainer) => {
+const PageErrorContainer = ({ error_header, error_messages, error_message, ...props }: TPageErrorContainer) => {
     if (error_header && error_messages) {
         return <PageError header={error_header} messages={error_messages} {...props} />;
     }
     // If there are error messages from the backend, show an error modal with the messages
-    else if (error_messages) {
+    else if (error_messages?.length) {
         return <ErrorModal messages={error_messages} />;
     }
-    return <UnhandledErrorModal />;
+    return <UnhandledErrorModal error_message={error_message} />;
 };
 
 export default PageErrorContainer;

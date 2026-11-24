@@ -13,6 +13,7 @@ type TErrorComponent = {
     setError: (has_error: boolean, error: any) => void;
     redirect_to: string;
     should_redirect: boolean;
+    error_message?: string;
 };
 
 const ErrorComponent = ({
@@ -24,11 +25,13 @@ const ErrorComponent = ({
     setError,
     redirect_to = standalone_routes.trade,
     should_redirect = true,
+    error_message,
 }: Partial<TErrorComponent>) => {
     return (
         <PageErrorContainer
             error_header={header ?? ''}
             error_messages={message ? [message, ''] : []}
+            error_message={error_message}
             redirect_urls={[redirect_to]}
             redirect_labels={(!redirect_label && []) || [redirect_label || localize('Refresh')]}
             buttonOnClick={redirectOnClick || (() => window.location.reload())}

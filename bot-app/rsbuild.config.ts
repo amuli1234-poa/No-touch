@@ -1,13 +1,24 @@
 import path from 'path';
+import fs from 'fs';
+import dotenv from 'dotenv';
 import { defineConfig, loadEnv, rspack } from '@rsbuild/core';
 import { pluginReact } from '@rsbuild/plugin-react';
 import { pluginSass } from '@rsbuild/plugin-sass';
 
-// Load .env.production into process.env before `source.define` reads it below.
-// Heroku's build doesn't surface it otherwise; a missing file is a no-op.
-loadEnv({ mode: 'production' });
+// Load bot-app env files. Read only the public Deriv app id from the root .env:
+// the root file's NODE_ENV=development must not override Rsbuild's production
+// mode or the /bot asset prefix for this static build.
+const buildNodeEnv = process.env.NODE_ENV;
+loadEnv({ mode: 'production', cwd: __dirname });
+if (buildNodeEnv === undefined) delete process.env.NODE_ENV;
+else process.env.NODE_ENV = buildNodeEnv;
+
+const rootEnvPath = path.resolve(__dirname, '..', '.env');
+const rootEnv = fs.existsSync(rootEnvPath) ? dotenv.parse(fs.readFileSync(rootEnvPath)) : {};
+const publicDerivAppId = process.env.NEXT_PUBLIC_DERIV_APP_ID || process.env.DERIV_APP_ID || rootEnv.DERIV_APP_ID || '';
 
 const isStaticBuild = process.env.NEXT_PUBLIC_APP_BUILD === 'true';
+const defaultDerivEnv = isStaticBuild ? 'preview' : 'production';
 
 // Resolve smartcharts from wherever the package actually lives so the asset
 // copy works both standalone and inside the monorepo (npm workspaces hoist the
@@ -32,11 +43,11 @@ export default defineConfig({
         // Deriv app id — drives OAuth login/sign-up and WebSocket connections. The
         // preview pipeline sets this from BOT_APP_ID (see scripts/build-previews.js);
         // sibling templates use the same name.
-        NEXT_PUBLIC_DERIV_APP_ID: JSON.stringify(process.env.NEXT_PUBLIC_DERIV_APP_ID ?? ''),
+        NEXT_PUBLIC_DERIV_APP_ID: JSON.stringify(publicDerivAppId),
         // Authoritative environment signal. The bot's URL resolver (config.ts) and
         // the vendored deriv-core OAuth resolver both read this so endpoints stay consistent
         // on a deployed partner domain (where hostname detection can't match Deriv).
-        NEXT_PUBLIC_DERIV_ENV: JSON.stringify(process.env.NEXT_PUBLIC_DERIV_ENV ?? ''),
+        NEXT_PUBLIC_DERIV_ENV: JSON.stringify(process.env.NEXT_PUBLIC_DERIV_ENV || defaultDerivEnv),
         // Partner referral link for affiliate attribution on OAuth login/sign-up.
         NEXT_PUBLIC_DERIV_REFERRAL_LINK: JSON.stringify(process.env.NEXT_PUBLIC_DERIV_REFERRAL_LINK ?? ''),
         // Partner app name. The BFF writes this into .env.production at deploy time; the header

@@ -129,6 +129,7 @@ class DBot {
                 }
                 const el_scratch_div = document.getElementById('scratch_div');
                 if (!el_scratch_div) {
+                    reject(new Error('The Deriv Bot workspace container is missing.'));
                     return;
                 }
 

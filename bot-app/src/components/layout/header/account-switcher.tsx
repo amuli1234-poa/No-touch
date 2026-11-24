@@ -55,13 +55,19 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
     const formattedAccounts = useMemo(() => {
         if (!accountList) return [];
         return accountList
-            .map(account => ({
-                loginid: account.loginid,
-                currency: account.currency,
-                balance: addComma(Number(account.balance ?? 0).toFixed(getDecimalPlaces(account.currency))),
-                isVirtual: isDemoAccount(account.loginid),
-                isActive: account.loginid === activeLoginid,
-            }))
+            .map(account => {
+                const rawBalance = account.balance as number | string | undefined;
+                const balanceValue = rawBalance === '' || rawBalance == null ? NaN : Number(rawBalance);
+                return {
+                    loginid: account.loginid,
+                    currency: account.currency,
+                    balance: Number.isFinite(balanceValue)
+                        ? addComma(balanceValue.toFixed(getDecimalPlaces(account.currency)))
+                        : null,
+                    isVirtual: isDemoAccount(account.loginid),
+                    isActive: account.loginid === activeLoginid,
+                };
+            })
             .sort((a, b) => (a.isActive ? -1 : b.isActive ? 1 : 0));
     }, [accountList, activeLoginid]);
 
@@ -173,7 +179,11 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                             </Text>
                             <Text size='xs' weight='bold' className='acc-dropdown__balance'>
                                 {account.currency ? (
-                                    `${account.balance} ${getCurrencyDisplayCode(account.currency)}`
+                                    account.balance === null ? (
+                                        <Localize i18n_default_text='Unavailable' />
+                                    ) : (
+                                        `${account.balance} ${getCurrencyDisplayCode(account.currency)}`
+                                    )
                                 ) : (
                                     <Localize i18n_default_text='No currency assigned' />
                                 )}

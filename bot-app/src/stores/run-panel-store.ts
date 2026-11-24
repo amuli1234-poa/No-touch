@@ -185,6 +185,14 @@ export default class RunPanelStore {
             return;
         }
 
+        // This embedded bot uses Deriv's trading WebSocket directly, so the
+        // WickSentinel server execution flags do not gate its purchases. Keep
+        // this surface demo-only before starting the strategy interpreter.
+        if (!client.is_virtual) {
+            this.showRealAccountDialog();
+            return;
+        }
+
         /**
          * Due to Apple's policy on cellular data usage in ios audioElement.play() should be initially called on
          * user action(e.g click/touch) to be downloaded, otherwise throws an error. Also it should be called
@@ -284,10 +292,13 @@ export default class RunPanelStore {
     };
 
     clearStat = () => {
+        // Clearing the visible trade history must never detach the UI from a
+        // running interpreter or an unsettled contract. The button is disabled
+        // in these states, and this guard also protects programmatic callers.
+        if (this.is_running || this.has_open_contract) return;
+
         const { summary_card, journal, transactions } = this.root_store;
 
-        this.setIsRunning(false);
-        this.setHasOpenContract(false);
         this.clear();
         journal.clear();
         summary_card.clear();

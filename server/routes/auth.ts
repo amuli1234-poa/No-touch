@@ -1,4 +1,5 @@
 import { Router, type Response } from 'express';
+import { createHash } from 'node:crypto';
 import type { ServerConfig } from '../config.js';
 import type { Store, UserRecord, SessionRecord } from '../store/store.js';
 import {
@@ -47,6 +48,15 @@ function accountRefs(accounts: DerivAccount[]) {
   return accounts.map((a) => ({ accountId: a.accountId, type: a.type, currency: a.currency, status: a.status }));
 }
 
+function copyTradingLinkResult(res: Response, success: boolean, message: string): void {
+  res
+    .status(success ? 200 : 400)
+    .type('html')
+    .set('Cache-Control', 'no-store')
+    .set('Referrer-Policy', 'no-referrer')
+    .send(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WickSentinel account connection</title><body style="margin:0;background:#080d16;color:#e8edf5;font:16px system-ui,sans-serif"><main style="max-width:560px;margin:12vh auto;padding:32px;background:#162033;border:1px solid #26344b;border-radius:16px"><p style="color:#60a5fa;font-weight:700;letter-spacing:.12em;text-transform:uppercase">WickSentinel · Copy Trading</p><h1>${success ? 'Account connection complete' : 'Account connection failed'}</h1><p style="line-height:1.6;color:#bac5d5">${message}</p><p style="line-height:1.6;color:#bac5d5">You may close this page. The account manager can refresh their connected accounts list.</p></main></body></html>`);
+}
+
 export function createAuthRouter(ctx: SessionContext, balances?: BalanceService): Router {
   const { cfg, store } = ctx;
   const router = Router();
@@ -55,6 +65,9 @@ export function createAuthRouter(ctx: SessionContext, balances?: BalanceService)
 
   router.get('/auth/start', async (req, res) => {
     const mode = req.query.mode === 'signup' ? 'signup' : 'login';
+    // Keep post-login navigation on this application origin; only allow known
+    // internal destinations so this cannot become an open redirect.
+    const returnTo = req.query.returnTo === '/bot' || req.query.returnTo === '/bot/' ? '/bot/' : '/app';
     const codeVerifier = createCodeVerifier();
     const codeChallenge = createCodeChallenge(codeVerifier);
     const state = createState();
@@ -64,6 +77,7 @@ export function createAuthRouter(ctx: SessionContext, balances?: BalanceService)
       codeVerifier,
       redirectUri: cfg.deriv.redirectUri,
       mode,
+      returnTo,
       createdAt: Date.now(),
       consumedAt: null
     });
@@ -75,6 +89,40 @@ export function createAuthRouter(ctx: SessionContext, balances?: BalanceService)
     res.redirect(buildAuthorizationUrl(cfg, { state, codeChallenge, mode }));
   });
 
+  /** A one-use invitation lets a client authorize their account without the manager's WickSentinel session. */
+  router.get('/auth/copy-trading/connect/:invitationId', async (req, res) => {
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('Cache-Control', 'no-store');
+    const invitationId = req.params.invitationId;
+    const secret = typeof req.query.token === 'string' ? req.query.token : '';
+    const invitation = store.getCopyTradingInvitation(invitationId);
+    const suppliedHash = createHash('sha256').update(secret).digest('base64url');
+    if (
+      !secret || !invitation || invitation.consumedAt !== null || invitation.expiresAt <= Date.now() ||
+      !timingSafeEqual(invitation.tokenHash, suppliedHash) || !store.getUserById(invitation.ownerUserId)
+    ) {
+      res.status(410).send('This Copy Trading invitation is invalid, expired, or already used. Ask the account manager for a new link.');
+      return;
+    }
+
+    const codeVerifier = createCodeVerifier();
+    const codeChallenge = createCodeChallenge(codeVerifier);
+    const state = createState();
+    await store.createOAuthTransaction({
+      state,
+      codeVerifier,
+      redirectUri: cfg.deriv.redirectUri,
+      mode: 'login',
+      flow: 'copy_trading_follower',
+      ownerUserId: invitation.ownerUserId,
+      invitationId: invitation.id,
+      createdAt: Date.now(),
+      consumedAt: null
+    });
+    setCookie(res, cfg.session.oauthCookieName, `${state}:${codeVerifier}`, oauthCookieOptions(cfg, cfg.session.oauthCookieTtlSeconds));
+    res.redirect(buildAuthorizationUrl(cfg, { state, codeChallenge, mode: 'login' }));
+  });
+
   /* ------------------------------ callback ------------------------------ */
 
   router.get('/auth/deriv/callback', async (req, res) => {
@@ -82,6 +130,13 @@ export function createAuthRouter(ctx: SessionContext, balances?: BalanceService)
 
     if (error) {
       // Deriv reported a failure (access_denied, invalid_scope, etc.).
+      const safeError = /^[a-z0-9_]{1,80}$/i.test(error) ? error : 'unknown_oauth_error';
+      console.warn('[auth] Deriv returned an OAuth error:', safeError);
+      const failedLinkTx = state ? store.getOAuthTransaction(state) : null;
+      if (failedLinkTx?.flow === 'copy_trading_follower') {
+        copyTradingLinkResult(res, false, 'Deriv authorization was cancelled or could not be completed.');
+        return;
+      }
       return redirectWithError(res, cfg.appOrigin, error === 'access_denied' ? 'cancelled' : 'authorization_failed');
     }
     if (!state || !code) return redirectWithError(res, cfg.appOrigin, 'invalid_callback');
@@ -112,8 +167,14 @@ export function createAuthRouter(ctx: SessionContext, balances?: BalanceService)
       token = await exchangeCodeForToken(cfg, { code, codeVerifier });
     } catch (err) {
       const code2 = err instanceof DerivRequestError ? err.code : 'token_exchange_failed';
+      const status = err instanceof DerivRequestError ? err.status : 'unknown';
+      console.error('[auth] Deriv authorization-code exchange failed:', { status, code: code2 });
       // invalid_grant usually means the code expired or was already used.
       const mapped = code2 === 'invalid_grant' ? 'expired_code' : 'authorization_failed';
+      if (tx.flow === 'copy_trading_follower') {
+        copyTradingLinkResult(res, false, 'Deriv could not complete this account authorization. Ask the manager for a new invitation if needed.');
+        return;
+      }
       return redirectWithError(res, cfg.appOrigin, mapped);
     }
 
@@ -132,7 +193,56 @@ export function createAuthRouter(ctx: SessionContext, balances?: BalanceService)
     try {
       identity = await resolveIdentity(cfg, token.accessToken, accounts);
     } catch {
+      if (tx.flow === 'copy_trading_follower') {
+        copyTradingLinkResult(res, false, 'Deriv did not return a verified account identity, so the account was not connected.');
+        return;
+      }
       return redirectWithError(res, cfg.appOrigin, 'identity_unverified');
+    }
+
+    if (tx.flow === 'copy_trading_follower') {
+      const owner = tx.ownerUserId ? store.getUserById(tx.ownerUserId) : null;
+      const demoAccounts = accounts.filter((account) => account.type === 'demo');
+      const pendingInvitation = tx.invitationId ? store.getCopyTradingInvitation(tx.invitationId) : null;
+      if (
+        !owner || !pendingInvitation || pendingInvitation.ownerUserId !== owner.id ||
+        pendingInvitation.consumedAt !== null || pendingInvitation.expiresAt <= Date.now() || demoAccounts.length === 0
+      ) {
+        copyTradingLinkResult(res, false, 'The invitation expired or was already used. Ask the manager for a new link.');
+        return;
+      }
+      const overlappingAccounts = accounts.some((account) => owner.accounts.some((owned) => owned.accountId === account.accountId));
+      if (identity.sub === owner.derivSub || overlappingAccounts) {
+        copyTradingLinkResult(res, false, 'This is the manager account. Open the invitation while signed in to your own Deriv account.');
+        return;
+      }
+      const existingFollower =
+        store.findCopyTradingFollowerByIdentity(identity.sub) ??
+        store.findCopyTradingFollowerByAccountIds(demoAccounts.map((account) => account.accountId));
+      if (existingFollower && existingFollower.ownerUserId !== owner.id) {
+        copyTradingLinkResult(res, false, 'This Deriv account is already connected to another manager.');
+        return;
+      }
+      const invitation = await store.consumeCopyTradingInvitation(pendingInvitation.id);
+      if (!invitation) {
+        copyTradingLinkResult(res, false, 'The invitation expired or was already used. Ask the manager for a new link.');
+        return;
+      }
+      const now = Date.now();
+      await store.putCopyTradingFollower({
+        id: existingFollower?.id ?? createOpaqueId(),
+        ownerUserId: owner.id,
+        derivSub: identity.sub,
+        authMethod: 'oauth',
+        loginId: identity.loginId,
+        accounts: accountRefs(demoAccounts),
+        tokenSealed: seal(token.accessToken, cfg.session.secret),
+        tokenExpiresAt: token.expiresAt,
+        createdAt: existingFollower?.createdAt ?? now,
+        updatedAt: now
+      });
+      copyTradingLinkResult(res, true, 'Your Deriv account was linked to the manager through your authorization.');
+      return;
     }
 
     // 7. Identify an existing profile by the stable subject — or, when the
@@ -185,7 +295,7 @@ export function createAuthRouter(ctx: SessionContext, balances?: BalanceService)
     }
 
     // 9. Hand off to the SPA workspace.
-    res.redirect(`${cfg.appOrigin}/app`);
+    res.redirect(`${cfg.appOrigin}${tx.returnTo ?? '/app'}`);
   });
 
   /* ------------------------------- logout ------------------------------- */

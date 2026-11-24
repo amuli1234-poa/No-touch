@@ -1,0 +1,129 @@
+/* Shared WickSentinel palette for the Deriv Bot workspace. */
+body {
+    font-family: var(--brand-font-primary, 'Inter', 'Plus Jakarta Sans', sans-serif);
+    color: var(--text-general);
+    background: var(--general-main-1);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+
+    --button-primary-default: var(--brand-primary);
+    --button-primary-hover: color-mix(in srgb, var(--brand-primary) 82%, white);
+    --button-primary-light-default: color-mix(in srgb, var(--brand-primary) 14%, transparent);
+    --button-primary-light-hover: color-mix(in srgb, var(--brand-primary) 22%, transparent);
+    --border-active: var(--brand-primary);
+
+    // High-contrast statistics tiles on the light terminal surface.
+    --ws-stat-card-bg: #0b1220;
+    --ws-stat-card-border: #26354a;
+    --ws-stat-card-label: #b7c4d7;
+    --ws-stat-card-value: #f8fbff;
+    --ws-stat-profit-positive: #6ee7b7;
+    --ws-stat-profit-negative: #fda4af;
+}
+
+body.theme--dark {
+    color-scheme: dark;
+
+    --general-main-1: #080d16;
+    --general-main-2: #101827;
+    --general-main-3: #162033;
+    --general-main-4: color-mix(in srgb, #080d16 88%, transparent);
+    --general-section-1: #253348;
+    --general-section-2: #0d1421;
+    --general-section-3: #19253a;
+    --general-section-4: #202e43;
+    --general-section-5: #162033;
+    --general-section-6: #30415a;
+    --general-hover: #1c2a40;
+    --general-active: #263750;
+    --general-disabled: #1b2637;
+
+    --text-general: #c9d6e6;
+    --text-prominent: #f4f8fd;
+    --text-primary: #e7eff8;
+    --text-less-prominent: #91a2b8;
+    --text-disabled: #66768a;
+    --text-disabled-1: #66768a;
+    --text-hint: #b1c0d2;
+
+    --button-secondary-default: #253348;
+    --button-secondary-hover: #30415a;
+    --button-tertiary-hover: color-mix(in srgb, var(--brand-primary) 16%, transparent);
+    --border-normal: #30415a;
+    --border-normal-1: #30415a;
+    --border-normal-2: #40536d;
+    --border-normal-3: #536983;
+    --border-hover: #7086a0;
+    --border-divider: #253348;
+    --state-normal: #101827;
+    --state-hover: #1c2a40;
+    --state-active: #263750;
+    --sidebar-tab: #91a2b8;
+}
+
+body.theme--light {
+    color-scheme: light;
+
+    --general-main-1: #f3f6fb;
+    --general-main-2: #ffffff;
+    --general-main-3: #ffffff;
+    --general-section-1: #dce5ef;
+    --general-section-2: #edf2f8;
+    --general-section-3: #e7edf5;
+    --general-section-4: #dce5ef;
+    --general-section-5: #f7f9fc;
+    --general-section-6: #cad6e4;
+    --general-hover: #e9f1fa;
+    --general-active: #dceaf8;
+    --text-general: #34445a;
+    --text-prominent: #101c2c;
+    --text-primary: #1a2a3f;
+    --text-less-prominent: #63758b;
+    --border-active: var(--brand-primary);
+}
+
+::selection {
+    color: var(--text-prominent);
+    background: color-mix(in srgb, var(--brand-primary) 42%, transparent);
+}
+
+button,
+a,
+[role='button'] {
+    -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+    outline: 2px solid var(--brand-secondary);
+    outline-offset: 2px;
+}
+
+.dc-btn {
+    border-radius: 0.8rem;
+    font-weight: 600;
+    transition:
+        background-color 160ms ease,
+        border-color 160ms ease,
+        color 160ms ease,
+        box-shadow 160ms ease;
+}
+
+.dc-input__container,
+.dc-dropdown__display,
+.dc-select-native__select {
+    border-radius: 0.8rem;
+    border-color: var(--general-section-1);
+    background: var(--general-main-2);
+    color: var(--text-prominent);
+}
+
+.dc-modal__container {
+    border: 1px solid var(--general-section-1);
+    border-radius: 1.2rem;
+    background: var(--general-main-2);
+    box-shadow: 0 24px 72px color-mix(in srgb, var(--general-main-1) 62%, transparent);
+}
+
+.dc-drawer {
+    background: var(--general-main-2);
+}

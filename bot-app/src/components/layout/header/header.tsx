@@ -240,6 +240,14 @@ const AppHeader = observer(() => {
                 <Wrapper variant='left'>
                     <MobileMenu onLogout={handleLogout} />
                     <AppLogo />
+                    {process.env.NEXT_PUBLIC_BASE_PATH === '/bot' && (
+                        <a className='wicksentinel-back-link' href='/app'>
+                            <svg viewBox='0 0 20 20' aria-hidden='true' focusable='false'>
+                                <path d='M8.2 4.5 2.7 10l5.5 5.5M3.2 10h13' />
+                            </svg>
+                            <span><Localize i18n_default_text='Back to WickSentinel' /></span>
+                        </a>
+                    )}
                     {isDesktop ? <MenuItems /> : renderAccountSection('left')}
                 </Wrapper>
                 <Wrapper variant='right'>

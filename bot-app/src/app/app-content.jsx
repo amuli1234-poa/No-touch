@@ -43,6 +43,7 @@ const AppContent = observer(() => {
     const { recovered_transactions, recoverPendingContracts } = transactions;
     const is_subscribed_to_msg_listener = React.useRef(false);
     const msg_listener = React.useRef(null);
+    const connection_warning_shown = React.useRef(false);
     const { connectionStatus } = useApiBase();
 
     // Initialize dev mode keyboard shortcuts
@@ -77,12 +78,33 @@ const AppContent = observer(() => {
 
     useEffect(() => {
         if (connectionStatus === CONNECTION_STATUS.OPENED) {
+            connection_warning_shown.current = false;
             setIsApiInitialized(true);
             common.setSocketOpened(true);
         } else if (connectionStatus !== CONNECTION_STATUS.OPENED) {
             common.setSocketOpened(false);
         }
     }, [common, connectionStatus]);
+
+    useEffect(() => {
+        if (connectionStatus === CONNECTION_STATUS.OPENED || is_api_initialized) return undefined;
+
+        const timeoutId = setTimeout(() => {
+            if (connection_warning_shown.current) return;
+            connection_warning_shown.current = true;
+            console.warn('[Deriv Bot] WebSocket connection did not open before the loading timeout.');
+            botNotification(
+                localize('Could not connect to Deriv. Check your connection and sign in if needed.'),
+                undefined,
+                { type: 'warning' }
+            );
+            // Show the app shell so a slow or unavailable feed cannot trap the
+            // user on the initial loading screen indefinitely.
+            setIsLoading(false);
+        }, 20000);
+
+        return () => clearTimeout(timeoutId);
+    }, [connectionStatus, is_api_initialized]);
 
     const { current_language } = common;
     const html = document.documentElement;
@@ -135,35 +157,51 @@ const AppContent = observer(() => {
         });
     };
 
-    const changeActiveSymbolLoadingState = () => {
+    const changeActiveSymbolLoadingState = async () => {
         init();
+        setIsLoading(true);
 
-        const retrieveActiveSymbols = () => {
-            const { active_symbols } = ApiHelpers.instance;
+        try {
+            // The API helper may be registered slightly after the socket opens.
+            // Bound the wait so a missing helper cannot leave the whole app on a
+            // permanent account-initialization screen.
+            const deadline = Date.now() + 15000;
+            while (!ApiHelpers?.instance?.active_symbols && Date.now() < deadline) {
+                await new Promise(resolve => setTimeout(resolve, 250));
+            }
 
-            active_symbols.retrieveActiveSymbols(true).then(() => {
-                setIsLoading(false);
-            });
-        };
+            const activeSymbols = ApiHelpers?.instance?.active_symbols;
+            if (!activeSymbols) throw new Error('Deriv active-symbol service did not initialize.');
 
-        if (ApiHelpers?.instance?.active_symbols) {
-            retrieveActiveSymbols();
-        } else {
-            // This is a workaround to fix the issue where the active symbols are not loaded immediately
-            // when the API is initialized. Should be replaced with RxJS pubsub
-            const intervalId = setInterval(() => {
-                if (ApiHelpers?.instance?.active_symbols) {
-                    clearInterval(intervalId);
-                    retrieveActiveSymbols();
-                }
-            }, 1000);
+            let timeoutId;
+            try {
+                await Promise.race([
+                    activeSymbols.retrieveActiveSymbols(true),
+                    new Promise((_, reject) => {
+                        timeoutId = setTimeout(() => reject(new Error('Deriv active-symbol request timed out.')), 15000);
+                    }),
+                ]);
+            } finally {
+                clearTimeout(timeoutId);
+            }
+            if (activeSymbols.has_initialization_error) {
+                throw new Error('Deriv did not return the active-symbol catalogue.');
+            }
+        } catch (error) {
+            console.error('Failed to initialize Deriv active symbols:', error);
+            botNotification(
+                localize('Could not load Deriv markets. The bot will open, but market lists may be unavailable.'),
+                undefined,
+                { type: 'warning' }
+            );
+        } finally {
+            setIsLoading(false);
         }
     };
 
     React.useEffect(() => {
         if (is_api_initialized) {
             init();
-            setIsLoading(true);
             if (!client.is_logged_in) {
                 changeActiveSymbolLoadingState();
             }

@@ -20,8 +20,9 @@ import {
 import { OpeningAnimation } from './components/OpeningAnimation';
 import { TopBar } from './components/TopBar';
 import { DashboardView } from './components/views/DashboardView';
-import { BotBuilderView } from './components/views/BotBuilderView';
-import { MyBotsView } from './components/views/MyBotsView';
+import { FreeBotsView } from './components/views/FreeBotsView';
+import { PremiumBotsView } from './components/views/PremiumBotsView';
+import { CopyTradingView } from './components/views/CopyTradingView';
 import { AiIntelligenceView } from './components/views/AiIntelligenceView';
 import { SettingsView } from './components/views/SettingsView';
 import { TradeHistoryView } from './components/views/TradeHistoryView';
@@ -124,8 +125,9 @@ const VALID_SECTIONS: AppSection[] = [
   'training',
   'history',
   'settings',
-  'botbuilder',
-  'mybots',
+  'freebots',
+  'premiumbots',
+  'copytrading',
   'aiintelligence',
 ];
 
@@ -1181,8 +1183,9 @@ export default function App() {
     'alerts',
     'strategylab',
     'entrymodel',
-    'botbuilder',
-    'mybots',
+    'freebots',
+    'premiumbots',
+    'copytrading',
     'aiintelligence',
   ];
   const isFullWidth = FULL_WIDTH_SECTIONS.includes(section);
@@ -1218,8 +1221,9 @@ export default function App() {
                 <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
                   <div key={section} className="animate-view-enter flex flex-col min-h-full">
                     {section === 'dashboard' && <DashboardView />}
-                    {section === 'botbuilder' && <BotBuilderView />}
-                    {section === 'mybots' && <MyBotsView />}
+                    {section === 'freebots' && <FreeBotsView />}
+                    {section === 'premiumbots' && <PremiumBotsView />}
+                    {section === 'copytrading' && <CopyTradingView />}
                     {section === 'aiintelligence' && <AiIntelligenceView />}
                     {section === 'entrymodel' && <EntryModelAIView />}
                     {section === 'health' && <SystemHealthView health={health} />}

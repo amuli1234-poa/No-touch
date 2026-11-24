@@ -9,8 +9,8 @@ import {
 } from './Navigation';
 
 /**
- * ARCHITECTURE GUARD — the master spec organises the workspace into six modules:
- * Dashboard, Bot Builder, Pro Scanner, My Bots, Market Analysis and AI Intelligence.
+ * ARCHITECTURE GUARD — the workspace navigation is organised into seven modules:
+ * Dashboard, Free Bots, Premium Bots, Copy Trading, Pro Scanner, Market Analysis and AI Intelligence.
  * Trade History and AI Training live inside Market Analysis; Risk Management lives inside
  * AI Intelligence; Settings is reachable from the TopBar rather than the primary nav.
  * These tests fail the moment a tab is added, renamed, reordered or orphaned.
@@ -18,15 +18,16 @@ import {
 
 const EXPECTED_TAB_LABELS = [
   'Dashboard',
-  'Bot Builder',
   'Pro Scanner',
-  'My Bots',
+  'Free Bots',
+  'Premium Bots',
+  'Copy Trading',
   'Market Analysis',
   'AI Intelligence',
 ];
 
-test('navigation: exactly six primary modules in the required order', () => {
-  assert.equal(MAIN_TABS.length, 6, 'the app must expose exactly 6 primary modules');
+test('navigation: exactly seven primary modules in the required order', () => {
+  assert.equal(MAIN_TABS.length, 7, 'the app must expose 7 primary modules');
   assert.deepEqual(
     MAIN_TABS.map((t) => t.label),
     EXPECTED_TAB_LABELS
@@ -41,9 +42,10 @@ test('navigation: tab keys are unique', () => {
 test('navigation: every primary module navigates to the correct default section', () => {
   const expected: Record<string, AppSection> = {
     dashboard: 'dashboard',
-    botbuilder: 'botbuilder',
+    freebots: 'freebots',
+    premiumbots: 'premiumbots',
+    copytrading: 'copytrading',
     proscanner: 'scanner',
-    mybots: 'mybots',
     marketanalysis: 'chart',
     aiintelligence: 'aiintelligence',
   };
@@ -166,9 +168,9 @@ test('navigation: every legacy section stays reachable (no module lost)', () => 
   }
 });
 
-test('navigation: the Phase 1 workspace sections exist', () => {
+test('navigation: the bot catalogs, copy trading and AI intelligence sections exist', () => {
   const all = new Set(SECTIONS.map((s) => s.key));
-  for (const key of ['botbuilder', 'mybots', 'aiintelligence'] as AppSection[]) {
+  for (const key of ['freebots', 'premiumbots', 'copytrading', 'aiintelligence'] as AppSection[]) {
     assert.ok(all.has(key), `${key} must be reachable from the primary navigation`);
   }
 });
@@ -199,7 +201,7 @@ test('navigation: the bot app stays an external link, not a workspace module', (
   const tabKeys = new Set(MAIN_TABS.map((t) => t.key));
   assert.ok(!tabKeys.has('bot'), 'the bot app must not become a primary module');
   assert.ok(
-    !SECTIONS.some((s) => s.key === 'bot'),
+    !SECTIONS.some((s) => String(s.key) === 'bot'),
     'the bot app must not become a workspace section'
   );
 });

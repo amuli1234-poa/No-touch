@@ -24,7 +24,13 @@ export default defineConfig(() => {
         '/healthz': { target: process.env.BACKEND_ORIGIN ?? 'http://localhost:8787', changeOrigin: true },
         // The vendored Deriv bot app is served by the backend under /bot; proxy it
         // so the dev preview matches production routing.
-        '/bot': { target: process.env.BACKEND_ORIGIN ?? 'http://localhost:8787', changeOrigin: true }
+        '/bot': { target: process.env.BACKEND_ORIGIN ?? 'http://localhost:8787', changeOrigin: true },
+        // Compatibility for cached bot bundles whose lazy chunks use /static.
+        '/static': {
+          target: process.env.BACKEND_ORIGIN ?? 'http://localhost:8787',
+          changeOrigin: true,
+          rewrite: path => `/bot${path}`,
+        },
       },
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.

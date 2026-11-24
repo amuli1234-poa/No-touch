@@ -53,4 +53,18 @@ describe('generateOAuthURL language', () => {
         await generateOAuthURL();
         expect(buildAuthorizationUrl).toHaveBeenCalledWith(expect.objectContaining({ lang: 'EN' }));
     });
+
+    it('returns OAuth callbacks to the configured bot base path', async () => {
+        const originalBasePath = process.env.NEXT_PUBLIC_BASE_PATH;
+        process.env.NEXT_PUBLIC_BASE_PATH = '/bot/';
+        try {
+            await generateOAuthURL();
+            expect(buildAuthorizationUrl).toHaveBeenCalledWith(
+                expect.objectContaining({ redirectUri: `${window.location.origin}/bot` })
+            );
+        } finally {
+            if (originalBasePath === undefined) delete process.env.NEXT_PUBLIC_BASE_PATH;
+            else process.env.NEXT_PUBLIC_BASE_PATH = originalBasePath;
+        }
+    });
 });

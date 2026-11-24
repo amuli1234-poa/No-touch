@@ -1,20 +1,26 @@
 import { action, makeObservable, observable } from 'mobx';
 import { isTouchDevice } from '@/components/shared/utils/screen/responsive';
 
+const LIGHT_THEME_DEFAULT_VERSION = 'wicksentinel-light-v1';
+
 /**
  * The initial dark-mode state. An explicit stored `theme` (set once the user
- * toggles) always wins; with no stored choice we follow the OS preference
- * (`prefers-color-scheme`) so the app defaults to the user's system theme
- * rather than forcing light.
+ * toggles after this visual refresh) always wins. Migrate the previous dark
+ * default once so existing bot users also land on the light chart surface.
  */
 function getInitialDarkMode(): boolean {
+    if (localStorage.getItem('theme-default-version') !== LIGHT_THEME_DEFAULT_VERSION) {
+        localStorage.setItem('theme', 'light');
+        localStorage.setItem('theme-default-version', LIGHT_THEME_DEFAULT_VERSION);
+        return false;
+    }
+
     const stored = localStorage.getItem('theme');
     if (stored === 'dark') return true;
     if (stored === 'light') return false;
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-        return false;
-    }
-    return window.matchMedia('(prefers-color-scheme: dark)')?.matches ?? false;
+    // Use the light terminal by default so charts and controls have clear
+    // contrast on both desktop and mobile.
+    return false;
 }
 
 export default class UiStore {

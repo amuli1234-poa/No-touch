@@ -298,7 +298,10 @@ class APIBase {
                     ? storedAccounts
                           .filter(a => !a.status || a.status === 'active')
                           .map(a => ({
-                              balance: parseFloat(a.balance) || 0,
+                              balance:
+                                  a.balance && Number.isFinite(parseFloat(a.balance))
+                                      ? parseFloat(a.balance)
+                                      : undefined,
                               currency: a.currency || 'USD',
                               is_virtual: a.account_type === 'demo' ? 1 : 0,
                               loginid: a.account_id,

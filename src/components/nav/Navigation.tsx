@@ -3,7 +3,6 @@ import {
   Activity,
   Award,
   BellRing,
-  Blocks,
   Bot,
   Boxes,
   Braces,
@@ -13,7 +12,6 @@ import {
   FlaskConical,
   Gauge,
   GitBranch,
-  ExternalLink,
   GraduationCap,
   HeartPulse,
   Layers,
@@ -29,7 +27,7 @@ import {
 } from 'lucide-react';
 
 /**
- * Every reachable section. These are NOT all main tabs — the app exposes exactly SIX
+ * Every reachable section. These are NOT all main tabs — the app exposes seven
  * main modules (see `MAIN_TABS`); the remaining sections are sub-views inside a hub
  * module. Keeping the full union means every existing deep link, hash and `navigate()`
  * call keeps working after the redesign.
@@ -65,8 +63,9 @@ export type AppSection =
   | 'history'
   | 'settings'
   /* ------------------- visual strategy workspace (Phase 1) ------------------- */
-  | 'botbuilder'
-  | 'mybots'
+  | 'freebots'
+  | 'premiumbots'
+  | 'copytrading'
   | 'aiintelligence';
 
 export interface SectionMeta {
@@ -90,7 +89,7 @@ export interface MainTab {
 const ICON = 'w-[18px] h-[18px]';
 
 /**
- * EXACTLY SIX main navigation modules. Each hub module contains its sub-views so no
+ * The primary navigation modules. Each hub module contains its sub-views so no
  * individual strategy or tool ever becomes a top-level tab of its own. Trade History,
  * Risk Management and AI Training keep their components and routes but live inside a
  * hub module; Settings is reached from the TopBar gear and is deliberately absent here.
@@ -105,16 +104,6 @@ export const MAIN_TABS: readonly MainTab[] = [
     sections: [
       { key: 'dashboard', label: 'Workspace', shortLabel: 'Workspace', icon: <LayoutDashboard className={ICON} /> },
       { key: 'trade', label: 'Trade', shortLabel: 'Trade', icon: <Wallet className={ICON} /> },
-    ],
-  },
-  {
-    key: 'botbuilder',
-    label: 'Bot Builder',
-    shortLabel: 'Import',
-    icon: <Blocks className={ICON} />,
-    defaultSection: 'botbuilder',
-    sections: [
-      { key: 'botbuilder', label: 'Bot Builder', shortLabel: 'Build', icon: <Blocks className={ICON} /> },
     ],
   },
   {
@@ -142,13 +131,33 @@ export const MAIN_TABS: readonly MainTab[] = [
     ],
   },
   {
-    key: 'mybots',
-    label: 'My Bots',
-    shortLabel: 'Bots',
+    key: 'freebots',
+    label: 'Free Bots',
+    shortLabel: 'Free Bots',
     icon: <Bot className={ICON} />,
-    defaultSection: 'mybots',
+    defaultSection: 'freebots',
     sections: [
-      { key: 'mybots', label: 'My Bots', shortLabel: 'Bots', icon: <Bot className={ICON} /> },
+      { key: 'freebots', label: 'Free Bots', shortLabel: 'Bots', icon: <Bot className={ICON} /> },
+    ],
+  },
+  {
+    key: 'premiumbots',
+    label: 'Premium Bots',
+    shortLabel: 'Premium',
+    icon: <Bot className={ICON} />,
+    defaultSection: 'premiumbots',
+    sections: [
+      { key: 'premiumbots', label: 'Premium Bots', shortLabel: 'Premium', icon: <Bot className={ICON} /> },
+    ],
+  },
+  {
+    key: 'copytrading',
+    label: 'Copy Trading',
+    shortLabel: 'Copy',
+    icon: <Activity className={ICON} />,
+    defaultSection: 'copytrading',
+    sections: [
+      { key: 'copytrading', label: 'Copy Trading', shortLabel: 'Copy Trading', icon: <Activity className={ICON} /> },
     ],
   },
   {
@@ -292,14 +301,13 @@ export function Sidebar({ active, onSelect, statusBadge, badges, hidden = false 
         {/* The Deriv bot app is a separate build served under /bot with its own
             router, so it is a plain link rather than a section of this shell. */}
         <a
-          href="/bot/"
+          href={`${import.meta.env.BASE_URL}bot/`}
           className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-semibold text-muted border border-transparent hover:bg-elevated hover:text-ink transition-colors duration-150"
         >
           <span className="text-faint">
             <Bot className={ICON} />
           </span>
-          <span className="truncate">Deriv Bot</span>
-          <ExternalLink className="w-3 h-3 ml-auto text-faint" />
+          <span className="truncate">Bot Builder</span>
         </a>
       </div>
 
@@ -308,8 +316,8 @@ export function Sidebar({ active, onSelect, statusBadge, badges, hidden = false 
   );
 }
 
-/** Mobile bottom bar — the six primary modules plus a "More" sheet. */
-const MOBILE_PRIMARY: AppSection[] = ['dashboard', 'botbuilder', 'scanner', 'mybots', 'chart', 'aiintelligence'];
+/** Mobile bottom bar — primary modules plus a "More" sheet. */
+const MOBILE_PRIMARY: AppSection[] = ['dashboard', 'freebots', 'premiumbots', 'copytrading', 'scanner', 'chart', 'aiintelligence'];
 
 interface MobileNavProps {
   active: AppSection;
@@ -328,7 +336,7 @@ export function MobileNav({ active, onSelect, badges, onOpenMenu }: MobileNavPro
       aria-label="Primary mobile"
       className="lg:hidden shrink-0 border-t border-line bg-nav pb-[env(safe-area-inset-bottom)]"
     >
-      <ul className="grid grid-cols-7">
+      <ul className="grid grid-cols-8">
         {items.map((tab) => {
           const isActive = tab.key === activeTabKey;
           const tabBadge = tab.sections.reduce((n, s) => Math.max(n, badges?.[s.key] ?? 0), 0);
@@ -371,7 +379,7 @@ export function MobileNav({ active, onSelect, badges, onOpenMenu }: MobileNavPro
   );
 }
 
-/** Full module list for the mobile "More" sheet — the six main tabs plus their sub-views. */
+/** Full module list for the mobile "More" sheet — the main tabs plus their sub-views. */
 export function MobileMenuSheet({
   active,
   onSelect,
@@ -425,14 +433,13 @@ export function MobileMenuSheet({
           </div>
         ))}
         <a
-          href="/bot/"
+          href={`${import.meta.env.BASE_URL}bot/`}
           className="mt-1 w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-[13px] font-semibold text-muted border border-transparent"
         >
           <span className="text-faint">
             <Bot className="w-[18px] h-[18px]" />
           </span>
-          <span className="truncate">Deriv Bot</span>
-          <ExternalLink className="w-3 h-3 ml-auto text-faint" />
+          <span className="truncate">Bot Builder</span>
         </a>
       </div>
     </div>
