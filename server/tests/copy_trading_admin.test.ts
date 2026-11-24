@@ -718,7 +718,8 @@ test('copy trading: the dashboard reports real connection counts', async () => {
     assert.equal(res.status, 200);
     assert.equal(res.json.copyTrading.clients, 1);
     assert.equal(res.json.copyTrading.tokenConnections, 1);
-    assert.equal(res.json.copyTrading.engine.implemented, false, 'the copy engine must not be claimed as implemented');
+    assert.equal(res.json.copyTrading.engine.implemented, true, 'the DEMO copy engine is implemented');
+    assert.match(res.json.copyTrading.engine.note, /REAL-account copying is not enabled/);
   });
 });
 

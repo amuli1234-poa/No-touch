@@ -117,7 +117,7 @@ export function DashboardPage() {
                 value={s.copyTrading.engine.implemented ? 'Active' : 'Not enabled'}
                 tone={s.copyTrading.engine.implemented ? 'success' : 'warn'}
                 icon={<Activity size={14} />}
-                hint={s.copyTrading.engine.implemented ? 'Mirroring trades' : 'Connections only'}
+                hint={s.copyTrading.engine.implemented ? 'DEMO trades mirrored' : 'Connections only'}
               />
             </div>
           ) : (

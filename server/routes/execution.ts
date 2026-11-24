@@ -5,12 +5,13 @@ import type { ServerConfig } from '../config.js';
 import { requireSession, type AuthedRequest } from '../lib/session.js';
 import { RateLimiter } from '../services/admin/rateLimit.js';
 import { open } from '../lib/crypto.js';
-import type { ExecutionGateway } from '../execution/gateway.js';
+import type { ExecutionGateway, ExecutionResult } from '../execution/gateway.js';
 import { ExecutionError } from '../execution/gateway.js';
 import { ExecutionAuditor } from '../execution/audit.js';
 import type { AutoExecutionRunner } from '../execution/autoRunner.js';
 import type { ContractMonitor } from '../execution/contractMonitor.js';
 import type { SystemSignalService } from '../services/systemSignals.js';
+import type { CopyExecutionEngine } from '../copyTrading/engine.js';
 import type { MarketDataService } from '../services/marketData.js';
 import type { ExecutionFlags } from '../config/flags.js';
 import { createSignal, SignalError } from '../services/signals.js';
@@ -71,6 +72,11 @@ export interface ExecutionRouterDeps {
    * bare "not running", so a fresh local checkout is not a silent dead end.
    */
   flags?: ExecutionFlags;
+  /**
+   * Optional: when present, an accepted DEMO trade is mirrored onto the
+   * manager's connected followers. Absent in tests that do not exercise copying.
+   */
+  copyEngine?: CopyExecutionEngine;
   /** Optional per-minute limits, for tests. Defaults are conservative. */
   limits?: { signalsPerMinute?: number; submitsPerMinute?: number };
 }
@@ -186,6 +192,36 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
   };
 
   /**
+   * Mirrors a trade the automatic runner just executed onto the manager's
+   * connected followers. Only a successful DEMO execution is mirrored; the
+   * engine re-checks the mode itself, so this cannot widen what is copied.
+   *
+   * A copy failure never propagates: the manager's own trade is already live and
+   * each follower's outcome is audited individually inside the engine.
+   */
+  const mirrorAutoTrade = async (
+    user: UserRecord,
+    signal: Parameters<CopyExecutionEngine['mirrorMasterTrade']>[0]['signal'],
+    auto: { result: ExecutionResult | null } | null
+  ): Promise<void> => {
+    if (!deps.copyEngine || !auto?.result) return;
+    const intent = auto.result.intent;
+    try {
+      await deps.copyEngine.mirrorMasterTrade({
+        master: user,
+        signal,
+        masterIntentId: intent.id,
+        stake: intent.stake,
+        basis: intent.basis,
+        currency: intent.currency,
+        parameters: intent.parameters
+      });
+    } catch {
+      // Swallowed deliberately: the manager's trade is already accepted.
+    }
+  };
+
+  /**
    * The dashboard's best signal, published by the client. It is recorded for the
    * signed-in user and, when that user is in automatic mode, entered through the
    * same runner a manual trade uses — kill switches, risk, single-use and one
@@ -269,6 +305,7 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
       const auto = await runner.runForUser(user, signal, token);
       if (auto.outcome === 'executed') {
         systemSignals!.markExecuted(user.id, setupKey, signal.id, 'executed');
+        await mirrorAutoTrade(user, signal, auto);
       }
       res.status(201).json({ published, auto });
     } catch (err) {
@@ -337,6 +374,7 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
       let auto = null;
       if (automaticEntry) {
         auto = await runner!.runForUser(user, signal, tokenFor(deps, req));
+        if (auto.outcome === 'executed') await mirrorAutoTrade(user, signal, auto);
       }
       res.status(201).json({ signal, auto });
     } catch (err) {
@@ -610,6 +648,27 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
         manualApproval: { approvedAt: Date.now(), expiresAt: Date.now() + 15_000 }
       });
       const result = await gateway.submit(user, intent.id, tokenFor(deps, req));
+
+      // Mirroring happens only after the master's trade was accepted by the
+      // broker, so a follower never copies a trade the manager did not get.
+      // A copy failure must not fail the manager's own trade, which has already
+      // been accepted; it is audited per follower inside the engine.
+      if (deps.copyEngine) {
+        try {
+          await deps.copyEngine.mirrorMasterTrade({
+            master: user,
+            signal,
+            masterIntentId: intent.id,
+            stake: Number(body.stake ?? 0),
+            basis: body.basis === 'payout' ? 'payout' : 'stake',
+            currency: String(body.currency ?? 'USD'),
+            parameters
+          });
+        } catch {
+          // Swallowed deliberately: the manager's trade is already live.
+        }
+      }
+
       res.status(200).json({
         intent: result.intent,
         contractId: result.contractId,

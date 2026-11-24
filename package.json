@@ -33,6 +33,7 @@
     "test:security": "tsx server/tests/execution_security.test.ts",
     "test:forward": "tsx server/tests/forward_test.test.ts",
     "test:real-gate": "tsx server/tests/real_release_gate.test.ts",
+    "test:copy-engine": "tsx server/tests/copy_trading_engine.test.ts",
     "test:bots": "tsx server/tests/bot_parser.test.ts",
     "test:bot-import": "tsx server/tests/bot_import.test.ts",
     "test:bot-run": "tsx server/tests/bot_run.test.ts",

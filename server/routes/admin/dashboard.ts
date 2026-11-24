@@ -96,11 +96,12 @@ export function createDashboardRouter(ctx: AdminRouteContext): Router {
           connectedAccounts: followers.reduce((acc, f) => acc + f.accounts.length, 0),
           oauthConnections: followers.filter((f) => f.authMethod === 'oauth').length,
           tokenConnections: followers.filter((f) => f.authMethod === 'pat').length,
-          // The connection layer is real; the copy *engine* is not implemented,
-          // so say so rather than implying trades are being mirrored.
+          // The copy engine now mirrors accepted DEMO trades onto connected
+          // followers. REAL stays disabled in this build, so the note names the
+          // limit rather than claiming full coverage.
           engine: {
-            implemented: false,
-            note: 'Connections are stored and manageable. Automatic trade mirroring is not implemented in this deployment.'
+            implemented: true,
+            note: 'DEMO trades are mirrored onto connected followers. REAL-account copying is not enabled in this build.'
           }
         };
       })()

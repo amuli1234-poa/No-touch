@@ -18,6 +18,8 @@ import { AutoExecutionRunner } from '../execution/autoRunner.js';
 import { ContractMonitor } from '../execution/contractMonitor.js';
 import { ExecutionAuditor } from '../execution/audit.js';
 import { SystemSignalService } from '../services/systemSignals.js';
+import { CopyExecutionEngine } from '../copyTrading/engine.js';
+import type { CopyTradingFollowerRecord } from '../copyTrading/types.js';
 import { evaluateRisk, effectiveRiskProfile } from '../services/risk.js';
 import type { ServerConfig } from '../config.js';
 import type { ContractRecord, ContractUpdate, RiskProfileRecord } from '../execution/types.js';
@@ -137,6 +139,11 @@ async function withServer(
      * the automatic-entry gate sees a current signal. Its shape mirrors what the
      * dashboard POSTs to /api/execution/system-signal.
      */
+    /**
+     * When set, followers are seeded for the master and a real copy engine is
+     * wired into the router, so a place request exercises the fan-out.
+     */
+    copyFollowers?: Partial<CopyTradingFollowerRecord>[];
     systemSignal?: {
       symbol: string;
       direction: 'RISE' | 'FALL';
@@ -238,6 +245,27 @@ async function withServer(
       source: opts.systemSignal.source ?? 'SYSTEM'
     });
   }
+  let copyEngine: CopyExecutionEngine | undefined;
+  if (opts.copyFollowers) {
+    for (const [index, overrides] of opts.copyFollowers.entries()) {
+      await store.putCopyTradingFollower({
+        id: `f_${index + 1}`,
+        ownerUserId: 'u_a',
+        derivSub: `sub_follower_${index + 1}`,
+        authMethod: 'pat',
+        loginId: `CR${index + 1}`,
+        accounts: [{ accountId: `F${index + 1}_DEMO`, type: 'demo', currency: 'USD', status: 'active' }],
+        tokenSealed: seal(`follower-token-${index + 1}`, cfg.session.secret),
+        tokenExpiresAt: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        status: 'active',
+        revision: 1,
+        ...overrides
+      });
+    }
+    copyEngine = new CopyExecutionEngine({ store, cfg, gateway, auditor });
+  }
   app.use(
     createExecutionRouter({
       cfg,
@@ -248,7 +276,8 @@ async function withServer(
       monitor,
       limits: opts.limits,
       flags,
-      systemSignals
+      systemSignals,
+      copyEngine
     })
   );
   const server = app.listen(0);
@@ -1437,4 +1466,94 @@ test('a published signal is inert for a manual user', async () => {
     assert.equal(res.body.auto, null);
     assert.equal(broker.buys.length, 0);
   });
+});
+
+/* ------------------------------ copy trading ------------------------------ */
+
+test('POST /place mirrors an accepted DEMO trade onto connected followers', async () => {
+  await withServer(
+    async ({ post, broker }) => {
+      const res = await post('/api/execution/place', {
+        accountId: 'DEMO',
+        symbol: 'R_100',
+        timeframe: '5m',
+        direction: 'RISE',
+        contractFamily: 'rise_fall',
+        stake: 2,
+        currency: 'USD',
+        parameters: { duration: 5, durationUnit: 'm' },
+        idempotencyKey: 'place-copy-one'
+      });
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      // The manager's own trade, plus one mirrored trade per follower.
+      assert.equal(broker.buys.length, 2, JSON.stringify(broker.buys.map((b) => b.accountId)));
+      assert.equal(broker.buys[0].accountId, 'DEMO');
+      assert.equal(broker.buys[1].accountId, 'F1_DEMO');
+    },
+    { copyFollowers: [{}] }
+  );
+});
+
+test('POST /place does not mirror onto a follower an admin has paused', async () => {
+  await withServer(
+    async ({ post, broker }) => {
+      const res = await post('/api/execution/place', {
+        accountId: 'DEMO',
+        symbol: 'R_100',
+        timeframe: '5m',
+        direction: 'RISE',
+        contractFamily: 'rise_fall',
+        stake: 2,
+        currency: 'USD',
+        parameters: { duration: 5, durationUnit: 'm' },
+        idempotencyKey: 'place-copy-paused'
+      });
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.equal(broker.buys.length, 1, 'only the manager trades');
+      assert.equal(broker.buys[0].accountId, 'DEMO');
+    },
+    { copyFollowers: [{ status: 'paused' }] }
+  );
+});
+
+test('POST /place is unaffected when no followers are connected', async () => {
+  await withServer(
+    async ({ post, broker }) => {
+      const res = await post('/api/execution/place', {
+        accountId: 'DEMO',
+        symbol: 'R_100',
+        timeframe: '5m',
+        direction: 'RISE',
+        contractFamily: 'rise_fall',
+        stake: 2,
+        currency: 'USD',
+        parameters: { duration: 5, durationUnit: 'm' },
+        idempotencyKey: 'place-no-followers'
+      });
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.equal(broker.buys.length, 1);
+    },
+    { copyFollowers: [] }
+  );
+});
+
+test('an automatic entry mirrors onto followers too', async () => {
+  await withServer(
+    async ({ post, broker }) => {
+      const res = await post('/api/execution/system-signal', {
+        symbol: 'R_100',
+        direction: 'RISE',
+        timeframe: '5m',
+        confidence: 90,
+        setupKey: 'setup-copy-auto',
+        source: 'AI:live'
+      });
+      assert.equal(res.status, 201, JSON.stringify(res.body));
+      assert.equal(res.body.auto.outcome, 'executed', JSON.stringify(res.body.auto));
+      assert.equal(broker.buys.length, 2, JSON.stringify(broker.buys.map((b) => b.accountId)));
+      assert.equal(broker.buys[0].accountId, 'DEMO');
+      assert.equal(broker.buys[1].accountId, 'F1_DEMO');
+    },
+    { automatic: true, copyFollowers: [{}] }
+  );
 });

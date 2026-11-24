@@ -9,6 +9,7 @@ import { ExecutionAuditor } from './audit.js';
 import { AutoExecutionRunner } from './autoRunner.js';
 import { ContractMonitor } from './contractMonitor.js';
 import { SystemSignalService } from '../services/systemSignals.js';
+import { CopyExecutionEngine } from '../copyTrading/engine.js';
 import type { SignalRecord } from './types.js';
 
 /**
@@ -30,6 +31,8 @@ export interface ExecutionBundle {
   flags: ExecutionFlags;
   /** The bridge the dashboard's best signal is published to. */
   systemSignals: SystemSignalService;
+  /** Mirrors an accepted DEMO master trade onto connected followers. */
+  copyEngine: CopyExecutionEngine;
 }
 
 export function createExecution(
@@ -101,5 +104,6 @@ export function createExecution(
 
   const runner = new AutoExecutionRunner({ store, gateway, auditor });
   const systemSignals = new SystemSignalService();
-  return { gateway, runner, monitor, flags, systemSignals };
+  const copyEngine = new CopyExecutionEngine({ store, cfg, gateway, auditor });
+  return { gateway, runner, monitor, flags, systemSignals, copyEngine };
 }

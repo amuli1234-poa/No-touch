@@ -120,7 +120,8 @@ export function createApp(cfg: ServerConfig, store: Store, cache?: Cache): AppBu
       runner: execution.runner,
       monitor: execution.monitor,
       systemSignals: execution.systemSignals,
-      flags: execution.flags
+      flags: execution.flags,
+      copyEngine: execution.copyEngine
     })
   );
 
