@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import { AppShell } from './components/AppShell';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { Empty, LoadingBlock } from './components/UI';
 import { useAuth } from './lib/auth';
 import { usePath, navigate } from './lib/router';
@@ -89,5 +90,9 @@ export function App() {
     content = route.render();
   }
 
-  return <AppShell>{content}</AppShell>;
+  return (
+    <AppShell>
+      <ErrorBoundary resetKey={path}>{content}</ErrorBoundary>
+    </AppShell>
+  );
 }

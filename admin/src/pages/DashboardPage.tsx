@@ -18,7 +18,13 @@ interface Summary {
     engineErrorsLast24h: number;
     lastEventAt: number | null;
   };
-  copyTrading: {
+  /**
+   * Absent when the admin API predates the copy-trading module (a backend that
+   * has not been restarted after a deploy). Declared optional because the page
+   * must degrade to an honest note rather than throw: an unguarded read here
+   * blanks the entire dashboard after a successful login.
+   */
+  copyTrading?: {
     clients: number;
     activeFollowers: number;
     pausedFollowers: number;
@@ -85,34 +91,40 @@ export function DashboardPage() {
             />
           </div>
 
-          <div className="grid grid-4 mb-lg">
-            <StatCard
-              label="Copy Trading clients"
-              value={formatNumber(s.copyTrading.clients)}
-              tone="violet"
-              icon={<Repeat size={14} />}
-              hint={`${formatNumber(s.copyTrading.activeFollowers)} active · ${formatNumber(s.copyTrading.pausedFollowers)} paused`}
-            />
-            <StatCard
-              label="Pending authorizations"
-              value={formatNumber(s.copyTrading.pendingAuthorizations)}
-              icon={<Clock size={14} />}
-              hint="Invitations awaiting acceptance"
-            />
-            <StatCard
-              label="Connected Deriv accounts"
-              value={formatNumber(s.copyTrading.connectedAccounts)}
-              icon={<UserCheck size={14} />}
-              hint={`${formatNumber(s.copyTrading.oauthConnections)} OAuth · ${formatNumber(s.copyTrading.tokenConnections)} token`}
-            />
-            <StatCard
-              label="Copy engine"
-              value={s.copyTrading.engine.implemented ? 'Active' : 'Not enabled'}
-              tone={s.copyTrading.engine.implemented ? 'success' : 'warn'}
-              icon={<Activity size={14} />}
-              hint={s.copyTrading.engine.implemented ? 'Mirroring trades' : 'Connections only'}
-            />
-          </div>
+          {s.copyTrading ? (
+            <div className="grid grid-4 mb-lg">
+              <StatCard
+                label="Copy Trading clients"
+                value={formatNumber(s.copyTrading.clients)}
+                tone="violet"
+                icon={<Repeat size={14} />}
+                hint={`${formatNumber(s.copyTrading.activeFollowers)} active · ${formatNumber(s.copyTrading.pausedFollowers)} paused`}
+              />
+              <StatCard
+                label="Pending authorizations"
+                value={formatNumber(s.copyTrading.pendingAuthorizations)}
+                icon={<Clock size={14} />}
+                hint="Invitations awaiting acceptance"
+              />
+              <StatCard
+                label="Connected Deriv accounts"
+                value={formatNumber(s.copyTrading.connectedAccounts)}
+                icon={<UserCheck size={14} />}
+                hint={`${formatNumber(s.copyTrading.oauthConnections)} OAuth · ${formatNumber(s.copyTrading.tokenConnections)} token`}
+              />
+              <StatCard
+                label="Copy engine"
+                value={s.copyTrading.engine.implemented ? 'Active' : 'Not enabled'}
+                tone={s.copyTrading.engine.implemented ? 'success' : 'warn'}
+                icon={<Activity size={14} />}
+                hint={s.copyTrading.engine.implemented ? 'Mirroring trades' : 'Connections only'}
+              />
+            </div>
+          ) : (
+            <div className="mb-lg">
+              <UnavailableNote text="Copy Trading figures are unavailable: the backend did not report them. The admin API may be running an older build than this console." />
+            </div>
+          )}
 
           <div className="grid grid-2 mb-lg">
             <Card title="New registrations" subtitle="Last 30 days, by UTC day">
@@ -180,7 +192,7 @@ export function DashboardPage() {
               <div className="col gap">
                 {s.subscriptions.unavailable && <UnavailableNote text={s.subscriptions.unavailable} />}
                 {s.revenue.unavailable && <UnavailableNote text={s.revenue.unavailable} />}
-                {!s.copyTrading.engine.implemented && <UnavailableNote text={s.copyTrading.engine.note} />}
+                {s.copyTrading && !s.copyTrading.engine.implemented && <UnavailableNote text={s.copyTrading.engine.note} />}
               </div>
             </Card>
           </div>
