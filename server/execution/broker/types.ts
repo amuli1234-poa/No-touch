@@ -46,6 +46,12 @@ export interface ProposalRequest {
   /** The account-scoped Deriv access token, resolved from the sealed store. */
   accessToken: string;
   accountMode: AccountMode;
+  /**
+   * Deriv App ID sent as `Deriv-App-ID` on the OTP call. Required for PAT
+   * (Personal Access Token) accounts; omitted for OAuth (the token implies the
+   * app). Deriv rejects a PAT without it.
+   */
+  appId?: string;
   /** The validated, family-specific proposal payload. */
   payload: ProposalPayload;
   reqId: number;
@@ -68,6 +74,8 @@ export interface BuyRequest {
   /** The account-scoped Deriv access token, resolved from the sealed store. */
   accessToken: string;
   accountMode: AccountMode;
+  /** Deriv App ID for PAT accounts (see ProposalRequest.appId). */
+  appId?: string;
   proposalId: string;
   /** Maximum price to pay. */
   price: number;
@@ -90,6 +98,8 @@ export interface SellRequest {
   accountId: string;
   accessToken: string;
   accountMode: AccountMode;
+  /** Deriv App ID for PAT accounts (see ProposalRequest.appId). */
+  appId?: string;
   contractId: number;
   /** Zero means sell at the current market price. */
   price: 0;
@@ -183,11 +193,12 @@ export interface BrokerAdapter {
     accountMode: AccountMode,
     accessToken: string,
     contractId: number,
-    onUpdate: (update: ContractUpdate) => void
+    onUpdate: (update: ContractUpdate) => void | Promise<void>,
+    appId?: string
   ): () => void;
 
   /** Current balance for an account, used by the risk engine. */
-  getBalance(accountId: string, accountMode: AccountMode, accessToken: string): Promise<number>;
+  getBalance(accountId: string, accountMode: AccountMode, accessToken: string, appId?: string): Promise<number>;
 
   /**
    * The account's currently open contracts. Used to reconcile a purchase whose
@@ -197,8 +208,28 @@ export interface BrokerAdapter {
   getOpenContracts(
     accountId: string,
     accountMode: AccountMode,
-    accessToken: string
+    accessToken: string,
+    appId?: string
   ): Promise<ContractUpdate[]>;
+
+  /**
+   * Reads one contract's current state by id via a one-shot
+   * `proposal_open_contract` (non-subscribing).
+   *
+   * Unlike `getOpenContracts` (the `portfolio` list, which only contains still-
+   * open positions), this also returns a contract that has just settled. The
+   * copy-on-buy route needs that: a tick-duration contract can expire between
+   * the master's purchase and the server's verification round-trip, and a
+   * settled contract is still proof the master actually placed the trade.
+   * Returns null when Deriv has no such contract for the account.
+   */
+  getContract(
+    accountId: string,
+    accountMode: AccountMode,
+    accessToken: string,
+    contractId: number,
+    appId?: string
+  ): Promise<ContractUpdate | null>;
 
   /** Releases all sockets. Called on shutdown. */
   close(): void;

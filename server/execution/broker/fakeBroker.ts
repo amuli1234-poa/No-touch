@@ -125,7 +125,7 @@ export class FakeBroker implements BrokerAdapter {
   }
 
   /** Test helper: pushes a lifecycle update to a contract's subscribers. */
-  emitContract(contractId: number, status: ContractStatus, profit: number | null): void {
+  async emitContract(contractId: number, status: ContractStatus, profit: number | null): Promise<void> {
     const update: ContractUpdate = {
       contractId,
       status,
@@ -139,7 +139,7 @@ export class FakeBroker implements BrokerAdapter {
       dateExpiry: Math.floor(Date.now() / 1000),
       dateSettlement: status === 'open' ? null : Math.floor(Date.now() / 1000)
     };
-    for (const h of this.contractHandlers.get(contractId) ?? []) h(update);
+    for (const h of this.contractHandlers.get(contractId) ?? []) await h(update);
   }
 
   async getBalance(): Promise<number> {
@@ -152,6 +152,19 @@ export class FakeBroker implements BrokerAdapter {
    */
   async getOpenContracts(): Promise<ContractUpdate[]> {
     return this.script.openContracts ?? [];
+  }
+
+  /**
+   * One-shot read of a single contract by id. A test seeds `script.openContracts`
+   * with the contract (any status, open or settled) to simulate Deriv knowing it.
+   */
+  async getContract(
+    _accountId: string,
+    _accountMode: AccountMode,
+    _accessToken: string,
+    contractId: number
+  ): Promise<ContractUpdate | null> {
+    return this.script.openContracts?.find(c => c.contractId === contractId) ?? null;
   }
 
   close(): void {

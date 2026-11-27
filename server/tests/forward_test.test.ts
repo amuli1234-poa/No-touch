@@ -193,8 +193,7 @@ test('forward test: a rising series trades, wins, and the ledger reconciles', as
     assert.equal(store.listLedgerEntries(USER.id).length, 1, 'one stake entry so far');
 
     // 3. Settle it as a win.
-    broker.emitContract(Number(contract.id), 'won', 0.95);
-    await new Promise((r) => setTimeout(r, 5));
+    await broker.emitContract(Number(contract.id), 'won', 0.95);
 
     // 4. Assert the money adds up: -1 stake + 0.95 settlement.
     const ledger = store.listLedgerEntries(USER.id);
@@ -272,8 +271,7 @@ test('forward test: a losing series engages auto-stop after the consecutive-loss
       const out = await runner.runForUser(USER, sig, 'tok');
       assert.equal(out.outcome, 'executed', `trade ${i}`);
       const contract = store.listContracts(USER.id).find((c) => c.intentId === out.result!.intent.id)!;
-      broker.emitContract(Number(contract.id), 'lost', -1);
-      await new Promise((r) => setTimeout(r, 5));
+       await broker.emitContract(Number(contract.id), 'lost', -1);
     }
 
     // The streak limit is reached; the next signal must be refused and auto-stop

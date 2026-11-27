@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { Store, UserRecord } from '../store/store.js';
+import type { ServerConfig } from '../config.js';
 import type { BrokerAdapter, ContractUpdate, SellResult } from './broker/types.js';
 import type { ContractRecord, ContractStatus, LedgerEntryRecord, TradeIntentRecord } from './types.js';
 import type { ExecutionAuditor } from './audit.js';
@@ -26,7 +27,15 @@ export interface ContractMonitorDeps {
   store: Store;
   broker: BrokerAdapter;
   auditor: ExecutionAuditor;
+  /** Present in the app; optional so tests can construct a monitor without it. */
+  cfg?: ServerConfig;
   now?: () => number;
+  /**
+   * Fired once after a contract is durably settled. Used to apply copy-trading
+   * commissions at the authoritative settlement moment (idempotent). Optional so
+   * existing tests and non-copy builds are unaffected.
+   */
+  onSettled?: (user: UserRecord, contract: ContractRecord) => void | Promise<void>;
 }
 
 /** Terminal contract statuses that represent a settled outcome. */
@@ -36,7 +45,9 @@ export class ContractMonitor {
   private readonly store: Store;
   private readonly broker: BrokerAdapter;
   private readonly auditor: ExecutionAuditor;
+  private readonly cfg?: ServerConfig;
   private readonly now: () => number;
+  private readonly onSettled?: (user: UserRecord, contract: ContractRecord) => void | Promise<void>;
   /** Live subscriptions, keyed by contract id. */
   private readonly subscriptions = new Map<string, () => void>();
 
@@ -44,7 +55,20 @@ export class ContractMonitor {
     this.store = deps.store;
     this.broker = deps.broker;
     this.auditor = deps.auditor;
+    this.cfg = deps.cfg;
     this.now = deps.now ?? (() => Date.now());
+    this.onSettled = deps.onSettled;
+  }
+
+  /**
+   * The Deriv App ID for a PAT-authenticated follower's OTP calls. OAuth users
+   * (the master) need no header, so this returns undefined for them.
+   */
+  private appIdFor(user: UserRecord): string | undefined {
+    if (!this.cfg || !user.id.startsWith('copy_follower_')) return undefined;
+    const followerId = user.id.slice('copy_follower_'.length);
+    const follower = this.store.listAllCopyTradingFollowers().find((f) => f.id === followerId);
+    return follower?.authMethod === 'pat' ? (this.cfg.deriv.patAppId ?? undefined) : undefined;
   }
 
   /**
@@ -59,9 +83,8 @@ export class ContractMonitor {
       contract.accountMode,
       accessToken,
       Number(contract.id),
-      (update) => {
-        void this.onUpdate(user, contract.id, update);
-      }
+      (update) => this.onUpdate(user, contract.id, update).then(() => {}),
+      this.appIdFor(user)
     );
     this.subscriptions.set(key, () => {
       unsubscribe();
@@ -142,8 +165,19 @@ export class ContractMonitor {
       return stored;
     }
 
-    const status = SETTLED_STATUSES.includes(update.status) ? update.status : 'unknown';
+    let status = SETTLED_STATUSES.includes(update.status) ? update.status : 'unknown';
     const profit = update.profit ?? null;
+    // A fast contract can expire (is_expired) before Deriv reports its final
+    // won/lost string, so the first expired update carries a real profit but a
+    // still-`open` status. Freezing that as `unknown` strands the P&L: the
+    // subscription is torn down below, so the true won/lost update never arrives
+    // and performance reporting (which only realises settled statuses) shows the
+    // copy as blank. Derive the outcome from the profit Deriv did report; a zero
+    // or missing profit stays `unknown` rather than guessing.
+    if (status === 'unknown' && update.isExpired && profit !== null && Number.isFinite(profit)) {
+      if (profit > 0) status = 'won';
+      else if (profit < 0) status = 'lost';
+    }
     const settledAt = update.dateSettlement ?? this.now();
 
     const settled: ContractRecord = {
@@ -192,6 +226,17 @@ export class ContractMonitor {
     });
 
     this.subscriptions.get(contract.id)?.();
+
+    // Event-driven commission: apply the copy follower's fee at the authoritative
+    // settlement moment. Idempotent and never throws into the settlement path.
+    if (this.onSettled) {
+      try {
+        await this.onSettled(user, settled);
+      } catch {
+        // A commission failure must never block settlement; it is recomputed on
+        // the next settle or statement read.
+      }
+    }
     return settled;
   }
 
@@ -268,7 +313,8 @@ export class ContractMonitor {
         contract.accountMode,
         accessToken,
         derivId,
-        (u) => finish(u)
+        (u) => finish(u),
+        this.appIdFor(user)
       );
     });
     if (!update) return null;
@@ -328,7 +374,7 @@ export class ContractMonitor {
   ): Promise<ContractRecord | null> {
     let open: ContractUpdate[];
     try {
-      open = await this.broker.getOpenContracts(intent.accountId, intent.accountMode, accessToken);
+      open = await this.broker.getOpenContracts(intent.accountId, intent.accountMode, accessToken, this.appIdFor(user));
     } catch {
       return null;
     }
@@ -367,7 +413,8 @@ export class ContractMonitor {
         intent.contractId!,
         (update) => {
           finish(this.contractFromUpdate(user, intent, update));
-        }
+        },
+        this.appIdFor(user)
       );
     });
   }

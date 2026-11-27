@@ -399,7 +399,7 @@ test('InvalidOfferings: the contract then expires normally and after_purchase ru
     // Deriv settles the contract at expiry, exactly as it would without a sale.
     // The update goes through the monitor's subscription, which is what posts
     // the settlement entry — writing the record directly would bypass it.
-    h.broker.emitContract(Number(contractId), 'won', 0.95);
+     await h.broker.emitContract(Number(contractId), 'won', 0.95);
     await Promise.resolve();
 
     const settled = await tickBotRun(h.deps, h.user, run.runId, 'token', 'tick-3');
@@ -537,7 +537,7 @@ test('lifecycle: InvalidOfferings, expiry, after_purchase, trade_again', async (
     assert.equal(h.store.getContract(h.user.id, first)!.status, 'open', 'still held after the refusal');
 
     // Expiry settles it, and the loop continues exactly as it would have.
-    h.broker.emitContract(Number(first), 'lost', -1);
+     await h.broker.emitContract(Number(first), 'lost', -1);
     await Promise.resolve();
 
     const after = await tickBotRun(h.deps, h.user, run.runId, 'token', 'tick-3');
@@ -635,7 +635,7 @@ test('isolation: a new contract for the same bot starts with a clean refusal sla
     assert.equal(h.store.getBotRun(h.user.id, run.runId)!.sellRefusedFor, Number(first));
 
     // The first contract expires; trade_again opens a second one.
-    h.broker.emitContract(Number(first), 'won', 0.95);
+     await h.broker.emitContract(Number(first), 'won', 0.95);
     await Promise.resolve();
     const next = await tickBotRun(h.deps, h.user, run.runId, 'token', 'tick-3');
     assert.equal(next.verdict, 'entry');
