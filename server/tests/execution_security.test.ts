@@ -147,8 +147,11 @@ test('the Deriv token never appears anywhere in persisted state after a trade', 
     // Settle it too, exercising the settlement path.
     const contract = store.listContracts('u_a')[0];
     broker.emitContract(Number(contract.id), 'won', 0.95);
-    await new Promise((r) => setTimeout(r, 5));
+    // Allow the broker's async settlement callback to fully complete before
+    // tearing down the store, so no store method runs on a closed store.
+    await new Promise((r) => setTimeout(r, 100));
     monitor.close();
+    await new Promise((r) => setTimeout(r, 50));
 
     // Sweep the ENTIRE persisted JSON for the secret.
     const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));
