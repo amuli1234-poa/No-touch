@@ -150,6 +150,19 @@ export function onReconnect(): void {
   void refreshBalances({ force: true });
 }
 
+/**
+ * Whether the Deriv authorization behind the current session has expired.
+ *
+ * Deriv issues no refresh tokens, so once `tokenExpiresAt` is in the past every
+ * balance read returns `disconnected` until the customer re-authenticates. The
+ * server reports `tokenExpiresAt` (epoch ms) on every `/api/balances` response;
+ * a null/unknown value is treated as "not known to be expired" rather than
+ * guessed, so a missing field never fabricates an expiry.
+ */
+export function isDerivTokenExpired(tokenExpiresAt: number | null, now: number = Date.now()): boolean {
+  return typeof tokenExpiresAt === 'number' && tokenExpiresAt > 0 && tokenExpiresAt <= now;
+}
+
 /* ---------------------------- presentation ---------------------------- */
 
 /**
@@ -263,4 +276,24 @@ export function useNowTick(intervalMs = 1000): number {
     return () => clearInterval(id);
   }, [intervalMs]);
   return now;
+}
+
+/**
+ * Bounded background refresh while signed in.
+ *
+ * The shared store otherwise only refreshes on mount, reconnect, account switch
+ * or an explicit click, so a balance can sit stale indefinitely. This polls on a
+ * fixed interval (default 30s, matching the server cache TTL) while `enabled`.
+ * Overlap is already prevented by the store's single in-flight guard, and the
+ * interval is cleared on sign-out, so it can never poll after logout or stack
+ * requests. It is deliberately slow: balances are informational, not a feed.
+ */
+export function useBalanceAutoRefresh(enabled: boolean, intervalMs = 30_000): void {
+  useEffect(() => {
+    if (!enabled) return;
+    const id = setInterval(() => {
+      void refreshBalances();
+    }, intervalMs);
+    return () => clearInterval(id);
+  }, [enabled, intervalMs]);
 }

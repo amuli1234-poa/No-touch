@@ -1,4 +1,35 @@
 @import "tailwindcss";
+@import "./digits/digits.css";
+
+/* Dashboard quote — fades in and out in place (no movement). */
+@keyframes ws-fade {
+  0% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.ws-fade {
+  animation: ws-fade 6s ease-in-out;
+}
+
+/* Vertical sub-navigation — stacks a segmented control's items top-to-bottom. */
+.ws-vsubnav {
+  flex-direction: column !important;
+  align-items: stretch !important;
+  width: 100%;
+}
+.ws-vsubnav > * {
+  width: 100%;
+  justify-content: center;
+}
 
 /* ==========================================================================
    WickSentinel — unified design system.

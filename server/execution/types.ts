@@ -166,31 +166,25 @@ export interface RiskProfileRecord {
 }
 
 /**
- * Conservative defaults, raised for the Trade panel.
+ * Permissive defaults for a demo-only copy-trading deployment.
  *
- * These are the caps a customer starts with; they are still hard limits the
- * risk engine enforces on every purchase, and REAL execution remains behind its
- * own kill switch regardless. The figures support the documented ticket —
- * a $20 stake with a ~$38 payout — and a scanner that watches several markets:
- *
- *  - `maxStake` 25          allows the $20 example with headroom.
- *  - `maxOpenContracts` 10  enough to hold a position per watched market.
- *  - `maxAccountExposure` 200  ten stakes at the cap cannot exceed this.
- *  - `maxExecutionFrequencySeconds` 3  a burst throttle; still not free rein.
- *
- * There is still no martingale: no limit can be raised automatically after a
- * loss, and there is deliberately no stake-escalation field.
+ * REAL execution is disabled in this build, so these caps exist only to stop a
+ * runaway strategy from looping forever — they are set deliberately high so any
+ * imported bot runs and every entry is mirrored to followers without a risk
+ * refusal. They are still enforced on every purchase, and a limit can never be
+ * raised automatically after a loss (there is no martingale-escalation field).
+ * Lower them before any real-money release.
  */
 export const DEFAULT_RISK_PROFILE: Omit<RiskProfileRecord, 'userId' | 'updatedAt'> = {
-  maxStake: 25,
-  maxDailyLoss: 100,
-  maxConsecutiveLosses: 3,
-  maxOpenContracts: 10,
-  maxTradesPerSession: 200,
-  maxAccountExposure: 200,
-  minAvailableBalance: 5,
-  maxExecutionFrequencySeconds: 3,
-  signalFreshnessSeconds: 60
+  maxStake: 100_000,
+  maxDailyLoss: 1_000_000,
+  maxConsecutiveLosses: 100_000,
+  maxOpenContracts: 1_000,
+  maxTradesPerSession: 100_000,
+  maxAccountExposure: 1_000_000,
+  minAvailableBalance: 0,
+  maxExecutionFrequencySeconds: 0,
+  signalFreshnessSeconds: 3_600
 };
 
 /* --------------------------------- signals -------------------------------- */
@@ -265,8 +259,18 @@ export interface TradeIntentRecord {
   timeframe: string;
   /** Exact signal this intent was created from. */
   signalId: string;
-  /** Set when a human approved a manual intent; null for automatic. */
-  approvedBy: 'customer' | null;
+  /**
+   * How this intent was authorised.
+   *
+   *  - `customer` — a human approved a manual intent (carries an approval window).
+   *  - `copy`     — a follower copy of an already-accepted master trade. It is
+   *                 authorised by the master's per-master copy switch and the
+   *                 master's own accepted trade, NOT by the automatic-scanner
+   *                 switch, so it is never blocked as "automatic". It is still
+   *                 subject to the kill switches, ownership, risk and single-use.
+   *  - `null`     — fully automatic (scanner/runner); requires `ALLOW_AUTOMATIC_TRADING`.
+   */
+  approvedBy: 'customer' | 'copy' | null;
   approvedAt: number | null;
   /** Approval expiry for manual mode; an expired approval is not executable. */
   approvalExpiresAt: number | null;

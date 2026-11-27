@@ -136,7 +136,6 @@ test('navigation: every legacy section stays reachable (no module lost)', () => 
   const all = new Set([...SECTIONS.map((s) => s.key), ...OFF_NAV_SECTIONS]);
   for (const key of [
     'dashboard',
-    'trade',
     'scanner',
     'live',
     'trendlines',

@@ -36,8 +36,11 @@ import type {
   CopyTradingConsentRecord,
   CopyTradingControlRecord
 } from '../copyTrading/types.js';
+import type { CommissionEntryRecord } from '../copyTrading/finance.js';
+import type { ContractAdjustmentRecord } from '../copyTrading/adjustments.js';
 import { JsonBackend } from './json_backend.js';
 import { SqliteBackend, sqliteFileExists } from './sqlite_backend.js';
+import { PostgresBackend } from './postgres_backend.js';
 import type { StorageBackend, StoredRecord } from './backend.js';
 
 /**
@@ -61,7 +64,7 @@ export interface DerivAccountRef {
 }
 
 /** Persistence engines the store can run on. `auto` prefers SQLite when present. */
-export type StorageEngine = 'json' | 'sqlite' | 'auto';
+export type StorageEngine = 'json' | 'sqlite' | 'postgres' | 'auto';
 
 export interface StoreOptions {
   /**
@@ -72,6 +75,8 @@ export interface StoreOptions {
   unsafeDisableLock?: boolean;
   /** Which backend to open. Defaults to `auto`. */
   engine?: StorageEngine;
+  /** Postgres connection string. Required when engine is 'postgres'. */
+  connectionString?: string;
   /** Overrides backend selection entirely (used by the migration tooling). */
   backend?: StorageBackend;
 }
@@ -168,6 +173,8 @@ interface Database {
   copyTradingInvitations: Record<string, CopyTradingInvitationRecord>;
   copyTradingConsents: Record<string, CopyTradingConsentRecord>;
   copyTradingControls: Record<string, CopyTradingControlRecord>;
+  commissionEntries: Record<string, CommissionEntryRecord>;
+  contractAdjustments: Record<string, ContractAdjustmentRecord>;
 }
 
 const EMPTY: Database = {
@@ -201,7 +208,9 @@ const EMPTY: Database = {
   copyTradingFollowers: {},
   copyTradingInvitations: {},
   copyTradingConsents: {},
-  copyTradingControls: {}
+  copyTradingControls: {},
+  commissionEntries: {},
+  contractAdjustments: {}
 };
 
 /**
@@ -217,6 +226,12 @@ export function resolveBackend(dataDir: string, options: StoreOptions): StorageB
 
   if (engine === 'json') return new JsonBackend(dataDir, disable);
   if (engine === 'sqlite') return new SqliteBackend(dataDir, disable);
+  if (engine === 'postgres') {
+    const connStr = options.connectionString ?? process.env.DATABASE_URL;
+    if (!connStr) throw new Error('DATABASE_URL is required for postgres engine');
+    return new PostgresBackend(connStr);
+  }
+
 
   return sqliteFileExists(dataDir) ? new SqliteBackend(dataDir, disable) : new JsonBackend(dataDir, disable);
 }
@@ -270,7 +285,9 @@ export class Store {
         copyTradingFollowers: (await this.backend.loadKeyed('copyTradingFollowers')) as unknown as Database['copyTradingFollowers'],
         copyTradingInvitations: (await this.backend.loadKeyed('copyTradingInvitations')) as unknown as Database['copyTradingInvitations'],
         copyTradingConsents: (await this.backend.loadKeyed('copyTradingConsents')) as unknown as Database['copyTradingConsents'],
-        copyTradingControls: (await this.backend.loadKeyed('copyTradingControls')) as unknown as Database['copyTradingControls']
+        copyTradingControls: (await this.backend.loadKeyed('copyTradingControls')) as unknown as Database['copyTradingControls'],
+        commissionEntries: (await this.backend.loadKeyed('commissionEntries')) as unknown as Database['commissionEntries'],
+        contractAdjustments: (await this.backend.loadKeyed('contractAdjustments')) as unknown as Database['contractAdjustments']
       };
       const platformConfig = await this.backend.loadSingleton('platformConfig');
       this.db.platformConfig = { ...EMPTY.platformConfig, ...((platformConfig ?? {}) as Partial<PlatformConfigRecord>) };
@@ -894,6 +911,12 @@ export class Store {
     return c && c.userId === userId ? c : null;
   }
 
+  /** Returns a contract by id regardless of owner (adjustment/reconciliation use). */
+  findContractById(id: string): ContractRecord | null {
+    this.ensureLoaded();
+    return this.db.contracts[id] ?? null;
+  }
+
   listContracts(userId: string): ContractRecord[] {
     this.ensureLoaded();
     return Object.values(this.db.contracts).filter((c) => c.userId === userId);
@@ -964,6 +987,62 @@ export class Store {
   listExecutionAudit(): ExecutionAuditRecord[] {
     this.ensureLoaded();
     return this.db.executionAudit;
+  }
+
+  /**
+   * Clears the trading history for a set of principals — the manager plus their
+   * copy-follower principals — so the performance surfaces start fresh. Deletes
+   * contracts, ledger entries, trade intents, execution attempts and signals.
+   * The append-only execution audit is deliberately left intact as a security
+   * log. Returns the number of records removed per collection.
+   */
+  async clearTradingData(
+    userIds: string[]
+  ): Promise<{ contracts: number; ledger: number; intents: number; attempts: number; signals: number }> {
+    this.ensureLoaded();
+    const counts = { contracts: 0, ledger: 0, intents: 0, attempts: 0, signals: 0 };
+    for (const userId of new Set(userIds)) {
+      for (const r of Object.values(this.db.contracts).filter((x) => x.userId === userId)) {
+        delete this.db.contracts[r.id];
+        await this.backend.deleteKeyed('contracts', r.id);
+        counts.contracts += 1;
+      }
+      for (const r of Object.values(this.db.ledgerEntries).filter((x) => x.userId === userId)) {
+        delete this.db.ledgerEntries[r.id];
+        await this.backend.deleteKeyed('ledgerEntries', r.id);
+        counts.ledger += 1;
+      }
+      for (const r of Object.values(this.db.tradeIntents).filter((x) => x.userId === userId)) {
+        delete this.db.tradeIntents[r.id];
+        await this.backend.deleteKeyed('tradeIntents', r.id);
+        counts.intents += 1;
+      }
+      for (const r of Object.values(this.db.executionAttempts).filter((x) => x.userId === userId)) {
+        delete this.db.executionAttempts[r.id];
+        await this.backend.deleteKeyed('executionAttempts', r.id);
+        counts.attempts += 1;
+      }
+      for (const r of Object.values(this.db.signals).filter((x) => x.userId === userId)) {
+        delete this.db.signals[r.id];
+        await this.backend.deleteKeyed('signals', r.id);
+        counts.signals += 1;
+      }
+    }
+    // Commission records belong to the master's book (ownerUserId) or to a
+    // follower principal; clear both so a reset also resets the fee ledger.
+    for (const r of Object.values(this.db.commissionEntries).filter(
+      (x) => userIds.includes(x.ownerUserId) || userIds.includes(x.principal)
+    )) {
+      delete this.db.commissionEntries[r.id];
+      await this.backend.deleteKeyed('commissionEntries', r.id);
+    }
+    for (const r of Object.values(this.db.contractAdjustments).filter(
+      (x) => userIds.includes(x.ownerUserId) || userIds.includes(x.principal)
+    )) {
+      delete this.db.contractAdjustments[r.id];
+      await this.backend.deleteKeyed('contractAdjustments', r.id);
+    }
+    return counts;
   }
 
   /* ====================================================================== */
@@ -1170,6 +1249,60 @@ export class Store {
     this.ensureLoaded();
     const wanted = new Set(userIds);
     return Object.values(this.db.contracts).filter((c) => wanted.has(c.userId));
+  }
+
+  /* ------------------------- commission ledger -------------------------- */
+
+  /**
+   * Appends one immutable commission record, refusing a duplicate by `dedupeKey`
+   * (per user). Returns false when the record already exists, so a re-run of the
+   * commission engine can never charge the same performance fee twice.
+   */
+  async putCommissionEntry(entry: CommissionEntryRecord): Promise<boolean> {
+    this.ensureLoaded();
+    const existing = Object.values(this.db.commissionEntries).find(
+      (e) => e.ownerUserId === entry.ownerUserId && e.dedupeKey === entry.dedupeKey
+    );
+    if (existing) return false;
+    this.db.commissionEntries[entry.id] = entry;
+    await this.backend.putKeyed('commissionEntries', entry.id, entry as unknown as StoredRecord);
+    return true;
+  }
+
+  /** Commission records for one master's book (every follower). */
+  listCommissionEntries(ownerUserId: string): CommissionEntryRecord[] {
+    this.ensureLoaded();
+    return Object.values(this.db.commissionEntries)
+      .filter((e) => e.ownerUserId === ownerUserId)
+      .sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  /** Every commission record across all masters (admin/reporting). */
+  listAllCommissionEntries(): CommissionEntryRecord[] {
+    this.ensureLoaded();
+    return Object.values(this.db.commissionEntries).sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  /* ------------------------ settlement adjustments ------------------------ */
+
+  /** Appends an immutable adjustment, refusing a duplicate by `dedupeKey`. */
+  async putContractAdjustment(entry: ContractAdjustmentRecord): Promise<boolean> {
+    this.ensureLoaded();
+    const existing = Object.values(this.db.contractAdjustments).find(
+      (e) => e.ownerUserId === entry.ownerUserId && e.dedupeKey === entry.dedupeKey
+    );
+    if (existing) return false;
+    this.db.contractAdjustments[entry.id] = entry;
+    await this.backend.putKeyed('contractAdjustments', entry.id, entry as unknown as StoredRecord);
+    return true;
+  }
+
+  /** Adjustments for one contract, oldest first. */
+  listContractAdjustments(contractId: string): ContractAdjustmentRecord[] {
+    this.ensureLoaded();
+    return Object.values(this.db.contractAdjustments)
+      .filter((a) => a.contractId === contractId)
+      .sort((a, b) => a.createdAt - b.createdAt);
   }
 
   /* ====================================================================== */

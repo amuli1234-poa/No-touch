@@ -457,7 +457,7 @@ export function TrainingView() {
             subtitle="Out-of-sample is the honest forward test: data the models never learned from"
             icon={<TrendingUp className="w-4 h-4" />}
             right={
-              <div className="flex gap-1">
+              <div className="ws-vsubnav flex gap-1">
                 {(['outOfSample', 'inSample', 'overall'] as SampleTab[]).map((tab) => (
                   <button
                     key={tab}
@@ -551,7 +551,7 @@ export function TrainingView() {
             subtitle="Never blended across models, markets or timeframes — inspect each segment honestly"
             icon={<BarChart3 className="w-4 h-4" />}
             right={
-              <div className="flex gap-1">
+              <div className="ws-vsubnav flex gap-1">
                 {(['model', 'market', 'timeframe'] as SegmentTab[]).map((tab) => (
                   <button
                     key={tab}

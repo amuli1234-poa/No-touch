@@ -130,12 +130,14 @@ export async function createCopyInvitation(): Promise<{ url: string; expiresAt: 
   return await res.json() as { url: string; expiresAt: number };
 }
 
-export async function addCopyFollower(token: string): Promise<CopyFollower> {
+export async function addCopyFollower(token: string, consent = false): Promise<CopyFollower> {
   const res = await fetch('/api/copy-trading/followers', {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token })
+    // Consent is an explicit, separate record the server requires; the manager
+    // attests the client agreed to be copied when they tick the box.
+    body: JSON.stringify({ token, consent })
   });
   if (!res.ok) throw await readError(res);
   return (await res.json()).follower as CopyFollower;
@@ -171,4 +173,21 @@ export async function fetchCopyPerformance(days = 30): Promise<CopyPerformance> 
   const res = await fetch(`/api/copy-trading/performance?days=${days}`, { credentials: 'same-origin' });
   if (!res.ok) throw await readError(res);
   return await res.json() as CopyPerformance;
+}
+
+export interface CopyResetResult {
+  ok: boolean;
+  cleared: { contracts: number; ledger: number; intents: number; attempts: number; signals: number };
+}
+
+/** Clears the manager's and their clients' trading history so performance resets. */
+export async function resetCopyPerformance(): Promise<CopyResetResult> {
+  const res = await fetch('/api/copy-trading/reset', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}'
+  });
+  if (!res.ok) throw await readError(res);
+  return await res.json() as CopyResetResult;
 }

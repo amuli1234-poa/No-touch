@@ -166,7 +166,7 @@ export function VolatilityScannerView({
 
         <div className="flex flex-wrap items-center gap-2">
           <div
-            className="inline-flex flex-wrap items-center gap-0.5 p-0.5 bg-elevated border border-line rounded-lg"
+            className="ws-vsubnav inline-flex flex-wrap items-center gap-0.5 p-0.5 bg-elevated border border-line rounded-lg"
             role="group"
             aria-label="Scanner timeframe"
           >
@@ -188,7 +188,7 @@ export function VolatilityScannerView({
             })}
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="ws-vsubnav flex items-center gap-1.5">
             <ToggleChip
               label="All eligible markets"
               active
@@ -546,7 +546,7 @@ export function VolatilityScannerView({
             <Gauge className="w-4 h-4 text-accent" aria-hidden="true" />
             <h3 className="text-[13px] font-bold text-ink">Live instrument monitor</h3>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="ws-vsubnav flex items-center gap-1.5">
             <ToggleChip
               label="All"
               active={familyFilter === 'ALL'}

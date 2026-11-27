@@ -672,7 +672,7 @@ test('17. Copy Trading accepts a PAT, validates it with the PAT App ID, and stor
     const added = await fetch(`${app.base}/api/copy-trading/followers`, {
       method: 'POST',
       headers: { Cookie: managerCookies.header(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: 'pat_client_token_123456789' })
+      body: JSON.stringify({ token: 'pat_client_token_123456789', consent: true })
     });
     assert.equal(added.status, 201);
     assert.equal(deriv.lastAccountsAppId, 'PAT_TEST_APP_ID');
@@ -683,6 +683,10 @@ test('17. Copy Trading accepts a PAT, validates it with the PAT App ID, and stor
     const stored = app.store.listCopyTradingFollowers(managerId)[0];
     assert.notEqual(stored.tokenSealed, 'pat_client_token_123456789');
     assert.deepEqual(stored.accounts.map((account) => account.type), ['demo']);
+    // Consent is recorded separately from the credential (readiness relies on it).
+    const consent = app.store.getCopyTradingConsent(stored.id);
+    assert.ok(consent, 'PAT onboarding must record a consent record');
+    assert.equal(consent!.method, 'pat');
 
     const removed = await fetch(`${app.base}/api/copy-trading/followers/${stored.id}`, {
       method: 'DELETE', headers: { Cookie: managerCookies.header() }

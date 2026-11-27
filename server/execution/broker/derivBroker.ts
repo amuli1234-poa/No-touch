@@ -44,6 +44,12 @@ export type DerivSocketFactory = (url: string) => MinimalWebSocket;
 export interface DerivBrokerOptions {
   wsFactory?: DerivSocketFactory;
   timeoutMs?: number;
+  /**
+   * Reuse one persistent, account-bound socket per account (with `req_id`
+   * correlation) instead of opening a fresh OTP + WSS connection per request.
+   * Default `false` preserves the original one-request-socket behaviour.
+   */
+  reuseSockets?: boolean;
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -93,22 +99,32 @@ export class DerivBroker implements BrokerAdapter {
   private readonly timeoutMs: number;
   private readonly sockets = new Set<MinimalWebSocket>();
   private readonly proposals = new Map<string, { socket: MinimalWebSocket; timer: ReturnType<typeof setTimeout> }>();
+  private readonly reuseSockets: boolean;
+  // accountId -> persistent socket + connection state.
+  private readonly accountSockets = new Map<string, { socket: MinimalWebSocket; open: boolean; alive: boolean }>();
+  private nextReqId = 1;
 
   constructor(cfg: ServerConfig, options: DerivBrokerOptions = {}) {
     this.cfg = cfg;
     this.wsFactory =
       options.wsFactory ?? ((url: string) => new (globalThis as any).WebSocket(url) as MinimalWebSocket);
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.reuseSockets = options.reuseSockets ?? false;
   }
 
   /** Requests the one-time, account-bound WebSocket URL. Scope: trade. */
-  private async requestSocketUrl(accessToken: string, accountId: string): Promise<string> {
+  private async requestSocketUrl(accessToken: string, accountId: string, appId?: string): Promise<string> {
     const url = `${this.cfg.deriv.apiBaseUrl}/trading/v1/options/accounts/${encodeURIComponent(accountId)}/otp`;
     let res: Response;
     try {
       res = await fetch(url, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' }
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: 'application/json',
+          // PAT tokens are rejected without this; OAuth tokens ignore it.
+          ...(appId ? { 'Deriv-App-ID': appId } : {})
+        }
       });
     } catch {
       throw new BrokerError('otp_failed', 'Could not reach Deriv to open a trading session.');
@@ -135,9 +151,12 @@ export class DerivBroker implements BrokerAdapter {
     accessToken: string,
     accountId: string,
     message: Record<string, unknown>,
-    opts: { uncertainOnTimeout: boolean; expect: string; retainSocket?: boolean; socket?: MinimalWebSocket }
+    opts: { uncertainOnTimeout: boolean; expect: string; retainSocket?: boolean; socket?: MinimalWebSocket; appId?: string }
   ): Promise<{ response: T; socket: MinimalWebSocket | null }> {
-    const socketUrl = opts.socket ? null : await this.requestSocketUrl(accessToken, accountId);
+    if (this.reuseSockets && !opts.socket) {
+      return this.requestPersistent<T>(accessToken, accountId, message, opts);
+    }
+    const socketUrl = opts.socket ? null : await this.requestSocketUrl(accessToken, accountId, opts.appId);
     return await new Promise<{ response: T; socket: MinimalWebSocket | null }>((resolve, reject) => {
       let settled = false;
       let socket: MinimalWebSocket | null = opts.socket ?? null;
@@ -240,6 +259,142 @@ export class DerivBroker implements BrokerAdapter {
     });
   }
 
+  /**
+   * Persistent-socket variant of `request`. Reuses one account-bound socket and
+   * correlates responses by a unique `req_id` (Deriv echoes it), so concurrent
+   * requests on the shared connection never cross-talk. The socket is only
+   * replaced when it is missing or has dropped.
+   */
+  private async requestPersistent<T = any>(
+    accessToken: string,
+    accountId: string,
+    message: Record<string, unknown>,
+    opts: { uncertainOnTimeout: boolean; expect: string; appId?: string }
+  ): Promise<{ response: T; socket: MinimalWebSocket | null }> {
+    const reqId = this.nextReqId++;
+    const payload = { ...message, req_id: reqId };
+
+    let entry = this.accountSockets.get(accountId);
+    if (entry && entry.alive) {
+      // Reuse the live (connecting or already open) account-bound socket.
+    } else {
+      if (entry) {
+        try {
+          entry.socket.close();
+        } catch {
+          /* already closed */
+        }
+        this.sockets.delete(entry.socket);
+        this.accountSockets.delete(accountId);
+      }
+      const socketUrl = await this.requestSocketUrl(accessToken, accountId, opts.appId);
+      let socket: MinimalWebSocket;
+      try {
+        socket = this.wsFactory(socketUrl);
+        this.sockets.add(socket);
+      } catch {
+        throw new BrokerError('socket_failed', 'Could not open the trading socket.');
+      }
+      entry = { socket, open: false, alive: true };
+      this.accountSockets.set(accountId, entry);
+    }
+    const socket = entry.socket;
+    const accountEntry = entry;
+
+    // A dropped socket is replaced on the next request for this account.
+    const markDead = () => {
+      accountEntry.alive = false;
+      if (this.accountSockets.get(accountId)?.socket === socket) {
+        this.accountSockets.delete(accountId);
+      }
+      this.sockets.delete(socket);
+    };
+    socket.addEventListener('close', () => markDead());
+    socket.addEventListener('error', () => markDead());
+
+    return await new Promise<{ response: T; socket: MinimalWebSocket | null }>((resolve, reject) => {
+      let settled = false;
+
+      const onOpen = () => {
+        accountEntry.open = true;
+        try {
+          socket.send(JSON.stringify(payload));
+        } catch {
+          finish(() => reject(new BrokerError('socket_failed', 'Could not send the trading request.')));
+        }
+      };
+      const onMessage = (event: any) => {
+        let msg: any;
+        try {
+          msg = typeof event?.data === 'string' ? JSON.parse(event.data) : null;
+        } catch {
+          return;
+        }
+        if (!msg) return;
+        if (msg.req_id !== undefined && msg.req_id !== null && msg.req_id !== reqId) return;
+        if (msg.error) {
+          const derivCode = msg.error.code || null;
+          finish(() =>
+            reject(
+              new BrokerError(
+                classifyRejection(derivCode, opts.expect),
+                msg.error.message || 'Deriv rejected the request.',
+                false,
+                derivCode
+              )
+            )
+          );
+          return;
+        }
+        if (msg.msg_type === opts.expect) {
+          finish(() => resolve({ response: msg as T, socket }));
+        }
+      };
+      const onError = () => {
+        finish(() =>
+          reject(new BrokerError('socket_failed', 'The trading socket failed.', opts.uncertainOnTimeout))
+        );
+      };
+      const onClose = () => {
+        markDead();
+        finish(() =>
+          reject(
+            new BrokerError('socket_failed', 'The trading socket closed before a response.', opts.uncertainOnTimeout)
+          )
+        );
+      };
+      const detach = () => {
+        socket.removeEventListener?.('open', onOpen);
+        socket.removeEventListener?.('message', onMessage);
+        socket.removeEventListener?.('error', onError);
+        socket.removeEventListener?.('close', onClose);
+      };
+      const finish = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        detach();
+        fn();
+      };
+
+      const timer = setTimeout(() => {
+        finish(() =>
+          reject(
+            new BrokerError('timeout', `Timed out waiting for Deriv to answer ${opts.expect}.`, opts.uncertainOnTimeout)
+          )
+        );
+      }, this.timeoutMs);
+      (timer as any)?.unref?.();
+
+      socket.addEventListener('message', onMessage);
+      if (accountEntry.open) {
+        onOpen();
+      } else {
+        socket.addEventListener('open', onOpen);
+      }
+    });
+  }
+
   async requestProposal(req: ProposalRequest): Promise<ProposalResult> {
     const { response: msg, socket } = await this.request<any>(
       req.accessToken,
@@ -249,7 +404,8 @@ export class DerivBroker implements BrokerAdapter {
         // A proposal never moves money, so a timeout is a clean failure.
         uncertainOnTimeout: false,
         expect: 'proposal',
-        retainSocket: req.retainForBuy
+        retainSocket: this.reuseSockets ? false : req.retainForBuy,
+        appId: req.appId
       }
     );
     const p = msg.proposal ?? {};
@@ -259,7 +415,7 @@ export class DerivBroker implements BrokerAdapter {
       if (socket) this.closeSocket(socket);
       throw new BrokerError('rejected', 'Deriv returned a proposal without a usable price.');
     }
-    if (req.retainForBuy && socket) {
+    if (!this.reuseSockets && req.retainForBuy && socket) {
       const key = this.proposalKey(req.accountId, proposalId);
       const existing = this.proposals.get(key);
       if (existing) {
@@ -282,6 +438,32 @@ export class DerivBroker implements BrokerAdapter {
   }
 
   async buy(req: BuyRequest): Promise<BuyResult> {
+    if (this.reuseSockets) {
+      // Reuse the account's persistent connection; the streaming proposal id is
+      // connection-scoped. A timeout is UNKNOWN (never blindly retried).
+      const { response: msg } = await this.request<any>(
+        req.accessToken,
+        req.accountId,
+        { buy: req.proposalId, price: req.price, req_id: req.reqId },
+        { uncertainOnTimeout: true, expect: 'buy', appId: req.appId }
+      );
+      const b = msg.buy ?? {};
+      const contractId = toNumber(b.contract_id);
+      if (contractId === null) {
+        throw new BrokerError('rejected', 'Deriv confirmed a purchase without a contract id.');
+      }
+      return {
+        contractId,
+        buyPrice: toNumber(b.buy_price) ?? req.price,
+        balanceAfter: toNumber(b.balance_after) ?? 0,
+        payout: toNumber(b.payout) ?? 0,
+        purchaseTime: toNumber(b.purchase_time) ?? 0,
+        startTime: toNumber(b.start_time) ?? 0,
+        transactionId: toNumber(b.transaction_id) ?? 0,
+        longcode: String(b.longcode ?? ''),
+        shortcode: String(b.shortcode ?? '')
+      };
+    }
     const key = this.proposalKey(req.accountId, req.proposalId);
     const pending = this.proposals.get(key);
     if (!pending) {
@@ -295,7 +477,7 @@ export class DerivBroker implements BrokerAdapter {
       { buy: req.proposalId, price: req.price, req_id: req.reqId },
       // Reuse the proposal's connection: its streaming id is connection-scoped.
       // The buy may have reached Deriv, so a timeout is an UNKNOWN outcome.
-      { uncertainOnTimeout: true, expect: 'buy', socket: pending.socket }
+      { uncertainOnTimeout: true, expect: 'buy', socket: pending.socket, appId: req.appId }
     );
     const b = msg.buy ?? {};
     const contractId = toNumber(b.contract_id);
@@ -323,7 +505,8 @@ export class DerivBroker implements BrokerAdapter {
       {
         // A sell may have reached Deriv before the response was lost.
         uncertainOnTimeout: true,
-        expect: 'sell'
+        expect: 'sell',
+        appId: req.appId
       }
     );
     const sale = msg.sell ?? {};
@@ -352,7 +535,8 @@ export class DerivBroker implements BrokerAdapter {
     _accountMode: AccountMode,
     accessToken: string,
     contractId: number,
-    onUpdate: (u: ContractUpdate) => void
+    onUpdate: (u: ContractUpdate) => void,
+    appId?: string
   ): () => void {
     let closed = false;
     let socket: MinimalWebSocket | null = null;
@@ -362,7 +546,7 @@ export class DerivBroker implements BrokerAdapter {
       if (closed) return;
       let socketUrl: string;
       try {
-        socketUrl = await this.requestSocketUrl(accessToken, accountId);
+        socketUrl = await this.requestSocketUrl(accessToken, accountId, appId);
       } catch {
         scheduleReconnect();
         return;
@@ -432,22 +616,56 @@ export class DerivBroker implements BrokerAdapter {
   async getOpenContracts(
     accountId: string,
     _accountMode: AccountMode,
-    accessToken: string
+    accessToken: string,
+    appId?: string
   ): Promise<ContractUpdate[]> {
     const { response: msg } = await this.request<any>(
       accessToken,
       accountId,
       { portfolio: 1, req_id: 1 },
-      { uncertainOnTimeout: false, expect: 'portfolio' }
+      { uncertainOnTimeout: false, expect: 'portfolio', appId }
     );
     const contracts = Array.isArray(msg.portfolio?.contracts) ? msg.portfolio.contracts : [];
     return contracts.map((c: any) => mapContract(c));
   }
 
-  async getBalance(accountId: string, _accountMode: AccountMode, accessToken: string): Promise<number> {
+  /**
+   * One-shot `proposal_open_contract` read of a single contract by id.
+   *
+   * Returns the contract whether it is still open or has just settled, so a
+   * copy-on-buy report for a very short (tick) contract can still be verified
+   * after it expires. A missing contract — or any failure to read it — resolves
+   * to null (fail closed): the caller must not mirror a trade it cannot prove
+   * the master placed.
+   */
+  async getContract(
+    accountId: string,
+    _accountMode: AccountMode,
+    accessToken: string,
+    contractId: number,
+    appId?: string
+  ): Promise<ContractUpdate | null> {
+    if (!Number.isSafeInteger(contractId) || contractId <= 0) return null;
+    try {
+      const { response: msg } = await this.request<any>(
+        accessToken,
+        accountId,
+        { proposal_open_contract: 1, contract_id: contractId, req_id: 1 },
+        { uncertainOnTimeout: false, expect: 'proposal_open_contract', appId }
+      );
+      const poc = msg.proposal_open_contract;
+      if (!poc) return null;
+      return mapContract(poc);
+    } catch {
+      return null;
+    }
+  }
+
+  async getBalance(accountId: string, _accountMode: AccountMode, accessToken: string, appId?: string): Promise<number> {
     const { response: msg } = await this.request<any>(accessToken, accountId, { balance: 1, req_id: 1 }, {
       uncertainOnTimeout: false,
-      expect: 'balance'
+      expect: 'balance',
+      appId
     });
     const body = msg.balance && typeof msg.balance === 'object' ? msg.balance : msg;
     const balance = toNumber(body.balance);
@@ -468,6 +686,7 @@ export class DerivBroker implements BrokerAdapter {
       }
     }
     this.sockets.clear();
+    this.accountSockets.clear();
   }
 
   private proposalKey(accountId: string, proposalId: string): string {

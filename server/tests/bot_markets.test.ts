@@ -504,13 +504,26 @@ test('digits adapter: refuses a prediction that can never win', () => {
   );
 });
 
-test('digits adapter: refuses a missing or non-integer digit', () => {
+test('digits adapter: Even/Odd need no prediction and are priced with no barrier', () => {
+  for (const type of ['DIGITEVEN', 'DIGITODD'] as const) {
+    const payload = DIGITS_ADAPTER.buildProposal({
+      ...BASE,
+      directionContractType: type,
+      parameters: { ...PARAMS, digit: null }
+    });
+    assert.equal(payload.contract_type, type);
+    assert.equal(payload.duration_unit, 't');
+    assert.equal('barrier' in payload, false);
+  }
+});
+
+test('digits adapter: refuses a missing or non-integer digit on prediction types', () => {
   assert.throws(
-    () => DIGITS_ADAPTER.buildProposal({ ...BASE, directionContractType: 'DIGITEVEN', parameters: { ...PARAMS, digit: null } }),
+    () => DIGITS_ADAPTER.buildProposal({ ...BASE, directionContractType: 'DIGITOVER', parameters: { ...PARAMS, digit: null } }),
     /prediction from 0 to 9/
   );
   assert.throws(
-    () => DIGITS_ADAPTER.buildProposal({ ...BASE, directionContractType: 'DIGITEVEN', parameters: { ...PARAMS, digit: 4.5 } }),
+    () => DIGITS_ADAPTER.buildProposal({ ...BASE, directionContractType: 'DIGITDIFF', parameters: { ...PARAMS, digit: 4.5 } }),
     /prediction from 0 to 9/
   );
 });

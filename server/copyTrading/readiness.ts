@@ -1,5 +1,7 @@
 import type { Store } from '../store/store.js';
 import type { ServerConfig } from '../config.js';
+import type { ExecutionFlags } from '../config/flags.js';
+import { executionPermitted } from '../config/flags.js';
 import { open } from '../lib/crypto.js';
 import { redact } from '../execution/audit.js';
 import { isHeld, isTradable } from './engine.js';
@@ -35,7 +37,7 @@ export type CopyReadinessState =
   | 'DEGRADED'
   | 'UNKNOWN';
 
-export type ReadinessCheckKey = 'connection' | 'authorization' | 'broker' | 'reconciliation';
+export type ReadinessCheckKey = 'connection' | 'authorization' | 'broker' | 'reconciliation' | 'switches';
 
 /**
  * Which half of the picture a check belongs to.
@@ -142,6 +144,14 @@ export interface CopyReadiness {
 export interface ReadinessDeps {
   store: Store;
   cfg: ServerConfig;
+  /**
+   * The server-side execution kill switches. When supplied, readiness reports a
+   * `switches` execution check so it can never say READY while the gateway would
+   * reject every copy (e.g. DEMO execution disabled). When absent (older callers,
+   * tests) the check is omitted rather than guessed, so the projection is never
+   * wrong about a switch it cannot see.
+   */
+  flags?: ExecutionFlags;
   now?: () => number;
 }
 
@@ -429,6 +439,30 @@ function compute(deps: ReadinessDeps, ownerUserId: string): CopyReadiness {
           detail: 'No intent in the ledger is awaiting reconciliation.'
         }
   ];
+
+  // Execution kill switches. A copy is a DEMO trade, so it needs the master
+  // switch AND the DEMO switch; without them the gateway rejects every copy and
+  // a READY projection would be a lie. Only evaluated when the caller supplies
+  // the flags — an absent flag set is reported as unknown, never as "ok", and
+  // (being neither 'fail' nor counted) never degrades the state on its own.
+  if (deps.flags) {
+    const demo = executionPermitted(deps.flags, 'demo');
+    health.push(
+      demo.permitted
+        ? {
+            key: 'switches',
+            scope: 'execution',
+            status: 'ok',
+            detail: 'Execution and DEMO switches are on, so the gateway will accept a copy.'
+          }
+        : {
+            key: 'switches',
+            scope: 'execution',
+            status: 'fail',
+            detail: `The gateway will reject every copy: ${(demo.reason ?? 'execution_disabled').replace(/_/g, ' ')}. Enable the execution kill switches to allow copying.`
+          }
+    );
+  }
 
   const failing = health.filter((check) => check.status === 'fail');
   const failingFollower = failing.filter((c) => c.scope === 'follower').map((c) => c.key);

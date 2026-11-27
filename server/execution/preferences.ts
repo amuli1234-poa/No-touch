@@ -29,12 +29,12 @@ export const MIN_DURATION_MINUTES = 5;
 export const MAX_DURATION_MINUTES = 300;
 
 /**
- * Multipliers are temporarily disabled. Rise/Fall is the only tradeable family
- * while this is false: the preferences normaliser refuses to select Multipliers
- * and coerces any stored one back to Rise/Fall. Flip to true to re-enable; the
- * adapter and contract-family plumbing are intentionally left intact.
+ * Multipliers are enabled. Rise/Fall and Multipliers are both selectable; the
+ * adapter and contract-family plumbing enforce the per-family rules (a positive
+ * multiplier, no fixed duration, optional limit order). Set to false to hide and
+ * refuse Multipliers again.
  */
-export const MULTIPLIERS_ENABLED = false;
+export const MULTIPLIERS_ENABLED = true;
 
 const DURATION_UNITS = ['s', 'm', 'h', 'd', 't'] as const;
 export type DurationUnit = (typeof DURATION_UNITS)[number];

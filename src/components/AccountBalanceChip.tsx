@@ -3,6 +3,7 @@ import { AlertTriangle, ChevronDown, Loader2, LogOut, RefreshCw, Wallet } from '
 import {
   BALANCE_STATE_LABEL,
   formatMoney,
+  isDerivTokenExpired,
   lastUpdatedLabel,
   refreshBalances,
   selectAccount,
@@ -90,9 +91,10 @@ function AccountRow({
 }
 
 export function AccountBalanceChip() {
-  const { status, accounts, selectedAccountId, error } = useBalances();
+  const { status, accounts, selectedAccountId, tokenExpiresAt, error } = useBalances();
   const auth = useAuth();
   const now = useNowTick(1000);
+  const tokenExpired = isDerivTokenExpired(tokenExpiresAt, now);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
@@ -171,7 +173,11 @@ export function AccountBalanceChip() {
         aria-haspopup="menu"
         aria-expanded={open}
         className={triggerClass}
-        title={`${selected.mode.toUpperCase()} account ${selected.accountId}`}
+        title={
+          tokenExpired
+            ? `${selected.mode.toUpperCase()} account ${selected.accountId} — Deriv authorization expired, reconnect to refresh`
+            : `${selected.mode.toUpperCase()} account ${selected.accountId}`
+        }
       >
         <ModePill mode={selected.mode} />
         <span className="font-mono text-[12.5px] font-bold tabular-nums text-ink">
@@ -182,17 +188,6 @@ export function AccountBalanceChip() {
         </span>
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATE_DOT[selected.state]}`} />
         <ChevronDown className="w-3.5 h-3.5 text-faint" aria-hidden="true" />
-      </button>
-
-      <button
-        type="button"
-        onClick={() => void handleRefresh()}
-        disabled={busy}
-        aria-label="Refresh balance"
-        title="Refresh balance"
-        className="hidden sm:inline-flex items-center justify-center w-9 h-9 rounded-lg bg-elevated border border-line text-muted hover:text-ink hover:border-accent/50 transition-colors disabled:opacity-60 cursor-pointer"
-      >
-        <RefreshCw className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} aria-hidden="true" />
       </button>
 
       {open && (
@@ -222,6 +217,29 @@ export function AccountBalanceChip() {
               Refresh
             </button>
           </div>
+
+          {tokenExpired && (
+            <div className="flex items-start gap-2 px-3.5 py-2.5 border-b border-line-soft bg-warn/10">
+              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-warn" aria-hidden="true" />
+              <div className="min-w-0">
+                <div className="text-[12px] font-semibold text-warn">Deriv authorization expired</div>
+                <div className="mt-0.5 text-[11px] leading-relaxed text-faint">
+                  Balances cannot be read until you reconnect. Deriv tokens last about 24 hours and
+                  cannot be refreshed.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    navigate('/login');
+                  }}
+                  className="mt-1.5 text-[11.5px] font-semibold text-warn hover:underline cursor-pointer"
+                >
+                  Reconnect Deriv →
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="max-h-72 overflow-y-auto py-1">
             {accounts.map((account) => (

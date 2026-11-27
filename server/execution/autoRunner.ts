@@ -36,6 +36,7 @@ export type AutoRunOutcome =
   | 'skipped_in_flight'
   | 'skipped_real'
   | 'skipped_disabled'
+  | 'skipped_daily_limit'
   | 'rejected';
 
 export interface AutoRunResult {
@@ -46,6 +47,29 @@ export interface AutoRunResult {
 
 /** Risk reasons that mean "stop automatic execution entirely". */
 const TERMINAL_RISK_REASONS = new Set(['daily_loss', 'consecutive_losses', 'auto_stopped']);
+
+/** Maximum automatic trades per account per UTC day. */
+export const DAILY_TRADE_LIMIT = 24;
+
+/** UTC midnight for the given timestamp (same logic as the risk engine). */
+function utcDayStart(now: number): number {
+  return new Date(now).setUTCHours(0, 0, 0, 0);
+}
+
+/**
+ * Counts the trade intents for an account created since UTC midnight.
+ * Used to enforce the 24-trade daily cap. Counts ALL intents (manual, auto,
+ * copy) for the account, so the cap is per-account regardless of source.
+ *
+ * `userId` is the principal that owns the intents (the master's user id, or
+ * `copy_follower_<id>` for a follower); `accountId` filters to one account.
+ */
+export function countTradesToday(store: Store, userId: string, accountId: string, now: number): number {
+  const dayStart = utcDayStart(now);
+  return store
+    .listTradeIntents(userId)
+    .filter((i) => i.accountId === accountId && i.createdAt >= dayStart).length;
+}
 
 export interface AutoRunnerDeps {
   store: Store;
@@ -141,6 +165,7 @@ export class AutoExecutionRunner {
    * by a single refused signal.
    */
   async runForUser(user: UserRecord, signal: SignalRecord, accessToken: string | null): Promise<AutoRunResult> {
+    const now = this.now();
     const prefs = this.store.getExecutionPreferences(user.id);
 
     if (!prefs) {
@@ -161,6 +186,15 @@ export class AutoExecutionRunner {
     }
     if (account.type !== 'demo') {
       return this.record(user, signal, 'skipped_real', 'automatic execution is DEMO only');
+    }
+
+    // Daily trade cap: at most 24 automatic trades per account per UTC day.
+    // When the cap is reached, automatic trading stops for the day. It resumes
+    // automatically at the next UTC midnight when the counter resets — no
+    // signals are queued.
+    const todayCount = countTradesToday(this.store, user.id, signal.accountId, now);
+    if (todayCount >= DAILY_TRADE_LIMIT) {
+      return this.record(user, signal, 'skipped_daily_limit', `daily_limit_reached (${todayCount}/${DAILY_TRADE_LIMIT})`);
     }
 
     if (this.inFlight.has(signal.accountId)) {

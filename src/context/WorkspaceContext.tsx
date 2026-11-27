@@ -60,7 +60,10 @@ export type NavSection =
   | 'freebots'
   | 'premiumbots'
   | 'copytrading'
-  | 'aiintelligence';
+  | 'aiintelligence'
+  | 'digits-manual-trader'
+  | 'bulk-trader'
+  | 'automated-trader';
 
 export interface WorkspaceValue {
   // Market / connection

@@ -8,6 +8,64 @@ import { BEFORE_PURCHASE } from './state/constants';
 let delayIndex = 0;
 let purchase_reference;
 
+const PREDICTION_DIRECTIONS = {
+    MULTUP: 'RISE',
+    MULTDOWN: 'FALL',
+    CALL: 'RISE',
+    PUT: 'FALL',
+};
+
+const contractFamilyFor = type => {
+    if (['MULTUP', 'MULTDOWN'].includes(type)) return 'multipliers';
+    if (type.startsWith('DIGIT')) return 'digits';
+    if (['ONETOUCH', 'NOTOUCH'].includes(type)) return 'touch_no_touch';
+    if (type === 'ACCU') return 'accumulators';
+    return 'rise_fall';
+};
+
+// Best-effort: tell WickSentinel about a buy it did not open so it can mirror the
+// trade to connected copy-trading followers. The bot's own trade is unaffected;
+// any failure is swallowed so a copy problem can never interrupt the bot.
+const reportCopyOnBuy = (contract_type, trade_option, buy, accountId) => {
+    try {
+        const prediction = trade_option.prediction;
+        const payload = {
+            accountId,
+            symbol: trade_option.symbol,
+            contractType: contract_type,
+            contractFamily: contractFamilyFor(contract_type),
+            direction: PREDICTION_DIRECTIONS[contract_type] || 'NONE',
+            duration: trade_option.duration,
+            durationUnit: trade_option.duration_unit,
+            stake: trade_option.amount,
+            basis: trade_option.basis,
+            currency: trade_option.currency,
+            masterContractId: buy.contract_id,
+            ...(trade_option.multiplier !== undefined ? { multiplier: trade_option.multiplier } : {}),
+            ...(prediction !== undefined ? { digit: prediction, barrier: String(prediction) } : {}),
+        };
+        const send = () =>
+            fetch('/api/copy-trading/mirror-on-buy', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+        send()
+            .then(response => {
+                // Deriv's portfolio can lag a beat after a buy; retry once.
+                if (response.status === 409) {
+                    setTimeout(() => {
+                        send().catch(() => {});
+                    }, 1500);
+                }
+            })
+            .catch(() => {});
+    } catch (e) {
+        // never let copy reporting break the bot
+    }
+};
+
 export default Engine =>
     class Purchase extends Engine {
         purchase(contract_type) {
@@ -28,6 +86,8 @@ export default Engine =>
 
                 this.contractId = buy.contract_id;
                 this.store.dispatch(purchaseSuccessful());
+
+                reportCopyOnBuy(contract_type, this.tradeOptions, buy, this.accountInfo.loginid);
 
                 if (this.is_proposal_subscription_required) {
                     this.renewProposalsOnPurchase();

@@ -72,18 +72,19 @@ test('stake, duration and mode round-trip', () => {
   assert.equal(result.value.parameters.duration, 45);
 });
 
-test('Multipliers are disabled: selecting them is refused', () => {
+test('Multipliers are enabled: selecting them is accepted', () => {
   const result = normalisePreferences({ contractFamily: 'multipliers' }, existing(), USER);
-  assert.equal(result.ok, false);
-  if (!result.ok) assert.equal(result.error.code, 'contract_family_disabled');
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.value.contractFamily, 'multipliers');
 });
 
-test('a stored Multipliers preference is coerced back to Rise/Fall', () => {
+test('a stored Multipliers preference is preserved when enabled', () => {
   const stored = { ...existing(), contractFamily: 'multipliers' as const };
   const result = normalisePreferences({}, stored, USER);
   assert.equal(result.ok, true);
   if (!result.ok) return;
-  assert.equal(result.value.contractFamily, 'rise_fall');
+  assert.equal(result.value.contractFamily, 'multipliers');
 });
 
 test('a duration outside 5–300 minutes is refused', () => {

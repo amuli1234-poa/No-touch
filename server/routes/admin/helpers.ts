@@ -5,6 +5,7 @@ import type { AdminAuthedRequest } from '../../lib/adminSession.js';
 import { writeAudit, type AuditInput } from '../../services/admin/audit.js';
 import type { Telemetry } from '../../services/admin/telemetry.js';
 import type { BalanceService } from '../../services/balance.js';
+import type { ExecutionFlags } from '../../config/flags.js';
 
 /** Shared context handed to every admin route module. */
 export interface AdminRouteContext {
@@ -17,6 +18,12 @@ export interface AdminRouteContext {
    * unavailable balance rather than guessed at.
    */
   balances?: BalanceService;
+  /**
+   * The server-side execution kill switches. Optional so a route module can be
+   * mounted in isolation (tests); when present, the copy-trading readiness
+   * projection reports whether the gateway would actually accept a copy.
+   */
+  flags?: ExecutionFlags;
 }
 
 export interface Page<T> {

@@ -28,6 +28,74 @@ import { BrokerError } from './broker/types.js';
 import type { SignalRecord } from './types.js';
 
 /**
+ * One timestamped sample from a coordinated bulk execution. Every stage is
+ * recorded so the caller can compute p50/p95/p99 per stage and per account.
+ */
+export interface LatencySample {
+  accountId: string;
+  tStart: number;      // bulkExecute entry
+  tProposalRequested: number; // proposal request sent
+  tProposalReceived: number;  // proposal response received
+  tBuySubmitted: number;      // buy request sent
+  tBuyConfirmed: number | null;      // buy response received (or null if not bought)
+  tEnd: number;       // bulkExecute exit for this account
+  outcome: 'copied' | 'skipped' | 'rejected' | 'failed';
+}
+
+/** Aggregate latency stats across all samples for one stage. */
+export interface LatencyStageStats {
+  p50: number;
+  p95: number;
+  p99: number;
+  count: number;
+}
+
+/** Aggregate latency stats across all stages and accounts. */
+export interface LatencyStats {
+  total: LatencyStageStats;
+  proposal: LatencyStageStats;
+  buy: LatencyStageStats;
+  perAccount: Record<string, LatencyStageStats>;
+}
+
+function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  const rank = (p / 100) * (sorted.length - 1);
+  const lo = Math.floor(rank);
+  const hi = Math.ceil(rank);
+  if (lo === hi) return sorted[lo];
+  const frac = rank - lo;
+  return sorted[lo] * (1 - frac) + sorted[hi] * frac;
+}
+
+/** Accumulates latency samples and computes percentile stats. */
+export class LatencyRecorder {
+  private readonly samples: LatencySample[] = [];
+
+  record(s: LatencySample): void {
+    this.samples.push(s);
+  }
+
+  stats(): LatencyStats {
+    const total = this.stage('total', s => s.tEnd - s.tStart);
+    const proposal = this.stage('proposal', s => s.tProposalReceived - s.tProposalRequested);
+    const buy = this.stage('buy', s => s.tBuyConfirmed !== null && s.tBuySubmitted !== null
+      ? s.tBuyConfirmed - s.tBuySubmitted
+      : 0);
+    const perAccount: Record<string, LatencyStageStats> = {};
+    for (const s of this.samples) {
+      perAccount[s.accountId] = this.stage(`total:${s.accountId}`, x => x === s ? s.tEnd - s.tStart : 0);
+    }
+    return { total, proposal, buy, perAccount };
+  }
+
+  private stage(name: string, f: (s: LatencySample) => number): LatencyStageStats {
+    const vals = this.samples.map(f).sort((a, b) => a - b);
+    return { p50: percentile(vals, 50), p95: percentile(vals, 95), p99: percentile(vals, 99), count: vals.length };
+  }
+}
+
+/**
  * The execution gateway.
  *
  * This is the ONLY component in the system permitted to submit a purchase. Every
@@ -109,6 +177,14 @@ export interface CreateIntentInput {
   idempotencyKey: string;
   /** Manual intents require a customer approval that is still valid. */
   manualApproval?: { approvedAt: number; expiresAt: number };
+  /**
+   * Marks this intent as a follower copy of an already-accepted master trade.
+   * A copy is authorised by the master's copy switch (checked by the copy engine
+   * before the intent is created) rather than by the automatic-trading switch, so
+   * it must not be rejected as "automatic". Kill switches, ownership, risk and
+   * single-use still apply. Mutually exclusive with `manualApproval`.
+   */
+  asCopy?: boolean;
 }
 
 export interface GatewayDeps {
@@ -147,6 +223,33 @@ export interface ExecutionResult {
   buy: BuyResult | null;
 }
 
+/** One account's entry in a coordinated bulk execution. */
+export interface BulkExecuteEntry {
+  user: UserRecord;
+  accountId: string;
+  signal: SignalRecord;
+  contractType: DerivContractType;
+  contractFamily: ContractFamily;
+  stake: number;
+  basis: 'stake' | 'payout';
+  currency: string;
+  parameters: TradeIntentRecord['parameters'];
+  idempotencyKey: string;
+  asCopy?: boolean;
+  manualApproval?: { approvedAt: number; expiresAt: number };
+  accessToken: string;
+}
+
+/** One account's result from a coordinated bulk execution. */
+export interface BulkExecuteResult {
+  accountId: string;
+  intentId: string | null;
+  contractId: number | null;
+  buy: BuyResult | null;
+  outcome: 'copied' | 'skipped' | 'rejected' | 'failed';
+  reason: string | null;
+}
+
 /** Input for a price preview. `account` must come from the account guard. */
 export interface PreviewInput {
   account: ResolvedAccount;
@@ -181,6 +284,7 @@ export class ExecutionGateway {
   private readonly locks: ExecutionLocks;
   private readonly auditor: ExecutionAuditor;
   private readonly now: () => number;
+  private readonly latencyRecorder: LatencyRecorder;
 
   constructor(deps: GatewayDeps) {
     this.store = deps.store;
@@ -194,6 +298,20 @@ export class ExecutionGateway {
     this.locks = deps.locks ?? new ExecutionLocks();
     this.auditor = deps.auditor ?? new ExecutionAuditor(deps.store, { now: deps.now });
     this.now = deps.now ?? (() => Date.now());
+    this.latencyRecorder = new LatencyRecorder();
+  }
+
+  /**
+   * The Deriv App ID to send as `Deriv-App-ID` on the OTP call for this user's
+   * token. A follower principal (`copy_follower_<id>`) backed by a PAT needs the
+   * PAT App ID or Deriv rejects the OTP with 401; OAuth users (the master) need
+   * no header, so this returns undefined for them.
+   */
+  private appIdFor(user: UserRecord): string | undefined {
+    if (!user.id.startsWith('copy_follower_')) return undefined;
+    const followerId = user.id.slice('copy_follower_'.length);
+    const follower = this.store.listAllCopyTradingFollowers().find((f) => f.id === followerId);
+    return follower?.authMethod === 'pat' ? (this.cfg.deriv.patAppId ?? undefined) : undefined;
   }
 
   /**
@@ -294,6 +412,7 @@ export class ExecutionGateway {
             accountId: account.accountId,
             accessToken,
             accountMode: account.mode,
+            appId: this.appIdFor(user),
             contractId: derivContractId,
             price: 0,
             reqId: 1
@@ -422,7 +541,7 @@ export class ExecutionGateway {
       symbol: input.signal.symbol,
       timeframe: input.signal.timeframe,
       signalId: input.signal.id,
-      approvedBy: input.manualApproval ? 'customer' : null,
+      approvedBy: input.manualApproval ? 'customer' : input.asCopy ? 'copy' : null,
       approvedAt: input.manualApproval?.approvedAt ?? null,
       approvalExpiresAt: input.manualApproval?.expiresAt ?? null,
       stake: input.stake,
@@ -469,10 +588,13 @@ export class ExecutionGateway {
       throw new ExecutionError('execution_disabled', 'Execution is disabled.', [permitted.reason ?? 'execution_disabled']);
     }
 
-    // Automatic trading has its own switch, independent of manual trading. An
-    // automatic intent carries no customer approval, so `approvedBy === null`
-    // identifies it; the flag is re-read here rather than trusted from intent
-    // creation, so turning it off stops automatic trades immediately.
+    // Automatic trading has its own switch, independent of manual trading. Only
+    // a fully automatic intent (`approvedBy === null`, i.e. the scanner/runner)
+    // is gated here; the flag is re-read rather than trusted from intent
+    // creation, so turning it off stops automatic trades immediately. A manual
+    // intent (`customer`) and a follower copy (`copy`) are both deliberately
+    // excluded: a copy mirrors a trade the master already had accepted and is
+    // authorised by the per-master copy switch, not by the automatic switch.
     if (intent.approvedBy === null && !this.flags.allowAutomaticTrading) {
       await this.transition(intent, 'REJECTED', 'automatic_disabled');
       await this.auditor.record({
@@ -570,6 +692,21 @@ export class ExecutionGateway {
     accessToken: string,
     now: number
   ): Promise<ExecutionResult> {
+    const { proposal } = await this.prepareIntent(user, intent, accessToken, now);
+    return await this.executeBuy(user, intent, accessToken, proposal, now);
+  }
+
+  /**
+   * Phase 1 of execution: validate the signal, run risk checks, consume the
+   * signal, and fetch a proposal. Returns the validated intent and proposal.
+   * Everything up to (but not including) the buy.
+   */
+  private async prepareIntent(
+    user: UserRecord,
+    intent: TradeIntentRecord,
+    accessToken: string,
+    now: number
+  ): Promise<{ intent: TradeIntentRecord; proposal: ProposalResult }> {
     // (4) Signal must exist, belong to the user, be unused and unexpired.
     const signal = this.store.getSignal(user.id, intent.signalId);
     if (!signal) {
@@ -612,10 +749,6 @@ export class ExecutionGateway {
     }
     await this.transition(intent, 'RISK_APPROVED', null);
 
-    // Consume the signal now, atomically with the risk approval: after this
-    // point the signal can never drive a second trade.
-    await this.store.putSignal({ ...signal, consumedByIntentId: intent.id });
-
     // PROPOSAL_REQUESTED
     await this.transition(intent, 'PROPOSAL_REQUESTED', null);
     const reqId = 1;
@@ -633,6 +766,7 @@ export class ExecutionGateway {
         accountId: intent.accountId,
         accessToken,
         accountMode: intent.accountMode,
+        appId: this.appIdFor(user),
         payload,
         reqId,
         retainForBuy: true
@@ -644,6 +778,10 @@ export class ExecutionGateway {
       await this.transition(intent, state as any, 'proposal_failed');
       if (uncertain) await this.transition(intent, 'RECONCILIATION_REQUIRED', 'proposal_uncertain');
       await this.recordAttempt(intent, 'proposal', uncertain ? 'unknown' : 'error', reqId, null, err);
+      // The signal is NOT consumed here: a failed proposal (no money moved)
+      // must leave the signal usable so the caller can retry with a fresh
+      // intent. Consuming it before the proposal would permanently burn the
+      // signal on a transient network error, causing a silently missing copy.
       throw new ExecutionError(uncertain ? 'broker_uncertain' : 'broker_rejected', 'The proposal request failed.');
     }
 
@@ -654,6 +792,27 @@ export class ExecutionGateway {
     }
     await this.transition(intent, 'PROPOSAL_VALIDATED', null);
 
+    // Consume the signal now — only after the proposal is validated and we are
+    // committed to buying. A failed proposal above leaves the signal unused so
+    // the caller can retry; a successful proposal burns it so it can never
+    // drive a second trade.
+    await this.store.putSignal({ ...signal, consumedByIntentId: intent.id });
+
+    return { intent, proposal };
+  }
+
+  /**
+   * Phase 2 of execution: buy the proposal, persist the contract and ledger,
+   * and audit the result. Assumes `prepareIntent` already succeeded for this
+   * intent.
+   */
+  private async executeBuy(
+    user: UserRecord,
+    intent: TradeIntentRecord,
+    accessToken: string,
+    proposal: ProposalResult,
+    now: number
+  ): Promise<ExecutionResult> {
     // PURCHASE_PENDING
     await this.transition(intent, 'PURCHASE_PENDING', null);
     const buyReqId = 2;
@@ -663,6 +822,7 @@ export class ExecutionGateway {
         accountId: intent.accountId,
         accessToken,
         accountMode: intent.accountMode,
+        appId: this.appIdFor(user),
         proposalId: proposal.proposalId,
         price: proposal.askPrice,
         reqId: buyReqId
@@ -753,6 +913,240 @@ export class ExecutionGateway {
     });
 
     return { intent: this.store.getTradeIntent(user.id, intent.id)!, contractId: buy.contractId, buy };
+  }
+
+  /**
+   * Coordinated bulk execution: one click, all accounts. Proposals are fetched
+   * for every account in parallel, then all buys fire simultaneously. This is
+   * what makes a master trade and its follower copies enter at effectively the
+   * same price instead of followers lagging behind the master.
+   *
+   * Phase 1 (parallel): create intent, validate signal, risk-check, consume
+   * signal, fetch proposal — for every entry.
+   * Phase 2 (parallel): buy every proposal that succeeded in phase 1.
+   *
+   * Partial fills are possible: if a follower's buy is rejected or uncertain,
+   * that account fails independently while others proceed. Results are returned
+   * per account so the caller can audit successes and failures.
+   */
+   async bulkExecute(entries: BulkExecuteEntry[]): Promise<BulkExecuteResult[]> {
+    const now = this.now();
+    const tStart = this.now();
+
+    // Each entry runs inside its account's lock, so two concurrent bulk
+    // executions (e.g. rapid bot ticks) can never operate on the same follower
+    // account simultaneously. Different accounts still run in parallel (different
+    // lock keys), preserving the "simultaneous buys" property.
+    return await Promise.all(
+      entries.map(async (entry) => {
+        const sample: LatencySample = {
+          accountId: entry.accountId,
+          tStart,
+          tProposalRequested: 0,
+          tProposalReceived: 0,
+          tBuySubmitted: 0,
+          tBuyConfirmed: null,
+          tEnd: 0,
+          outcome: 'failed'
+        };
+
+        try {
+          return await this.locks.withLock(entry.accountId, () =>
+            this.bulkExecuteEntry(entry, sample, now)
+          );
+        } catch (err) {
+          sample.tEnd = this.now();
+          this.latencyRecorder.record(sample);
+          if (err instanceof LockTimeoutError) {
+            return this.bulkResult(entry, null, null, null, 'rejected', 'lock_timeout');
+          }
+          return this.bulkResult(
+            entry,
+            null,
+            null,
+            null,
+            err instanceof ExecutionError ? 'rejected' : 'failed',
+            err instanceof ExecutionError ? err.code : 'copy_failed'
+          );
+        }
+      })
+    );
+  }
+
+  /**
+   * The locked critical section for one bulk entry: validate, create intent,
+   * fetch proposal (with one retry on transient failure), buy.
+   * Must be called while holding the account's lock.
+   */
+  private async bulkExecuteEntry(
+    entry: BulkExecuteEntry,
+    sample: LatencySample,
+    now: number
+  ): Promise<BulkExecuteResult> {
+    // (1) Kill switches.
+    const permitted = executionPermitted(this.flags, entry.signal.accountMode);
+    if (!permitted.permitted) {
+      throw new ExecutionError('execution_disabled', 'Execution is disabled.', [
+        permitted.reason ?? 'execution_disabled'
+      ]);
+    }
+
+    // (2) Ownership and mode.
+    let account;
+    try {
+      account = resolveTradableAccountForUser(entry.user, entry.accountId, entry.signal.accountMode);
+    } catch (err) {
+      const code = err instanceof AccountAccessError ? (err.code as ExecutionRejectionCode) : 'account_not_authorized';
+      throw new ExecutionError(code, 'Account is not authorized for this user.');
+    }
+
+    // REAL requires explicit authorisation.
+    if (account.mode === 'real') {
+      const prefs = this.store.getExecutionPreferences(entry.user.id);
+      if (!prefs?.realExecutionAuthorised) {
+        throw new ExecutionError('not_authorized', 'REAL execution is not authorised.', ['real_not_authorised']);
+      }
+    }
+
+    // (3) Token must be present.
+    if (!entry.accessToken) {
+      throw new ExecutionError('token_expired', 'The Deriv authorization has expired.');
+    }
+
+    // Idempotency: an existing intent with this key is returned as-is.
+    const existing = this.store.findTradeIntentByIdempotencyKey(entry.user.id, entry.idempotencyKey);
+    if (existing) {
+      sample.tEnd = this.now();
+      sample.outcome = 'skipped';
+      this.latencyRecorder.record(sample);
+      return this.bulkResult(
+        entry,
+        existing.id,
+        existing.contractId ?? null,
+        null,
+        'skipped',
+        'already_copied',
+        existing.contractId ?? null
+      );
+    }
+
+    // Create the intent and fetch the proposal. If the proposal fails with a
+    // definite rejection (not uncertain — no money moved), retry once with a
+    // fresh intent. The signal is NOT consumed on a failed proposal (see
+    // prepareIntent), so the retry can reuse it.
+    let intent = await this.createIntent({
+      user: entry.user,
+      accountId: entry.accountId,
+      signal: entry.signal,
+      contractType: entry.contractType,
+      contractFamily: entry.contractFamily,
+      stake: entry.stake,
+      basis: entry.basis,
+      currency: entry.currency,
+      parameters: entry.parameters,
+      idempotencyKey: entry.idempotencyKey,
+      asCopy: entry.asCopy,
+      manualApproval: entry.manualApproval
+    });
+
+    sample.tProposalRequested = this.now();
+    let proposal: ProposalResult;
+    try {
+      const prepared = await this.prepareIntent(entry.user, intent, entry.accessToken, now);
+      intent = prepared.intent;
+      proposal = prepared.proposal;
+      sample.tProposalReceived = this.now();
+    } catch (err) {
+      // Retry once on a definite proposal rejection (network blip, rate limit).
+      // An uncertain error (socket dropped mid-request) throws
+      // `broker_uncertain` and is NOT retried: the proposal may have reached
+      // Deriv. `broker_rejected` already means "not uncertain".
+      const retryable = err instanceof ExecutionError && err.code === 'broker_rejected';
+      if (!retryable) {
+        sample.tEnd = this.now();
+        this.latencyRecorder.record(sample);
+        throw err;
+      }
+
+      // The first intent is in FAILED state. Create a fresh one with a retry
+      // suffix so the idempotency check does not return the failed intent.
+      const retryKey = `${entry.idempotencyKey}:retry1`;
+      intent = await this.createIntent({
+        user: entry.user,
+        accountId: entry.accountId,
+        signal: entry.signal,
+        contractType: entry.contractType,
+        contractFamily: entry.contractFamily,
+        stake: entry.stake,
+        basis: entry.basis,
+        currency: entry.currency,
+        parameters: entry.parameters,
+        idempotencyKey: retryKey,
+        asCopy: entry.asCopy,
+        manualApproval: entry.manualApproval
+      });
+
+      sample.tProposalRequested = this.now();
+      const prepared = await this.prepareIntent(entry.user, intent, entry.accessToken, now);
+      intent = prepared.intent;
+      proposal = prepared.proposal;
+      sample.tProposalReceived = this.now();
+    }
+
+    // Buy.
+    sample.tBuySubmitted = this.now();
+    try {
+      const result = await this.executeBuy(entry.user, intent, entry.accessToken, proposal, now);
+      sample.tBuyConfirmed = this.now();
+      sample.tEnd = this.now();
+      sample.outcome = 'copied';
+      this.latencyRecorder.record(sample);
+      return this.bulkResult(
+        entry,
+        result.intent.id,
+        result.contractId,
+        result.buy,
+        'copied',
+        null
+      );
+    } catch (err) {
+      sample.tBuySubmitted = this.now();
+      sample.tEnd = this.now();
+      sample.outcome = err instanceof ExecutionError && err.code === 'broker_uncertain' ? 'failed' : 'rejected';
+      this.latencyRecorder.record(sample);
+      return this.bulkResult(
+        entry,
+        intent.id,
+        null,
+        null,
+        err instanceof ExecutionError && err.code === 'broker_uncertain' ? 'failed' : 'rejected',
+        err instanceof ExecutionError ? err.code : 'copy_failed'
+      );
+    }
+  }
+
+  /** Returns aggregated latency stats across all bulk executions so far. */
+  getLatencyStats(): LatencyStats {
+    return this.latencyRecorder.stats();
+  }
+
+  private bulkResult(
+    entry: BulkExecuteEntry,
+    intentId: string | null,
+    contractId: number | null,
+    buy: BuyResult | null,
+    outcome: 'copied' | 'skipped' | 'rejected' | 'failed',
+    reason: string | null,
+    existingContractId: number | null = null
+  ): BulkExecuteResult {
+    return {
+      accountId: entry.accountId,
+      intentId,
+      contractId: contractId ?? existingContractId ?? null,
+      buy,
+      outcome,
+      reason
+    };
   }
 
   /** Records one attempt with a redacted summary. Never stores a token. */

@@ -22,6 +22,7 @@ import { Telemetry, telemetryMiddleware } from './services/admin/telemetry.js';
 import { createCache, MemoryCache, type Cache } from './services/cache.js';
 import { attachSession, requireSession, type SessionContext, type AuthedRequest } from './lib/session.js';
 import { open } from './lib/crypto.js';
+import type { ContractStatus } from './execution/types.js';
 
 /**
  * WickSentinel server: serves the built SPA and provides the OAuth + session
@@ -80,7 +81,7 @@ export function createApp(cfg: ServerConfig, store: Store, cache?: Cache, balanc
   // Admin API needs a JSON body parser (its routes read structured payloads).
   // Mounted before the session middleware so CORS preflight short-circuits.
   app.use('/api/admin/v1', adminCors({ cfg, store, telemetry }), express.json({ limit: '64kb' }));
-  app.use('/api/admin/v1', createAdminApiRouter({ cfg, store, telemetry, balances }));
+  app.use('/api/admin/v1', createAdminApiRouter({ cfg, store, telemetry, balances, flags: execution.flags }));
 
   app.use(attachSession(ctx));
 
@@ -95,7 +96,7 @@ export function createApp(cfg: ServerConfig, store: Store, cache?: Cache, balanc
   app.use('/api/telemetry', express.json({ limit: '32kb' }));
   app.use(createTelemetryRouter(ctx));
   app.use(createBalancesRouter(ctx, balances));
-  app.use(createCopyTradingRouter(ctx, balances));
+  app.use(createCopyTradingRouter(ctx, balances, { engine: execution.copyEngine, broker: execution.broker }));
   // Deriv Bot receives a short-lived account-bound WebSocket URL through the
   // signed WickSentinel session. The long-lived OAuth token stays server-side.
   app.use('/api/bot', express.json({ limit: '4kb' }));
@@ -223,6 +224,37 @@ async function reconcileStuckIntents(
   }
 }
 
+/**
+ * Corrects legacy contracts frozen as `unknown` by an older build.
+ *
+ * A fast contract could expire with a real profit before Deriv reported its
+ * final won/lost string; `ContractMonitor.settle` (pre-fix) stored that as
+ * `unknown`, which reporting excludes from realised P/L. The profit is already
+ * recorded, so the outcome is re-derived from it — no Deriv call, no purchase,
+ * no ledger change (the settlement entry was already posted). Idempotent.
+ */
+async function reclassifyUnknownContracts(store: Store): Promise<void> {
+  const principals = new Set<string>();
+  for (const user of store.listUsers()) principals.add(user.id);
+  for (const follower of store.listAllCopyTradingFollowers()) {
+    principals.add(`copy_follower_${follower.id}`);
+  }
+  let fixed = 0;
+  for (const principal of principals) {
+    for (const contract of store.listContracts(principal)) {
+      if (contract.status !== 'unknown') continue;
+      const profit = contract.profit;
+      if (typeof profit !== 'number' || !Number.isFinite(profit) || profit === 0) continue;
+      const status: ContractStatus = profit > 0 ? 'won' : 'lost';
+      await store.putContract({ ...contract, status, updatedAt: Date.now() });
+      fixed += 1;
+    }
+  }
+  if (fixed > 0) {
+    console.log(`[server] Reclassified ${fixed} legacy unknown contract(s) to won/lost from their recorded profit.`);
+  }
+}
+
 async function main(): Promise<void> {
   const cfg = loadConfig();
   const store = new Store(cfg.dataDir, { engine: cfg.storageEngine });
@@ -254,6 +286,12 @@ async function main(): Promise<void> {
   // a failure here leaves the intent visibly stuck for the operator, not hidden.
   void reconcileStuckIntents(cfg, store, execution).catch((err) => {
     console.warn(`[server] Reconciliation pass failed: ${err instanceof Error ? err.message : err}`);
+  });
+
+  // Correct any contract a pre-fix build froze as `unknown` despite a recorded
+  // profit, so its P/L is realised in reporting. Best-effort and idempotent.
+  void reclassifyUnknownContracts(store).catch((err) => {
+    console.warn(`[server] Contract reclassification pass failed: ${err instanceof Error ? err.message : err}`);
   });
 
   // Open the shared public market-data connection. A failure here is not fatal:

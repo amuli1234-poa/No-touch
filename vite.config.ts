@@ -8,9 +8,22 @@ export default defineConfig(() => {
     // GitHub Pages serves project sites from a subpath; dev keeps the root base.
     base: process.env.VITE_BASE ?? '/',
     plugins: [react(), tailwindcss()],
+    // The vendored Digits app reads NEXT_PUBLIC_* via process.env (a Next.js
+    // convention). Vite does not replace process.env, so map the handful it uses
+    // to literals. Auth is session-based, so the app id is not needed here.
+    define: {
+      'process.env.NEXT_PUBLIC_DERIV_APP_ID': JSON.stringify(process.env.DERIV_APP_ID ?? ''),
+      'process.env.NEXT_PUBLIC_DERIV_APP_NAME': JSON.stringify('WickSentinel Digits'),
+      'process.env.NEXT_PUBLIC_DERIV_SHOW_APP_NAME': JSON.stringify('true'),
+      'process.env.NEXT_PUBLIC_DERIV_ENV': JSON.stringify('production'),
+      'process.env.NEXT_PUBLIC_PREVIEW_MODE': JSON.stringify('false'),
+      'process.env.NEXT_PUBLIC_BASE_PATH': JSON.stringify(''),
+    },
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(__dirname, 'src/digits'),
+        '@deriv/core': path.resolve(__dirname, 'src/digits/core/index.ts'),
+        '@acc': path.resolve(__dirname, 'src/digits/accumulator'),
       },
     },
     server: {

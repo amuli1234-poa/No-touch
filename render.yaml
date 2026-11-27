@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: wicksentinel
+    env: node
+    plan: free
+    buildCommand: npm install && npm run build && npm run build:admin
+    startCommand: npm run server
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 8787
+      - key: STORAGE_ENGINE
+        value: sqlite
+      - key: DERIV_APP_ID
+        sync: false
+      - key: DERIV_REDIRECT_URI
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: ALLOW_EXECUTION
+        value: "false"
+      - key: ALLOW_DEMO_EXECUTION
+        value: "false"
+      - key: ALLOW_REAL_EXECUTION
+        value: "false"
+      - key: ALLOW_AUTOMATIC_TRADING
+        value: "false"
+    # NOTE: Persistent disk requires Render paid tier.
+    # On Free tier, data is ephemeral (lost on sleep/restart).
+    # For production, upgrade to paid and add:
+    # disk:
+    #   name: wicksentinel-data
+    #   mountPath: /opt/render/project/src/data
+    #   sizeGB: 1

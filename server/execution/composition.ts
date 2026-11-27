@@ -10,6 +10,7 @@ import { AutoExecutionRunner } from './autoRunner.js';
 import { ContractMonitor } from './contractMonitor.js';
 import { SystemSignalService } from '../services/systemSignals.js';
 import { CopyExecutionEngine } from '../copyTrading/engine.js';
+import { applyFollowerCommissions } from '../copyTrading/finance.js';
 import type { SignalRecord } from './types.js';
 
 /**
@@ -33,6 +34,8 @@ export interface ExecutionBundle {
   systemSignals: SystemSignalService;
   /** Mirrors an accepted DEMO master trade onto connected followers. */
   copyEngine: CopyExecutionEngine;
+  /** The broker, exposed so the copy-on-buy route can verify a master contract. */
+  broker: DerivBroker;
 }
 
 export function createExecution(
@@ -41,14 +44,27 @@ export function createExecution(
   balances?: BalanceService
 ): ExecutionBundle {
   const flags = loadExecutionFlags();
-  const broker = new DerivBroker(cfg);
+  const broker = new DerivBroker(cfg, { reuseSockets: true });
   // Reuse the process-wide balance service when one is supplied, so the risk
   // engine's balance read is served from the cache the balance routes keep warm
   // instead of opening a fresh Deriv OTP + WebSocket on every submit.
   const balanceService = balances ?? new BalanceService(cfg);
 
   const auditor = new ExecutionAuditor(store);
-  const monitor = new ContractMonitor({ store, broker, auditor });
+  const monitor = new ContractMonitor({
+    store,
+    broker,
+    auditor,
+    cfg,
+    // Event-driven commission: when a copy follower's contract settles, apply the
+    // fee at the authoritative moment (idempotent; recomputed on read regardless).
+    onSettled: async (user) => {
+      if (!user.id.startsWith('copy_follower_')) return;
+      const followerId = user.id.slice('copy_follower_'.length);
+      const follower = store.listAllCopyTradingFollowers().find((f) => f.id === followerId);
+      if (follower) await applyFollowerCommissions(store, follower.ownerUserId);
+    }
+  });
 
   const gateway = new ExecutionGateway({
     store,
@@ -63,7 +79,15 @@ export function createExecution(
     },
     balanceProvider: async (user: UserRecord, accountId: string, accessToken: string) => {
       try {
-        const read = await balanceService.read(user, accountId, accessToken);
+        // A follower principal is `copy_follower_<id>`; a PAT-authenticated
+        // follower needs the PAT App ID on the OTP call or Deriv rejects it, so
+        // the risk engine's balance read fails closed. OAuth reads need no header.
+        const followerId = user.id.startsWith('copy_follower_') ? user.id.slice('copy_follower_'.length) : null;
+        const follower = followerId
+          ? store.listAllCopyTradingFollowers().find((f) => f.id === followerId)
+          : undefined;
+        const appId = follower?.authMethod === 'pat' ? (cfg.deriv.patAppId ?? undefined) : undefined;
+        const read = await balanceService.read(user, accountId, accessToken, { appId });
         return read.balance;
       } catch {
         // An unreadable balance must not be treated as a healthy one; the risk
@@ -83,6 +107,12 @@ export function createExecution(
     ) => {
       const profile = effectiveRiskProfile(store, user.id);
       const ageSeconds = (now - signal.createdAt) / 1000;
+      // A copied trade mirrors an already-accepted master entry, so the
+      // one-open-per-symbol rule must not drop it: a fast master can fire two
+      // entries on the same symbol before the follower's prior copy settles, and
+      // skipping the overlap would lose a trade the customer asked to mirror.
+      // Exposure is still bounded by maxOpenContracts and maxAccountExposure.
+      const isCopy = signal.reason.startsWith('copy:');
       const decision = evaluateRisk(
         store,
         {
@@ -93,7 +123,7 @@ export function createExecution(
           signalAgeSeconds: ageSeconds,
           now,
           excludeIntentId: intentId,
-          symbol
+          ...(isCopy ? {} : { symbol })
         },
         profile
       );
@@ -105,5 +135,5 @@ export function createExecution(
   const runner = new AutoExecutionRunner({ store, gateway, auditor });
   const systemSignals = new SystemSignalService();
   const copyEngine = new CopyExecutionEngine({ store, cfg, gateway, auditor });
-  return { gateway, runner, monitor, flags, systemSignals, copyEngine };
+  return { gateway, runner, monitor, flags, systemSignals, copyEngine, broker };
 }

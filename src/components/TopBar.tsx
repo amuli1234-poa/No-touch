@@ -1,8 +1,12 @@
-import { Moon, ScanSearch, Settings as SettingsIcon, Sun } from 'lucide-react';
+import { useState } from 'react';
+import { Moon, RefreshCw, Settings as SettingsIcon, Sun } from 'lucide-react';
 import { useWorkspace } from '../context/WorkspaceContext';
 import { AccountBalanceChip } from './AccountBalanceChip';
 import { AutoTradeToggle } from './AutoTradeToggle';
 import { ConnectionBadge } from './ConnectionBadge';
+import { ModeToggle } from './ModeToggle';
+import { BrandLogo } from './brand/WickSentinelBrand';
+import { refreshBalances } from '../lib/balances';
 import { SIGNAL_STATUS_STYLE } from '../utils/signalStatus';
 
 export function TopBar() {
@@ -10,35 +14,32 @@ export function TopBar() {
   const lifecycle = ws.lifecycle;
   const style = lifecycle ? SIGNAL_STATUS_STYLE[lifecycle.status] : null;
   const isDark = ws.settings.theme === 'dark';
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await refreshBalances({ force: true });
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const iconButton =
+    'inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-[var(--ws-hairline)] bg-surface text-fg-2 transition-colors hover:bg-surface-raised hover:text-fg-1 cursor-pointer';
 
   return (
-    <header className="h-14 shrink-0 border-b border-line bg-nav px-2 sm:px-5 flex items-center justify-between gap-2 sm:gap-3">
-      <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-        <div className="lg:hidden w-8 h-8 rounded-lg bg-accent/15 text-accent border border-accent/30 flex items-center justify-center shrink-0">
-          <ScanSearch className="w-4 h-4" />
-        </div>
-        <div className="min-w-0">
-          <h1 className="text-sm font-extrabold tracking-tight text-ink leading-none">
-            Wick<span className="text-accent">Sentinel</span>
-          </h1>
-          <div className="flex items-center gap-2 mt-0.5 min-w-0">
-            <span className="text-[12px] font-medium text-muted truncate">
-              {ws.marketName}
-            </span>
-            <span className="hidden sm:inline text-line" aria-hidden="true">
-              ·
-            </span>
-            <span className="hidden sm:inline text-[12px] font-mono text-muted">
-              {ws.timeframe}
-            </span>
-          </div>
-        </div>
+    <header className="relative z-40 h-16 shrink-0 border-b border-[var(--ws-hairline)] bg-app/85 backdrop-blur-xl pl-5 pr-2 sm:pl-8 sm:pr-4 flex items-center justify-between gap-2 sm:gap-4">
+      {/* Left: brand. */}
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        <BrandLogo markClassName="h-8 w-8" onClick={() => ws.navigate('dashboard')} />
       </div>
 
-      <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
+      {/* Center: Deriv feed, refresh, manual/auto, theme and settings. */}
+      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
         {lifecycle && style && (
           <span
-            className={`hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide border ${style.bg} ${style.text} ${style.border}`}
+            className={`hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide border ${style.bg} ${style.text} ${style.border}`}
           >
             <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
             {lifecycle.label}
@@ -55,13 +56,9 @@ export function TopBar() {
         <div className="hidden sm:block">
           <AutoTradeToggle />
         </div>
-        {/* Icon-only on phones: the Auto/Manual word is hidden below lg, so the
-            header can keep the switch visible without crowding the balance chip. */}
         <div className="sm:hidden">
           <AutoTradeToggle mobileLabel="Automatic trading" />
         </div>
-
-        <AccountBalanceChip />
 
         <button
           type="button"
@@ -69,9 +66,9 @@ export function TopBar() {
           data-testid="theme-toggle"
           aria-label={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
           title={isDark ? 'Light theme' : 'Dark theme'}
-          className="hidden sm:inline-flex items-center justify-center w-9 h-9 text-muted bg-elevated border border-line rounded-lg hover:text-accent hover:border-accent/50 transition-colors cursor-pointer"
+          className={`${iconButton} hidden sm:inline-flex`}
         >
-          {isDark ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
+          {isDark ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
         </button>
 
         <button
@@ -79,10 +76,28 @@ export function TopBar() {
           onClick={() => ws.navigate('settings')}
           aria-label="Open settings"
           title="Settings"
-          className="inline-flex items-center justify-center w-9 h-9 text-muted bg-elevated border border-line rounded-lg hover:text-ink hover:border-accent/50 transition-colors cursor-pointer"
+          className={iconButton}
         >
-          <SettingsIcon className="w-[18px] h-[18px]" />
+          <SettingsIcon className="h-[18px] w-[18px]" />
         </button>
+      </div>
+
+      {/* Right: refresh, account mode and balances. */}
+      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 shrink-0">
+        <div className="hidden sm:block">
+          <ModeToggle />
+        </div>
+        <button
+          type="button"
+          onClick={() => void handleRefresh()}
+          disabled={refreshing}
+          aria-label="Refresh balances"
+          title="Refresh balances"
+          className={`${iconButton} hidden sm:inline-flex disabled:opacity-60`}
+        >
+          <RefreshCw className={`h-[18px] w-[18px] ${refreshing ? 'animate-spin' : ''}`} />
+        </button>
+        <AccountBalanceChip />
       </div>
     </header>
   );

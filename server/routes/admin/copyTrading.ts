@@ -10,6 +10,8 @@ import { revokeToken } from '../../lib/deriv.js';
 import { validatePatToken, PAT_FAILURE_MESSAGE } from '../../copyTrading/pat.js';
 import { buildCopyPerformance } from '../../copyTrading/performance.js';
 import { buildCopyReadiness, listReadinessOwners } from '../../copyTrading/readiness.js';
+import { buildPlatformOverview, buildReconciliation, buildExecutions, followerPnl } from '../../copyTrading/reporting.js';
+import { applyFollowerCommissions, buildStatement } from '../../copyTrading/finance.js';
 import type {
   CopyTradingFollowerRecord,
   CopyFollowerStatus,
@@ -789,10 +791,10 @@ export function createCopyTradingAdminRouter(ctx: AdminRouteContext): Router {
     const ownerUserId = String(req.query.masterUserId ?? '').trim();
     if (ownerUserId) {
       if (!store.getUserById(ownerUserId)) return fail(res, 404, 'master_not_found');
-      return res.json({ readiness: buildCopyReadiness({ store, cfg }, ownerUserId) });
+      return res.json({ readiness: buildCopyReadiness({ store, cfg, flags: ctx.flags }, ownerUserId) });
     }
     return res.json({
-      items: listReadinessOwners(store).map((id) => buildCopyReadiness({ store, cfg }, id))
+      items: listReadinessOwners(store).map((id) => buildCopyReadiness({ store, cfg, flags: ctx.flags }, id))
     });
   });
 
@@ -871,7 +873,9 @@ export function createCopyTradingAdminRouter(ctx: AdminRouteContext): Router {
     };
 
     const force = req.query.refresh === '1';
-    const accounts = await ctx.balances.readAll(principal, accessToken, { force });
+    // PAT clients need the PAT App ID on the OTP call; OAuth clients do not.
+    const appId = record.authMethod === 'pat' ? (ctx.cfg.deriv.patAppId ?? undefined) : undefined;
+    const accounts = await ctx.balances.readAll(principal, accessToken, { force, appId });
     return res.json({
       followerId: record.id,
       accounts: accounts.map((a) => ({
@@ -903,6 +907,87 @@ export function createCopyTradingAdminRouter(ctx: AdminRouteContext): Router {
         ? undefined
         : 'No custom risk profile is stored; the platform default limits apply and are enforced server-side.'
     });
+  });
+
+  /* ====================================================================== */
+  /*  Reporting, revenue, reconciliation and audit (Phase 2)                */
+  /* ====================================================================== */
+
+  /** Platform-wide snapshot for the overview page. All values from stored records. */
+  router.get('/overview', requireAdmin(ctx, 'copytrading.read'), (_req: AdminAuthedRequest, res: Response) => {
+    return res.json(buildPlatformOverview(store));
+  });
+
+  /**
+   * Revenue and commission statement for one master's book. Applies any newly
+   * settled contracts to the commission ledger (idempotent) and returns the
+   * aggregated statement: realised P/L, 40/60 split, estimated vs confirmed
+   * markup. No figure is projected; unsettled contracts contribute nothing.
+   */
+  router.get('/finance', requireAdmin(ctx, 'copytrading.read'), async (req: AdminAuthedRequest, res: Response) => {
+    const ownerUserId = String(req.query.masterUserId ?? '').trim();
+    if (!ownerUserId) return fail(res, 400, 'master_required');
+    if (!store.getUserById(ownerUserId)) return fail(res, 404, 'master_not_found');
+    const applied = await applyFollowerCommissions(store, ownerUserId);
+    const statement = buildStatement(store, ownerUserId);
+    return res.json({ applied, statement });
+  });
+
+  /** Intents and contracts that need an operator to reconcile. */
+  router.get('/reconciliation', requireAdmin(ctx, 'copytrading.read'), (_req: AdminAuthedRequest, res: Response) => {
+    return res.json(buildReconciliation(store));
+  });
+
+  /** Recent executions across the whole book, newest first. */
+  router.get('/executions', requireAdmin(ctx, 'copytrading.read'), (req: AdminAuthedRequest, res: Response) => {
+    const limit = Number.parseInt(String(req.query.limit ?? '50'), 10);
+    return res.json({ items: buildExecutions(store, Number.isFinite(limit) ? limit : 50) });
+  });
+
+  /** One client's full detail: profile, P/L, commission records and risk. */
+  router.get('/clients/:id/detail', requireAdmin(ctx, 'copytrading.read'), (req: AdminAuthedRequest, res: Response) => {
+    const record = store.listAllCopyTradingFollowers().find((f) => f.id === req.params.id);
+    if (!record) return fail(res, 404, 'client_not_found');
+    const pnl = followerPnl(store, record.id);
+    const commissions = store
+      .listCommissionEntries(record.ownerUserId)
+      .filter((e) => e.followerId === record.id);
+    const profile = store.getRiskProfile(record.ownerUserId);
+    return res.json({
+      client: clientView(record, store),
+      pnl,
+      commissions,
+      risk: { profile, configured: Boolean(profile) }
+    });
+  });
+
+  /** Imported strategies (bots) across all owners — read-only, no execution. */
+  router.get('/strategies', requireAdmin(ctx, 'copytrading.read'), (_req: AdminAuthedRequest, res: Response) => {
+    const items = store.listAllImportedBots().map((b) => ({
+      id: b.id,
+      ownerUserId: b.userId,
+      name: b.name,
+      compatibility: b.compatibility,
+      compatibilityReason: b.compatibilityReason,
+      status: b.status,
+      revision: b.revision ?? 0,
+      createdAt: b.createdAt,
+      updatedAt: b.updatedAt
+    }));
+    return res.json({ items });
+  });
+
+  /** Copy-trading audit: the execution audit plus copy-scoped admin audit. */
+  router.get('/audit', requireAdmin(ctx, 'copytrading.read'), (req: AdminAuthedRequest, res: Response) => {
+    const limit = Number.parseInt(String(req.query.limit ?? '100'), 10);
+    const n = Number.isFinite(limit) ? Math.max(1, Math.min(500, limit)) : 100;
+    const execution = store.listExecutionAudit().slice(-n).reverse();
+    const admin = store
+      .listAudit()
+      .filter((a) => a.action.startsWith('copytrading.'))
+      .slice(-n)
+      .reverse();
+    return res.json({ execution, admin });
   });
 
   return router;

@@ -328,7 +328,7 @@ export function FloatingScanner({
         <>
           {/* Tabs + RUN SCAN */}
           <div className="flex items-center gap-1 px-2 pt-2">
-            <div className="inline-flex items-center gap-0.5 p-0.5 bg-elevated border border-line rounded-lg">
+            <div className="ws-vsubnav inline-flex items-center gap-0.5 p-0.5 bg-elevated border border-line rounded-lg">
               <button
                 type="button"
                 onClick={() => setTab('setups')}

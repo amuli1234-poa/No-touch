@@ -59,12 +59,18 @@ export interface ReadBalanceOptions {
   expectedMode?: 'demo' | 'real';
   /** Bypass the freshness cache (used on reconnect and account switches). */
   force?: boolean;
+  /**
+   * Deriv App ID sent as `Deriv-App-ID` for PAT-authenticated reads. Omitted for
+   * OAuth reads (the token's own app is implied and the header is not required).
+   */
+  appId?: string;
 }
 
 export type BalanceFetcher = (
   cfg: ServerConfig,
   accessToken: string,
-  accountId: string
+  accountId: string,
+  appId?: string
 ) => Promise<DerivBalance>;
 
 export interface BalanceServiceDeps {
@@ -83,7 +89,7 @@ export class BalanceService {
   private readonly ttlMs: number;
 
   constructor(private readonly cfg: ServerConfig, deps: BalanceServiceDeps = {}) {
-    this.fetcher = deps.fetcher ?? ((c, t, a) => fetchBalance(c, t, a));
+    this.fetcher = deps.fetcher ?? ((c, t, a, appId) => fetchBalance(c, t, a, { appId }));
     this.now = deps.now ?? (() => Date.now());
     this.ttlMs = deps.ttlMs ?? DEFAULT_TTL_MS;
   }
@@ -163,7 +169,7 @@ export class BalanceService {
     }
 
     try {
-      const fresh = await this.fetcher(this.cfg, accessToken, accountId);
+      const fresh = await this.fetcher(this.cfg, accessToken, accountId, opts.appId);
       const entry: CacheEntry = {
         mode: account.type,
         currency: fresh.currency ?? account.currency ?? null,
@@ -213,7 +219,7 @@ export class BalanceService {
   async readAll(
     user: UserRecord,
     accessToken: string | null,
-    opts: { force?: boolean } = {}
+    opts: { force?: boolean; appId?: string } = {}
   ): Promise<AccountBalance[]> {
     const accounts = [...user.accounts];
     const results: AccountBalance[] = new Array(accounts.length);
@@ -223,7 +229,7 @@ export class BalanceService {
         const i = cursor++;
         const account = accounts[i];
         try {
-          results[i] = await this.read(user, account.accountId, accessToken, { force: opts.force });
+          results[i] = await this.read(user, account.accountId, accessToken, { force: opts.force, appId: opts.appId });
         } catch (err) {
           // Ownership was already proven for these ids; anything else is a read
           // failure and is reported as unavailable rather than dropped.

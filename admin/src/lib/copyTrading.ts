@@ -223,7 +223,7 @@ export interface CopyReadinessCounts {
 }
 
 export interface CopyReadinessHealth {
-  key: 'connection' | 'authorization' | 'broker' | 'reconciliation';
+  key: 'connection' | 'authorization' | 'broker' | 'reconciliation' | 'switches';
   /** Which half of the picture this check belongs to. */
   scope: 'follower' | 'execution';
   status: 'ok' | 'fail' | 'unknown';
@@ -294,4 +294,121 @@ export const copyControlApi = {
     api.get<CopyPerformance>(`/copy-trading/performance${qs({ masterUserId, days })}`),
   readiness: (masterUserId: string) =>
     api.get<{ readiness: CopyReadiness }>(`/copy-trading/readiness${qs({ masterUserId })}`)
+};
+
+/* ============================ reporting (Phase 2) ======================== */
+
+export interface PlatformOverview {
+  generatedAt: number;
+  clients: { total: number; active: number; pendingAuthorizations: number };
+  today: { trades: number; realisedPnl: number };
+  revenue: { confirmedMarkup: number; estimatedMarkup: number; performanceCommissions: number };
+  execution: { failed: number; stuck: number };
+  warnings: string[];
+}
+
+export interface ReconciliationReport {
+  generatedAt: number;
+  stuckIntents: Array<{ id: string; userId: string; state: string; contractId: number | null; updatedAt: number }>;
+  openContracts: number;
+  expiredOpenContracts: number;
+  unknownContracts: number;
+  note: string;
+}
+
+export interface ExecutionRow {
+  contractId: string;
+  userId: string;
+  accountId: string;
+  symbol: string;
+  contractType: string;
+  stake: number;
+  currency: string;
+  status: string;
+  profit: number | null;
+  purchaseTime: number;
+}
+
+export interface CommissionEntryView {
+  id: string;
+  followerId: string;
+  contractId: string;
+  accountId: string;
+  currency: string;
+  stake: number;
+  realisedPnl: number;
+  commissionBase: number;
+  managerCommission: number;
+  clientAllocation: number;
+  estimatedMarkup: number;
+  reportedMarkup: number | null;
+  confirmedMarkup: number | null;
+  markupStatus: 'estimated' | 'reported' | 'confirmed';
+}
+
+export interface FollowerStatement {
+  followerId: string;
+  loginId: string | null;
+  realisedPnl: number;
+  commissionBase: number;
+  managerCommission: number;
+  clientAllocation: number;
+  estimatedMarkup: number;
+  reportedMarkup: number;
+  confirmedMarkup: number;
+  highWaterMark: number;
+  trades: number;
+}
+
+export interface CopyStatement {
+  ownerUserId: string;
+  generatedAt: number;
+  masterRealisedPnl: number | null;
+  followers: FollowerStatement[];
+  totals: {
+    realisedPnl: number;
+    managerCommission: number;
+    clientAllocation: number;
+    estimatedMarkup: number;
+    reportedMarkup: number;
+    confirmedMarkup: number;
+    trades: number;
+  };
+  entries: CommissionEntryView[];
+}
+
+export interface FinanceView {
+  applied: { followers: number; inserted: number; skipped: number };
+  statement: CopyStatement;
+}
+
+export interface ClientDetail {
+  client: AdminCopyClient;
+  pnl: { trades: number; realisedPnl: number };
+  commissions: CommissionEntryView[];
+  risk: { profile: unknown; configured: boolean };
+}
+
+export interface StrategyRow {
+  id: string;
+  ownerUserId: string;
+  name: string;
+  compatibility: string;
+  compatibilityReason: string;
+  status: string;
+  revision: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export const copyReportingApi = {
+  overview: () => api.get<PlatformOverview>('/copy-trading/overview'),
+  finance: (masterUserId: string) =>
+    api.get<FinanceView>(`/copy-trading/finance${qs({ masterUserId })}`),
+  reconciliation: () => api.get<ReconciliationReport>('/copy-trading/reconciliation'),
+  executions: (limit = 50) => api.get<{ items: ExecutionRow[] }>(`/copy-trading/executions${qs({ limit })}`),
+  clientDetail: (id: string) => api.get<ClientDetail>(`/copy-trading/clients/${encodeURIComponent(id)}/detail`),
+  strategies: () => api.get<{ items: StrategyRow[] }>('/copy-trading/strategies'),
+  audit: (limit = 100) =>
+    api.get<{ execution: unknown[]; admin: unknown[] }>(`/copy-trading/audit${qs({ limit })}`)
 };

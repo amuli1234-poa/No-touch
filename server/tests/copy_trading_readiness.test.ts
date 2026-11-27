@@ -148,6 +148,56 @@ function readiness(store: Store, ownerUserId = MASTER_ID) {
   return buildCopyReadiness({ store, cfg: makeConfig(os.tmpdir()), now: () => NOW }, ownerUserId);
 }
 
+const FLAGS_ON = { allowExecution: true, allowDemoExecution: true, allowRealExecution: false, allowAutomaticTrading: false };
+const FLAGS_NO_DEMO = { allowExecution: true, allowDemoExecution: false, allowRealExecution: false, allowAutomaticTrading: false };
+
+test('readiness: a disabled DEMO kill switch makes an otherwise-ready master DEGRADED (switches)', async () => {
+  const { store } = newStore();
+  await store.load();
+  await seedMaster(store);
+  await seedFollower(store);
+  await enableControl(store);
+
+  const view = buildCopyReadiness(
+    { store, cfg: makeConfig(os.tmpdir()), flags: FLAGS_NO_DEMO, now: () => NOW },
+    MASTER_ID
+  );
+  assert.equal(view.state, 'DEGRADED', 'a copy would be rejected, so READY would be a lie');
+  const switches = view.health.find((c) => c.key === 'switches');
+  assert.ok(switches, 'the switches check must be present when flags are supplied');
+  assert.equal(switches!.scope, 'execution');
+  assert.equal(switches!.status, 'fail');
+  assert.ok(view.degraded!.execution.includes('switches'));
+});
+
+test('readiness: with execution + DEMO switches on, an eligible master is READY and switches is ok', async () => {
+  const { store } = newStore();
+  await store.load();
+  await seedMaster(store);
+  await seedFollower(store);
+  await enableControl(store);
+
+  const view = buildCopyReadiness(
+    { store, cfg: makeConfig(os.tmpdir()), flags: FLAGS_ON, now: () => NOW },
+    MASTER_ID
+  );
+  assert.equal(view.state, 'READY');
+  const switches = view.health.find((c) => c.key === 'switches');
+  assert.equal(switches!.status, 'ok');
+});
+
+test('readiness: without flags the switches check is omitted (never guessed)', async () => {
+  const { store } = newStore();
+  await store.load();
+  await seedMaster(store);
+  await seedFollower(store);
+  await enableControl(store);
+
+  const view = readiness(store);
+  assert.equal(view.health.some((c) => c.key === 'switches'), false);
+  assert.equal(view.state, 'READY');
+});
+
 /* ====================================================================== */
 /*  State machine — one test per state                                    */
 /* ====================================================================== */

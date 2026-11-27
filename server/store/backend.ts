@@ -46,7 +46,10 @@ export const COLLECTIONS = [
   'copyTradingFollowers',
   'copyTradingInvitations',
   'copyTradingConsents',
-  'copyTradingControls'
+  'copyTradingControls',
+  /* --------------------- copy-trading finance (Phase 1) ------------------ */
+  'commissionEntries',
+  'contractAdjustments'
 ] as const;
 
 export type CollectionName = (typeof COLLECTIONS)[number];
@@ -113,12 +116,19 @@ export const COLLECTION_SPECS: readonly CollectionSpec[] = [
   { name: 'copyTradingFollowers', kind: 'keyed', keyField: 'id', indexFields: ['ownerUserId', 'derivSub'] },
   { name: 'copyTradingInvitations', kind: 'keyed', keyField: 'id', indexFields: ['ownerUserId', 'tokenHash'] },
   { name: 'copyTradingConsents', kind: 'keyed', keyField: 'followerId', indexFields: ['ownerUserId'] },
-  { name: 'copyTradingControls', kind: 'keyed', keyField: 'ownerUserId', indexFields: ['ownerUserId'] }
+  { name: 'copyTradingControls', kind: 'keyed', keyField: 'ownerUserId', indexFields: ['ownerUserId'] },
+  // One immutable commission record per settled contract. Keyed by id and
+  // indexed by owner (master) + follower, so a re-run can find an existing
+  // record by dedupeKey and never double-charge.
+  { name: 'commissionEntries', kind: 'keyed', keyField: 'id', indexFields: ['ownerUserId', 'followerId', 'dedupeKey'] },
+  // Immutable settlement corrections. Keyed by id, indexed by contract and
+  // dedupeKey so a repeated correction event is rejected idempotently.
+  { name: 'contractAdjustments', kind: 'keyed', keyField: 'id', indexFields: ['contractId', 'ownerUserId', 'dedupeKey'] }
 ];
 
 export interface StorageBackend {
   /** Human-readable engine name, used in logs and the migration report. */
-  readonly kind: 'json' | 'sqlite';
+  readonly kind: 'json' | 'sqlite' | 'postgres';
 
   /** Opens the backend and makes it ready for reads and writes. */
   open(): Promise<void>;

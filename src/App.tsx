@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Radar } from 'lucide-react';
 import { reconcileEngines } from './analysis/coAnalysis';
-import { weakModulesForAutoTrading } from './analysis/aiPerformance';
 import { createModelPerformanceRecord } from './analysis/modelPerformance';
 import { ChartAnalyserView } from './components/ChartAnalyserView';
 import { ChartAnalysisView } from './components/ChartAnalysisView';
@@ -14,16 +13,19 @@ import type { ModuleChartOverlay } from './types/chartOverlay';
 import {
   MobileMenuSheet,
   MobileNav,
-  Sidebar,
   type AppSection,
 } from './components/nav/Navigation';
+import { HorizontalNav } from './components/nav/HorizontalNav';
 import { OpeningAnimation } from './components/OpeningAnimation';
 import { TopBar } from './components/TopBar';
 import { DashboardView } from './components/views/DashboardView';
 import { FreeBotsView } from './components/views/FreeBotsView';
 import { PremiumBotsView } from './components/views/PremiumBotsView';
+import { BotBuilderView } from './components/views/BotBuilderView';
 import { CopyTradingView } from './components/views/CopyTradingView';
 import { AiIntelligenceView } from './components/views/AiIntelligenceView';
+import { DigitsManualTrader } from './components/views/DigitsManualTrader';
+import { BulkTrader } from './components/views/BulkTrader';
 import { SettingsView } from './components/views/SettingsView';
 import { TradeHistoryView } from './components/views/TradeHistoryView';
 import { TradeView } from './components/views/TradeView';
@@ -65,7 +67,7 @@ import { useAiJournal } from './hooks/useAiJournal';
 import { useAlertManager } from './hooks/useAlertManager';
 import { useStrategyLab } from './hooks/useStrategyLab';
 import { useSystemHealth } from './hooks/useSystemHealth';
-import { onReconnect, refreshBalances, resetBalances } from './lib/balances';
+import { onReconnect, refreshBalances, resetBalances, useBalanceAutoRefresh } from './lib/balances';
 import {
   resetExecutionControl,
   useExecutionControlPolling,
@@ -127,8 +129,12 @@ const VALID_SECTIONS: AppSection[] = [
   'settings',
   'freebots',
   'premiumbots',
+  'botbuilder',
   'copytrading',
   'aiintelligence',
+  'digits-manual-trader',
+  'bulk-trader',
+  'automated-trader',
 ];
 
 const LEGACY_HASH: Record<string, AppSection> = {
@@ -443,6 +449,35 @@ export default function App() {
   // reference them (hoisted as refs/state, not as function bodies).
   const autoRunTriggeredRef = useRef(false);
 
+  // Pause the heavy running analysis when the user is on a full-width section that
+  // does not host the chart (Dashboard, Settings, Bots, etc.). Leaving it running
+  // there recomputes the full multi-timeframe analysis on every live tick, which
+  // is what slows the whole app after visiting the chart and coming back. It can
+  // be restarted from the chart / analyser whenever it is needed again.
+  useEffect(() => {
+    const analysisFree: AppSection[] = [
+      'dashboard',
+      'health',
+      'settings',
+      'training',
+      'history',
+      'alerts',
+      'strategylab',
+      'entrymodel',
+      'freebots',
+      'premiumbots',
+      'botbuilder',
+      'copytrading',
+      'aiintelligence',
+      'digits-manual-trader',
+      'bulk-trader',
+      'automated-trader',
+    ];
+    if (controlMode === 'running' && analysisFree.includes(section)) {
+      stopAnalysis();
+    }
+  }, [section, controlMode, stopAnalysis]);
+
   // Account balances (DEMO + REAL, kept separate). Loaded once the session is
   // authenticated, revalidated whenever the market feed recovers (a fresh
   // connection is a natural point to confirm the Deriv authorization still
@@ -452,6 +487,9 @@ export default function App() {
   // panel both read, refreshed while signed in and cleared on sign-out.
   useExecutionControlPolling(auth.status === 'authenticated');
   const balancesLoadedRef = useRef(false);
+  // Keep balances fresh while signed in (bounded 30s poll; no overlap, cleared on
+  // sign-out). Complements the mount/reconnect/switch triggers below.
+  useBalanceAutoRefresh(auth.status === 'authenticated');
   useEffect(() => {
     if (auth.status === 'authenticated') {
       if (!balancesLoadedRef.current) {
@@ -827,37 +865,54 @@ export default function App() {
     }
   }, [liveFeed, notificationsEnabled, voiceEnabled]);
 
-  // Publish each confirmed signal to the server, so the automatic trader can act
-  // on it. This is best-effort and never blocks the UI. The key is stable per
-  // setup, so a signal that keeps re-deriving is published once; the server also
-  // dedupes and only trades it for users who chose automatic mode.
+  // Publish the single strongest signal the Best Signal panel actually shows, so
+  // the automatic trader acts on exactly the setup the dashboard displays — not
+  // only the scanner winner. The Best Signal panel ranks `feedStore` (the unified
+  // scanner + analyser + trendline feed the panel renders) with validated setups
+  // first, then by confidence; this mirrors that exact ranking over the same
+  // array, so a best signal that comes from the analyser or a trendline is
+  // published too. This is best-effort and never blocks the UI. The key is stable
+  // per setup, so a setup that keeps re-deriving is published once; the server
+  // also dedupes and only trades it for users who chose automatic mode. A failed
+  // publish clears the key so the next scan can retry.
   //
-  // Only signals that clear the customer's Signal Quality Filter are published,
-  // so the set the automatic trader acts on is exactly the set the customer is
-  // shown (feed, notifications, dashboard, live trade management).
-  const publishedSystemKeysRef = useRef<Set<string>>(new Set());
+  // Only a setup that clears the customer's Signal Quality Filter is published,
+  // so the automatic trader never acts on a weaker setup than the customer sees.
+  const publishedWinnerKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (auth.status !== 'authenticated') return;
-    for (const item of liveFeed) {
-      if (!passesQualityFilter(item.confidence, settings.minQuality)) continue;
-      const setupKey = `${item.symbol}|${item.timeframe}|${item.direction}|${item.source}`;
-      if (publishedSystemKeysRef.current.has(setupKey)) continue;
-      publishedSystemKeysRef.current.add(setupKey);
-      void publishSystemSignal({
-        symbol: item.symbol,
-        displayName: item.displayName,
-        direction: item.direction,
-        timeframe: item.timeframe,
-        confidence: item.confidence,
-        entryPrice: item.entryPrice,
-        stopLoss: item.stopLoss,
-        takeProfit: item.takeProfit1 ?? item.takeProfit2 ?? null,
-        setupKey,
-        source: item.source,
-        minQuality: settings.minQuality
-      });
-    }
-  }, [liveFeed, auth.status, settings.minQuality]);
+    if (feedStore.length === 0) return;
+    // Same ordering as BestSignalPanel: validated first, then higher confidence.
+    const best = [...feedStore].sort((a, b) => {
+      if (a.validated !== b.validated) return a.validated ? -1 : 1;
+      return b.confidence - a.confidence;
+    })[0];
+    // Only a directional (RISE/FALL) setup is tradeable. The feed is always
+    // directional today, but guard so a future non-directional item never trades.
+    if (best.direction !== 'RISE' && best.direction !== 'FALL') return;
+    // SignalFeedItem.confidence is 0–100; publishSystemSignal expects 0–1.
+    const confidence = best.confidence / 100;
+    if (!passesQualityFilter(confidence, settings.minQuality)) return;
+    const setupKey = `${best.symbol}|${best.timeframe}|${best.direction}`;
+    if (publishedWinnerKeyRef.current === setupKey) return;
+    publishedWinnerKeyRef.current = setupKey;
+    void publishSystemSignal({
+      symbol: best.symbol,
+      displayName: best.displayName,
+      direction: best.direction,
+      timeframe: best.timeframe,
+      confidence,
+      entryPrice: best.entryPrice,
+      stopLoss: best.stopLoss,
+      takeProfit: best.takeProfit1 ?? best.takeProfit2 ?? null,
+      setupKey,
+      source: 'scanner',
+      minQuality: settings.minQuality
+    }).then((result) => {
+      // A failed publish must not permanently suppress this setup.
+      if (!result) publishedWinnerKeyRef.current = null;
+    });
+  }, [feedStore, auth.status, settings.minQuality]);
 
   // Trade Performance & Learning AI — journal every module's published signals and re-verify
   // outcomes against fresh candles (id-keyed, so re-scans never duplicate records).
@@ -884,44 +939,10 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [publishedSignature]);
 
-  // Publish every AI module's confirmed signal to the server too — these are the
-  // setups the performance table scores. Deduped by a stable per-setup key, so a
-  // module that keeps re-publishing the same setup is sent once. Only setups that
-  // clear the customer's Signal Quality Filter are published, so the automatic
-  // trader never acts on a weaker setup than the customer is shown.
-  const publishedAiKeysRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (auth.status !== 'authenticated') return;
-    // Concentrate automatic trading on modules with a healthy settled record: a
-    // module proven weak over a meaningful sample is not auto-entered, while one
-    // without enough settled evidence yet is still allowed through.
-    const weakModules = weakModulesForAutoTrading(aiJournal.records);
-    for (const [id, scanner] of Object.entries(aiModules)) {
-      if (weakModules.has(id)) continue;
-      for (const analysis of scanner.analyses) {
-        const sig = analysis.signal;
-        if (!sig) continue;
-        if (!passesQualityFilter(sig.score, settings.minQuality)) continue;
-        const setupKey = `${sig.symbol}|${sig.timeframes[0]?.timeframe ?? ''}|${sig.direction}|${id}`;
-        if (publishedAiKeysRef.current.has(setupKey)) continue;
-        publishedAiKeysRef.current.add(setupKey);
-        void publishSystemSignal({
-          symbol: sig.symbol,
-          displayName: sig.displayName,
-          direction: sig.direction,
-          timeframe: sig.timeframes[0]?.timeframe ?? '',
-          confidence: sig.score,
-          entryPrice: sig.entryPrice,
-          stopLoss: sig.stopLoss,
-          takeProfit: sig.takeProfit1,
-          setupKey,
-          source: `AI:${id}`,
-          minQuality: settings.minQuality
-        });
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [publishedSignature, auth.status, aiJournal.records, settings.minQuality]);
+  // AI module signals are journaled above but NOT published to the automatic
+  // trader. Only the single scanner winner is published (see the winner
+  // publisher above), so the automatic trader acts on exactly one best signal
+  // per scan sweep.
 
   useEffect(() => {
     if (candles.length === 0) return;
@@ -1185,8 +1206,12 @@ export default function App() {
     'entrymodel',
     'freebots',
     'premiumbots',
+    'botbuilder',
     'copytrading',
     'aiintelligence',
+    'digits-manual-trader',
+    'bulk-trader',
+    'automated-trader',
   ];
   const isFullWidth = FULL_WIDTH_SECTIONS.includes(section);
   // The dedicated Chart tab is the master spec's "CHART ONLY" workspace: the shared canvas
@@ -1203,18 +1228,15 @@ export default function App() {
         )}
 
         <div className="flex h-dvh w-full bg-app text-ink overflow-hidden">
-          <Sidebar
-            active={section}
-            onSelect={selectSection}
-            badges={{ alerts: alertManager.unreadCount }}
-            statusBadge={
-              <ConnectionBadge status={connectionStatus} onReconnect={() => void reconnect()} />
-            }
-            hidden={isChartOnly}
-          />
-
           <div className="flex flex-col flex-1 min-w-0">
             {!isChartOnly && <TopBar />}
+            {!isChartOnly && (
+              <HorizontalNav
+                active={section}
+                onSelect={selectSection}
+                badges={{ alerts: alertManager.unreadCount }}
+              />
+            )}
 
             <div className="flex flex-1 min-h-0 min-w-0">
               {isFullWidth ? (
@@ -1223,6 +1245,14 @@ export default function App() {
                     {section === 'dashboard' && <DashboardView />}
                     {section === 'freebots' && <FreeBotsView />}
                     {section === 'premiumbots' && <PremiumBotsView />}
+                    {section === 'botbuilder' && <BotBuilderView />}
+                    {section === 'digits-manual-trader' && <DigitsManualTrader />}
+                    {section === 'bulk-trader' && <BulkTrader />}
+                    {section === 'automated-trader' && (
+                      <div className="mx-auto w-full max-w-4xl">
+                        <TradeView />
+                      </div>
+                    )}
                     {section === 'copytrading' && <CopyTradingView />}
                     {section === 'aiintelligence' && <AiIntelligenceView />}
                     {section === 'entrymodel' && <EntryModelAIView />}
@@ -1308,11 +1338,6 @@ export default function App() {
                           <AiTabView id={section} scanners={aiModules} journal={aiJournal} />
                         </div>
                       )}
-                      {section === 'trade' && (
-                        <div className="h-full overflow-y-auto">
-                          <TradeView />
-                        </div>
-                      )}
                       {section === 'risk' && (
                         <div className="h-full overflow-y-auto">
                           <RiskView />
@@ -1377,7 +1402,7 @@ export default function App() {
           }
         />
 
-        {!isFullWidth && !floatingScannerOpen && (
+        {!floatingScannerOpen && (
           <button
             type="button"
             onClick={() => setFloatingScannerOpen(true)}

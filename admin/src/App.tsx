@@ -8,6 +8,13 @@ import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { UsersPage } from './pages/UsersPage';
 import { CopyTradingClientsPage } from './pages/CopyTradingClientsPage';
+import { CopyOverviewPage } from './pages/copy/CopyOverviewPage';
+import { CopyRevenuePage } from './pages/copy/CopyRevenuePage';
+import { CopyExecutionsPage } from './pages/copy/CopyExecutionsPage';
+import { CopyRiskPage } from './pages/copy/CopyRiskPage';
+import { CopyReportsPage } from './pages/copy/CopyReportsPage';
+import { CopyStrategiesPage } from './pages/copy/CopyStrategiesPage';
+import { CopyClientDetailPage } from './pages/copy/CopyClientDetailPage';
 import { BotsPage } from './pages/BotsPage';
 import { DerivConnectionsPage } from './pages/DerivConnectionsPage';
 import { AdministratorsPage } from './pages/AdministratorsPage';
@@ -32,6 +39,13 @@ const ROUTES: { path: string; permission: string; render: () => ReactNode }[] = 
   { path: '/users', permission: 'users.read', render: () => <UsersPage /> },
   { path: '/copy-trading/clients', permission: 'copytrading.read', render: () => <CopyTradingClientsPage /> },
   { path: '/copy-trading/connections', permission: 'copytrading.read', render: () => <DerivConnectionsPage /> },
+  { path: '/copy-trading/overview', permission: 'copytrading.read', render: () => <CopyOverviewPage /> },
+  { path: '/copy-trading/client', permission: 'copytrading.read', render: () => <CopyClientDetailPage /> },
+  { path: '/copy-trading/strategies', permission: 'copytrading.read', render: () => <CopyStrategiesPage /> },
+  { path: '/copy-trading/executions', permission: 'copytrading.read', render: () => <CopyExecutionsPage /> },
+  { path: '/copy-trading/risk', permission: 'copytrading.read', render: () => <CopyRiskPage /> },
+  { path: '/copy-trading/revenue', permission: 'copytrading.read', render: () => <CopyRevenuePage /> },
+  { path: '/copy-trading/reports', permission: 'copytrading.read', render: () => <CopyReportsPage /> },
   { path: '/bots', permission: 'monitoring.read', render: () => <BotsPage /> },
   { path: '/administrators', permission: 'admins.read', render: () => <AdministratorsPage /> },
   { path: '/subscriptions', permission: 'subscriptions.read', render: () => <SubscriptionsPage /> },

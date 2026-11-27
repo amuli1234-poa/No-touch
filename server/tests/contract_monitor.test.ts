@@ -394,3 +394,44 @@ test('reconciling an intent that is not stuck is a no-op', async () => {
     await store.close();
   }
 });
+
+test('an expired update with a profit but a non-terminal status settles won/lost, not unknown', async () => {
+  const { store, broker, monitor, runner } = await harness();
+  try {
+    const { contract } = await openOneContract(store, broker, runner);
+    // A fast contract expires before Deriv reports its final won/lost string:
+    // is_expired is set and the profit is real, but status is still `open`.
+    await monitor.onUpdate(USER, contract.id, {
+      ...contractUpdate(Number(contract.id), 'open', 0.02),
+      isExpired: true,
+      exitSpot: 101,
+      dateSettlement: NOW
+    });
+    const settled = store.getContract('u_a', contract.id)!;
+    assert.equal(settled.status, 'won', 'a positive expired profit is a win, not unknown');
+    assert.equal(settled.profit, 0.02);
+    const settlements = store.listLedgerEntries('u_a').filter((e) => e.kind === 'settlement');
+    assert.equal(settlements.length, 1, 'exactly one settlement entry is posted');
+    assert.equal(settlements[0].amount, 0.02);
+  } finally {
+    monitor.close();
+    await store.close();
+  }
+});
+
+test('an expired negative profit with a non-terminal status settles lost, not unknown', async () => {
+  const { store, broker, monitor, runner } = await harness();
+  try {
+    const { contract } = await openOneContract(store, broker, runner);
+    await monitor.onUpdate(USER, contract.id, {
+      ...contractUpdate(Number(contract.id), 'open', -0.35),
+      isExpired: true,
+      exitSpot: 99,
+      dateSettlement: NOW
+    });
+    assert.equal(store.getContract('u_a', contract.id)!.status, 'lost');
+  } finally {
+    monitor.close();
+    await store.close();
+  }
+});

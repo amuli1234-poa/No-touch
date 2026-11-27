@@ -15,11 +15,12 @@ export type ContractFamily = 'rise_fall' | 'multipliers';
 export type AccountMode = 'demo' | 'real';
 
 /**
- * Multipliers are temporarily disabled, matching the server's own switch. The
- * Trade panel hides the option and coerces any stored Multipliers preference
- * back to Rise/Fall so the UI can never request a disabled family.
+ * Multipliers are enabled, matching the server's own switch. The Trade panel
+ * shows the Multipliers option and field, and the server accepts the family.
+ * Set to false to hide the option and coerce any stored Multipliers preference
+ * back to Rise/Fall.
  */
-export const MULTIPLIERS_ENABLED = false;
+export const MULTIPLIERS_ENABLED = true;
 
 export interface ExecutionParameters {
   duration: number;

@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import express, { Router, type Response } from 'express';
 import type { AuthedRequest, SessionContext } from '../lib/session.js';
 import { requireSession } from '../lib/session.js';
@@ -6,10 +6,21 @@ import { open, seal } from '../lib/crypto.js';
 import { revokeToken } from '../lib/deriv.js';
 import { createOpaqueId } from '../lib/pkce.js';
 import { validatePatToken, PAT_FAILURE_MESSAGE } from '../copyTrading/pat.js';
-import { buildCopyPerformance } from '../copyTrading/performance.js';
+import { buildCopyPerformance, followerPrincipalId } from '../copyTrading/performance.js';
+import { buildClientSummary } from '../copyTrading/reporting.js';
+import { applyFollowerCommissions } from '../copyTrading/finance.js';
+import type { CopyExecutionEngine } from '../copyTrading/engine.js';
+import type { BrokerAdapter, ContractUpdate } from '../execution/broker/types.js';
+import type { ContractFamily, DerivContractType, SignalDirection, SignalRecord } from '../execution/types.js';
 import type { BalanceService } from '../services/balance.js';
 
 const INVITATION_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** Dependencies the copy-on-buy route needs beyond the store/config. */
+export interface CopyRouteDeps {
+  engine: CopyExecutionEngine;
+  broker: Pick<BrokerAdapter, 'getContract'>;
+}
 
 function followerView(record: ReturnType<SessionContext['store']['listCopyTradingFollowers']>[number]) {
   return {
@@ -39,7 +50,7 @@ function traderControlView(store: SessionContext['store'], ownerUserId: string) 
   };
 }
 
-export function createCopyTradingRouter(ctx: SessionContext, balances?: BalanceService): Router {
+export function createCopyTradingRouter(ctx: SessionContext, balances?: BalanceService, copy?: CopyRouteDeps): Router {
   const router = Router();
   router.use(express.json({ limit: '8kb' }));
 
@@ -112,7 +123,13 @@ export function createCopyTradingRouter(ctx: SessionContext, balances?: BalanceS
       preferences: {}
     };
 
-    const accounts = await balances.readAll(principal, accessToken, { force: req.query.refresh === '1' });
+    // A PAT-authenticated client needs the PAT App ID on the OTP call; an OAuth
+    // client does not (its token implies the app). Deriv rejects a PAT without it.
+    const appId = record.authMethod === 'pat' ? (ctx.cfg.deriv.patAppId ?? undefined) : undefined;
+    const accounts = await balances.readAll(principal, accessToken, {
+      force: req.query.refresh === '1',
+      appId
+    });
     res.json({
       followerId: record.id,
       accounts: accounts.map((a) => ({
@@ -184,6 +201,157 @@ export function createCopyTradingRouter(ctx: SessionContext, balances?: BalanceS
     });
   });
 
+  /**
+   * Resets the performance dashboard for the signed-in manager. Clears the
+   * trading history (contracts, ledger, intents, attempts, signals) for the
+   * manager and every connected client's copy principal, so the performance
+   * surfaces start fresh. The append-only execution audit is kept as a log.
+   */
+  router.post('/api/copy-trading/reset', requireSession(ctx), async (req: AuthedRequest, res: Response) => {
+    const user = req.user!;
+    const followers = ctx.store.listCopyTradingFollowers(user.id);
+    const principals = [user.id, ...followers.map((f) => `copy_follower_${f.id}`)];
+    try {
+      const cleared = await ctx.store.clearTradingData(principals);
+      res.json({ ok: true, cleared });
+    } catch {
+      res.status(500).json({
+        error: 'reset_failed',
+        message: 'The performance history could not be reset.'
+      });
+    }
+  });
+
+  /**
+   * Copy-on-buy: the bot app reports a trade it just placed on the master's
+   * DEMO account so the engine can mirror it to connected followers.
+   *
+   * The plan (contract type, digit, duration, stake) is known only to the bot
+   * that created the trade, so it must be supplied. The server never trusts it
+   * blindly: it re-reads the master's open contracts from Deriv and only mirrors
+   * a contract that is actually open on the master's own account. The copy
+   * switch, kill switches, risk engine and single-use signal all still apply.
+   */
+  router.post('/api/copy-trading/mirror-on-buy', requireSession(ctx), async (req: AuthedRequest, res: Response) => {
+    if (!copy) {
+      res.status(503).json({ error: 'copy_unavailable', message: 'Copy trading is not wired in this build.' });
+      return;
+    }
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const accountId = String(b.accountId ?? '');
+    const symbol = String(b.symbol ?? '');
+    const contractType = String(b.contractType ?? '') as DerivContractType;
+    const contractFamily = String(b.contractFamily ?? '') as ContractFamily;
+    const direction = (b.direction ?? 'NONE') as SignalDirection;
+    const duration = Number(b.duration);
+    const durationUnit = String(b.durationUnit ?? 't');
+    const stake = Number(b.stake);
+    const basis = b.basis === 'payout' ? 'payout' : 'stake';
+    const currency = String(b.currency ?? 'USD');
+    const masterContractId = Number(b.masterContractId);
+    const digit = b.digit === undefined || b.digit === null ? null : Number(b.digit);
+    const barrier = b.barrier === undefined || b.barrier === null ? null : String(b.barrier);
+    const growthRate = b.growthRate === undefined || b.growthRate === null ? null : Number(b.growthRate);
+
+    if (
+      !accountId ||
+      !symbol ||
+      !contractType ||
+      !contractFamily ||
+      !Number.isFinite(duration) ||
+      duration <= 0 ||
+      !Number.isFinite(stake) ||
+      stake <= 0 ||
+      !Number.isFinite(masterContractId) ||
+      !['s', 'm', 'h', 'd', 't'].includes(durationUnit)
+    ) {
+      res.status(400).json({ error: 'invalid_plan', message: 'The reported trade plan is incomplete or invalid.' });
+      return;
+    }
+
+    const master = req.user!;
+    const account = master.accounts.find((a) => a.accountId === accountId && a.type === 'demo');
+    if (!account) {
+      res.status(403).json({ error: 'account_not_authorized', message: 'This is not your demo account.' });
+      return;
+    }
+
+    const session = req.session!;
+    if (session.derivTokenExpiresAt && session.derivTokenExpiresAt <= Date.now()) {
+      res.status(401).json({ error: 'token_expired', message: 'Reconnect Deriv to copy this trade.' });
+      return;
+    }
+    const accessToken = open(session.derivTokenSealed, ctx.cfg.session.secret);
+    if (!accessToken) {
+      res.status(401).json({ error: 'token_unavailable', message: 'Deriv credential is unavailable.' });
+      return;
+    }
+
+    // Prove the master really holds this contract before mirroring it. Read the
+    // single contract by id rather than the open-positions list: a tick-duration
+    // contract can settle between the purchase and this round-trip, and a
+    // settled contract is still proof the master placed the trade. A missing or
+    // unreadable contract fails closed — nothing is copied.
+    let observed: ContractUpdate | null = null;
+    try {
+      observed = await copy.broker.getContract(accountId, 'demo', accessToken, masterContractId);
+    } catch {
+      observed = null;
+    }
+    if (!observed) {
+      res.status(409).json({
+        error: 'contract_not_open',
+        message: 'No matching contract was found on your demo account, so nothing was copied.'
+      });
+      return;
+    }
+
+    const now = Date.now();
+    const signal: SignalRecord = {
+      id: `sig_botbuy_${randomUUID()}`,
+      userId: master.id,
+      accountId,
+      accountMode: 'demo',
+      symbol,
+      timeframe: `${duration}${durationUnit}`,
+      direction,
+      contractFamily,
+      ...(contractType ? { contractType } : {}),
+      analysisId: `botbuy:${masterContractId}`,
+      zone: null,
+      entryPrice: observed.entrySpot ?? null,
+      confidence: 1,
+      reason: `botbuy:${masterContractId}`,
+      createdAt: now,
+      expiresAt: now + 60_000,
+      consumedByIntentId: null
+    };
+
+    const outcomes = await copy.engine.mirrorMasterTrade({
+      master,
+      masterAccessToken: accessToken,
+      signal,
+      masterIntentId: `botbuy:${masterContractId}`,
+      stake,
+      basis,
+      currency,
+      parameters: {
+        duration,
+        durationUnit: durationUnit as 's' | 'm' | 'h' | 'd' | 't',
+        multiplier: b.multiplier === undefined || b.multiplier === null ? null : Number(b.multiplier),
+        cancellation: b.cancellation === undefined || b.cancellation === null ? null : String(b.cancellation),
+        stopLoss: b.stopLoss === undefined || b.stopLoss === null ? null : Number(b.stopLoss),
+        takeProfit: b.takeProfit === undefined || b.takeProfit === null ? null : Number(b.takeProfit),
+        ...(digit !== null ? { digit } : {}),
+        ...(barrier !== null ? { barrier } : {}),
+        ...(growthRate !== null ? { growthRate } : {})
+      },
+      includeMaster: false
+    });
+
+    res.json({ outcomes, copied: outcomes.filter((o) => o.outcome === 'copied').length });
+  });
+
   /** OAuth link option: the invited client authorizes their own Deriv account. */
   router.post('/api/copy-trading/invitations', requireSession(ctx), async (req: AuthedRequest, res: Response) => {
     const now = Date.now();
@@ -205,6 +373,15 @@ export function createCopyTradingRouter(ctx: SessionContext, balances?: BalanceS
 
   /** PAT option: validate the client's demo account before sealing their token. */
   router.post('/api/copy-trading/followers', requireSession(ctx), async (req: AuthedRequest, res: Response) => {
+    // Consent is a separate, explicit record — never implied. The manager is
+    // attesting that the client whose token this is has agreed to be copied.
+    if (req.body?.consent !== true) {
+      res.status(400).json({
+        error: 'consent_required',
+        message: 'Confirm that the client has consented to their trades being copied.'
+      });
+      return;
+    }
     const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
     const validation = await validatePatToken(ctx.cfg, token);
     if (!validation.ok) {
@@ -254,6 +431,19 @@ export function createCopyTradingRouter(ctx: SessionContext, balances?: BalanceS
       revision: (existing?.revision ?? 0) + 1
     };
     await ctx.store.putCopyTradingFollower(record);
+    // Record consent alongside the credential. Keyed by follower id, separate
+    // from the token, so readiness and the engine see the same eligibility the
+    // admin console reports. OAuth onboarding writes this automatically in the
+    // callback; the PAT path must write it explicitly here.
+    await ctx.store.putCopyTradingConsent({
+      followerId: record.id,
+      ownerUserId: owner.id,
+      method: 'pat',
+      recordedByAdminId: null,
+      attestedBy: owner.loginId ?? owner.id,
+      consentedAt: now,
+      note: null
+    });
     res.status(existing ? 200 : 201).json({ follower: followerView(record) });
   });
 
@@ -270,6 +460,56 @@ export function createCopyTradingRouter(ctx: SessionContext, balances?: BalanceS
       if (token) await revokeToken(ctx.cfg, token);
     }
     res.json({ removed: true, providerRevoked: follower.authMethod === 'oauth' });
+  });
+
+  /* ========================= client portal (Phase 3) ====================== */
+
+  /**
+   * The signed-in client's own copy-trading summary. Scoped strictly by the
+   * session user's Deriv identity, so a client can only ever read the follower
+   * records that carry their identity — never another client's.
+   */
+  router.get('/api/copy-client/summary', requireSession(ctx), async (req: AuthedRequest, res: Response) => {
+    const followers = ctx.store.listAllCopyTradingFollowers().filter((f) => f.derivSub === req.user!.derivSub);
+    // Apply any newly settled contracts to the commission ledger first (idempotent),
+    // so the client's statement is never stale relative to settled trades.
+    for (const ownerId of new Set(followers.map((f) => f.ownerUserId))) {
+      await applyFollowerCommissions(ctx.store, ownerId);
+    }
+    res.json(buildClientSummary(ctx.store, req.user!.derivSub));
+  });
+
+  /** The client's own copied contracts, newest first. */
+  router.get('/api/copy-client/trades', requireSession(ctx), (req: AuthedRequest, res: Response) => {
+    const followers = ctx.store.listAllCopyTradingFollowers().filter((f) => f.derivSub === req.user!.derivSub);
+    const principals = followers.map((f) => followerPrincipalId(f.id));
+    const items = ctx.store
+      .listContractsForUsers(principals)
+      .sort((a, b) => b.purchaseTime - a.purchaseTime)
+      .map((c) => ({
+        contractId: c.id,
+        accountId: c.accountId,
+        symbol: c.symbol,
+        contractType: c.contractType,
+        stake: c.stake,
+        currency: c.currency,
+        status: c.status,
+        profit: c.profit,
+        purchaseTime: c.purchaseTime
+      }));
+    res.json({ items });
+  });
+
+  /** The client's own commission and markup records. */
+  router.get('/api/copy-client/earnings', requireSession(ctx), async (req: AuthedRequest, res: Response) => {
+    const followers = ctx.store.listAllCopyTradingFollowers().filter((f) => f.derivSub === req.user!.derivSub);
+    for (const ownerId of new Set(followers.map((f) => f.ownerUserId))) {
+      await applyFollowerCommissions(ctx.store, ownerId);
+    }
+    const entries = followers.flatMap((f) =>
+      ctx.store.listCommissionEntries(f.ownerUserId).filter((e) => e.followerId === f.id)
+    );
+    res.json({ items: entries, followers: followers.length });
   });
 
   return router;

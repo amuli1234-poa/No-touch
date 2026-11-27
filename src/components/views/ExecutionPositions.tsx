@@ -181,7 +181,7 @@ export function ExecutionPositions() {
       className="@container min-w-0"
       right={
         <div className="flex items-center gap-2">
-          <div className="inline-flex rounded-md border border-line bg-panel p-0.5">
+<div className="ws-vsubnav inline-flex rounded-md border border-line bg-panel p-0.5">
             {(['demo', 'real'] as const).map((accountMode) => (
               <button
                 key={accountMode}

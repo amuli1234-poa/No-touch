@@ -67,6 +67,18 @@ export const NAV: NavGroup[] = [
     ]
   },
   {
+    label: 'Copy Trading',
+    items: [
+      { key: 'copy-overview', path: '/copy-trading/overview', label: 'Overview', icon: Gauge, permission: 'copytrading.read' },
+      { key: 'copy-client-detail', path: '/copy-trading/client', label: 'Client Details', icon: Users, permission: 'copytrading.read' },
+      { key: 'copy-strategies', path: '/copy-trading/strategies', label: 'Strategies', icon: Bot, permission: 'copytrading.read' },
+      { key: 'copy-executions', path: '/copy-trading/executions', label: 'Live Executions', icon: Activity, permission: 'copytrading.read' },
+      { key: 'copy-risk', path: '/copy-trading/risk', label: 'Risk Management', icon: ShieldCheck, permission: 'copytrading.read' },
+      { key: 'copy-revenue', path: '/copy-trading/revenue', label: 'Revenue & Commissions', icon: Wallet, permission: 'copytrading.read' },
+      { key: 'copy-reports', path: '/copy-trading/reports', label: 'Reports & Audit', icon: FileClock, permission: 'copytrading.read' }
+    ]
+  },
+  {
     label: 'Operations',
     items: [
       { key: 'scanner', path: '/scanner', label: 'Scanner Ops', icon: Gauge, permission: 'monitoring.read' },

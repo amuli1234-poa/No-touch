@@ -18,11 +18,18 @@
     "jsx": "react-jsx",
     "paths": {
       "@/*": [
-        "./*"
+        "./src/digits/*"
+      ],
+      "@deriv/core": [
+        "./src/digits/core/index.ts"
+      ],
+      "@acc/*": [
+        "./src/digits/accumulator/*"
       ]
     },
     "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
     "noEmit": true
   },
-  "exclude": ["dist", "server", "bot-app", "admin"]
+  "exclude": ["dist", "server", "bot-app", "admin", "src/digits/components/ui/calendar.tsx", "src/digits/accumulator/components/ui/calendar.tsx"]
 }

@@ -9,6 +9,8 @@ import type { UserRecord } from '../store/store.js';
 import { ExecutionGateway } from '../execution/gateway.js';
 import { ExecutionAuditor } from '../execution/audit.js';
 import { FakeBroker } from '../execution/broker/fakeBroker.js';
+import { BrokerError } from '../execution/broker/types.js';
+import type { BrokerAdapter } from '../execution/broker/types.js';
 import { CopyExecutionEngine } from '../copyTrading/engine.js';
 import { seal } from '../lib/crypto.js';
 import type { ServerConfig } from '../config.js';
@@ -164,6 +166,7 @@ async function harness(opts: { risk?: { approved: boolean; reasons: string[] } }
 function mirrorInput(overrides: Partial<Parameters<CopyExecutionEngine['mirrorMasterTrade']>[0]> = {}) {
   return {
     master: MASTER,
+    masterAccessToken: 'master-token',
     signal: masterSignal(),
     masterIntentId: 'int_master',
     stake: 5,
@@ -341,6 +344,37 @@ test('the kill switches still gate a copied trade', async () => {
   }
 });
 
+test('a copy is not blocked by the automatic-trading switch (it mirrors an accepted master trade)', async () => {
+  const store = new Store(tmpDir(), { unsafeDisableLock: true });
+  await store.load();
+  await enableCopying(store);
+  const broker = new FakeBroker();
+  // Execution + DEMO on, but the AUTOMATIC switch OFF. A copy must still go
+  // through: it is authorised by the master's copy switch, not the scanner.
+  const gateway = new ExecutionGateway({
+    store,
+    cfg: makeConfig(),
+    flags: { allowExecution: true, allowDemoExecution: true, allowRealExecution: false, allowAutomaticTrading: false },
+    broker,
+    balanceProvider: async () => 1000,
+    riskEvaluator: () => ({ approved: true, reasons: [] }),
+    now: () => NOW
+  });
+  const auditor = new ExecutionAuditor(store, { now: () => NOW });
+  const engine = new CopyExecutionEngine({ store, cfg: makeConfig(), gateway, auditor, now: () => NOW });
+  try {
+    await store.putCopyTradingFollower(follower());
+    const outcomes = await engine.mirrorMasterTrade(mirrorInput());
+    assert.equal(outcomes[0].outcome, 'copied', JSON.stringify(outcomes[0]));
+    assert.equal(outcomes[0].reason, null);
+    assert.equal(broker.buys.length, 1, 'the automatic switch must not block a copy');
+    const intent = store.getTradeIntent('copy_follower_f_1', outcomes[0].intentId!);
+    assert.equal(intent!.approvedBy, 'copy', 'the copy intent is marked as a copy, not automatic');
+  } finally {
+    await store.close();
+  }
+});
+
 test('a follower held by risk is rejected, not copied', async () => {
   const { store, broker, engine } = await harness({ risk: { approved: false, reasons: ['daily_loss'] } });
   try {
@@ -375,6 +409,78 @@ test('the same master trade cannot be copied twice (idempotent)', async () => {
     assert.equal(broker.buys.length, 1, 'the retry must not place a second copy');
     assert.equal(second[0].outcome, 'skipped', JSON.stringify(second[0]));
     assert.equal(second[0].reason, 'already_copied');
+  } finally {
+    await store.close();
+  }
+});
+
+test('two concurrent mirrorMasterTrade calls for the same trade do not duplicate', async () => {
+  // Simulates a rapid bot double-tick or a retry firing before the first copy
+  // fan-out completes. The per-account lock in bulkExecute must serialise them
+  // so the follower gets exactly one copy, not two.
+  const { store, broker, engine } = await harness();
+  try {
+    await store.putCopyTradingFollower(follower());
+    const [first, second] = await Promise.all([
+      engine.mirrorMasterTrade(mirrorInput()),
+      engine.mirrorMasterTrade(mirrorInput())
+    ]);
+    assert.equal(broker.buys.length, 1, 'concurrent calls must not double-trade');
+    const outcomes = [...first, ...second];
+    const copied = outcomes.filter((o) => o.outcome === 'copied');
+    const skipped = outcomes.filter((o) => o.outcome === 'skipped');
+    assert.equal(copied.length, 1, 'exactly one copy must succeed');
+    assert.equal(skipped.length, 1, 'the other must be skipped');
+    assert.equal(skipped[0].reason, 'already_copied');
+  } finally {
+    await store.close();
+  }
+});
+
+test('a transient proposal failure is retried and the copy still happens', async () => {
+  // A network blip on the first proposal must not permanently lose the copy.
+  // The signal is not consumed on a failed proposal, so a retry with a fresh
+  // intent can succeed.
+  const store = new Store(tmpDir(), { unsafeDisableLock: true });
+  await store.load();
+  await enableCopying(store);
+  const inner = new FakeBroker();
+  let proposalCalls = 0;
+  const flakyBroker: BrokerAdapter = {
+    kind: 'fake',
+    requestProposal: async (req) => {
+      proposalCalls += 1;
+      if (proposalCalls === 1) {
+        throw new BrokerError('timeout', 'Transient network error', false);
+      }
+      return inner.requestProposal(req);
+    },
+    buy: (req) => inner.buy(req),
+    sell: (req) => inner.sell(req),
+    subscribeContract: (...args) => inner.subscribeContract(...args),
+    getBalance: () => inner.getBalance(),
+    getOpenContracts: () => inner.getOpenContracts(),
+    getContract: (...args) => inner.getContract(...args),
+    close: () => inner.close()
+  };
+  const flags = { allowExecution: true, allowDemoExecution: true, allowRealExecution: false, allowAutomaticTrading: true };
+  const gateway = new ExecutionGateway({
+    store,
+    cfg: makeConfig(),
+    flags,
+    broker: flakyBroker,
+    balanceProvider: async () => 1000,
+    riskEvaluator: () => ({ approved: true, reasons: [] }),
+    now: () => NOW
+  });
+  const auditor = new ExecutionAuditor(store, { now: () => NOW });
+  const engine = new CopyExecutionEngine({ store, cfg: makeConfig(), gateway, auditor, now: () => NOW });
+  try {
+    await store.putCopyTradingFollower(follower());
+    const outcomes = await engine.mirrorMasterTrade(mirrorInput());
+    assert.equal(outcomes[0].outcome, 'copied', JSON.stringify(outcomes[0]));
+    assert.equal(inner.buys.length, 1, 'the retry must place exactly one buy');
+    assert.equal(proposalCalls, 2, 'the first proposal failed, the retry succeeded');
   } finally {
     await store.close();
   }

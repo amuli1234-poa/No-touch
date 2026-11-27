@@ -65,6 +65,13 @@ export interface FetchBalanceOptions {
   wsFactory?: WebSocketFactory;
   /** Hard cap on the whole OTP + connect + read sequence. */
   timeoutMs?: number;
+  /**
+   * Deriv App ID to send as the `Deriv-App-ID` header on the OTP request.
+   * Required for PAT (Personal Access Token) auth — Deriv rejects a PAT with
+   * `401 Deriv-App-ID header is required` when it is missing. OAuth tokens do
+   * not need it, so it is omitted for them.
+   */
+  appId?: string;
 }
 
 const DEFAULT_TIMEOUT_MS = 8_000;
@@ -89,14 +96,20 @@ function assertDerivSocketUrl(raw: string): void {
 async function requestBalanceSocketUrl(
   cfg: ServerConfig,
   accessToken: string,
-  accountId: string
+  accountId: string,
+  appId?: string
 ): Promise<string> {
   const url = `${cfg.deriv.apiBaseUrl}/trading/v1/options/accounts/${encodeURIComponent(accountId)}/otp`;
   let res: Response;
   try {
     res = await fetch(url, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' }
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+        // PAT tokens are rejected without this; OAuth tokens ignore it.
+        ...(appId ? { 'Deriv-App-ID': appId } : {})
+      }
     });
   } catch {
     throw new DerivBalanceError('otp_failed', 'Could not reach Deriv to open a balance session.');
@@ -156,7 +169,7 @@ export async function fetchBalance(
   accountId: string,
   opts: FetchBalanceOptions = {}
 ): Promise<DerivBalance> {
-  const socketUrl = await requestBalanceSocketUrl(cfg, accessToken, accountId);
+  const socketUrl = await requestBalanceSocketUrl(cfg, accessToken, accountId, opts.appId);
   const factory: WebSocketFactory =
     opts.wsFactory ?? ((url: string) => new (globalThis as any).WebSocket(url) as MinimalWebSocket);
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;

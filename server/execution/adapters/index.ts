@@ -1,5 +1,5 @@
 import type { DerivContractType, ContractFamily } from '../types.js';
-import { CONTRACT_FAMILY_TYPES } from '../types.js';
+import { CONTRACT_FAMILY_TYPES, DIGIT_PREDICTION_TYPES } from '../types.js';
 import type { ProposalPayload } from '../broker/types.js';
 
 export type { ProposalPayload };
@@ -177,21 +177,28 @@ class DigitsAdapter implements ContractAdapter {
     if (parameters.stopLoss !== null || parameters.takeProfit !== null) {
       throw new AdapterError('unsupported_parameter', 'Digit contracts take no limit order.');
     }
-    const digit = parameters.digit ?? null;
-    if (digit === null || !Number.isInteger(digit) || digit < 0 || digit > 9) {
-      throw new AdapterError('invalid_barrier', 'A digit contract needs a whole-number prediction from 0 to 9.');
-    }
-    if (input.directionContractType === 'DIGITOVER' && digit === 9) {
-      throw new AdapterError('invalid_barrier', 'Digit Over 9 can never win; pick a digit from 0 to 8.');
-    }
-    if (input.directionContractType === 'DIGITUNDER' && digit === 0) {
-      throw new AdapterError('invalid_barrier', 'Digit Under 0 can never win; pick a digit from 1 to 9.');
-    }
     if (parameters.durationUnit !== 't') {
       throw new AdapterError('invalid_duration_unit', 'Digit contracts are tick-duration; the unit must be "t".');
     }
     if (!Number.isInteger(parameters.duration) || parameters.duration < 1) {
       throw new AdapterError('invalid_duration', 'A digit contract needs a whole number of ticks.');
+    }
+    // Only Match/Diff/Over/Under name a digit. Even/Odd are complete predictions
+    // on their own and must be priced with NO barrier — requiring one here would
+    // refuse a perfectly valid Even/Odd strategy (and a copy of one).
+    let barrier: number | undefined;
+    if (DIGIT_PREDICTION_TYPES.has(input.directionContractType)) {
+      const digit = parameters.digit ?? null;
+      if (digit === null || !Number.isInteger(digit) || digit < 0 || digit > 9) {
+        throw new AdapterError('invalid_barrier', 'A digit contract needs a whole-number prediction from 0 to 9.');
+      }
+      if (input.directionContractType === 'DIGITOVER' && digit === 9) {
+        throw new AdapterError('invalid_barrier', 'Digit Over 9 can never win; pick a digit from 0 to 8.');
+      }
+      if (input.directionContractType === 'DIGITUNDER' && digit === 0) {
+        throw new AdapterError('invalid_barrier', 'Digit Under 0 can never win; pick a digit from 1 to 9.');
+      }
+      barrier = digit;
     }
     return {
       amount: input.amount,
@@ -201,7 +208,7 @@ class DigitsAdapter implements ContractAdapter {
       underlying_symbol: input.symbol,
       duration: parameters.duration,
       duration_unit: parameters.durationUnit,
-      barrier: digit
+      ...(barrier !== undefined ? { barrier } : {})
     };
   }
 }

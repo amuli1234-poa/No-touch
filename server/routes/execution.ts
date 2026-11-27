@@ -9,6 +9,7 @@ import type { ExecutionGateway, ExecutionResult } from '../execution/gateway.js'
 import { ExecutionError } from '../execution/gateway.js';
 import { ExecutionAuditor } from '../execution/audit.js';
 import type { AutoExecutionRunner } from '../execution/autoRunner.js';
+import { countTradesToday, DAILY_TRADE_LIMIT } from '../execution/autoRunner.js';
 import type { ContractMonitor } from '../execution/contractMonitor.js';
 import type { SystemSignalService } from '../services/systemSignals.js';
 import type { CopyExecutionEngine } from '../copyTrading/engine.js';
@@ -202,19 +203,22 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
   const mirrorAutoTrade = async (
     user: UserRecord,
     signal: Parameters<CopyExecutionEngine['mirrorMasterTrade']>[0]['signal'],
-    auto: { result: ExecutionResult | null } | null
+    auto: { result: ExecutionResult | null } | null,
+    masterAccessToken: string
   ): Promise<void> => {
     if (!deps.copyEngine || !auto?.result) return;
     const intent = auto.result.intent;
     try {
       await deps.copyEngine.mirrorMasterTrade({
         master: user,
+        masterAccessToken,
         signal,
         masterIntentId: intent.id,
         stake: intent.stake,
         basis: intent.basis,
         currency: intent.currency,
-        parameters: intent.parameters
+        parameters: intent.parameters,
+        includeMaster: false
       });
     } catch {
       // Swallowed deliberately: the manager's trade is already accepted.
@@ -303,9 +307,9 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
         reason: String(body.source ?? 'system') + ' best signal'
       });
       const auto = await runner.runForUser(user, signal, token);
-      if (auto.outcome === 'executed') {
+      if (auto.outcome === 'executed' && token) {
         systemSignals!.markExecuted(user.id, setupKey, signal.id, 'executed');
-        await mirrorAutoTrade(user, signal, auto);
+        await mirrorAutoTrade(user, signal, auto, token);
       }
       res.status(201).json({ published, auto });
     } catch (err) {
@@ -374,7 +378,8 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
       let auto = null;
       if (automaticEntry) {
         auto = await runner!.runForUser(user, signal, tokenFor(deps, req));
-        if (auto.outcome === 'executed') await mirrorAutoTrade(user, signal, auto);
+        const at = tokenFor(deps, req);
+        if (auto.outcome === 'executed' && at) await mirrorAutoTrade(user, signal, auto, at);
       }
       res.status(201).json({ signal, auto });
     } catch (err) {
@@ -634,39 +639,57 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
     }
 
     try {
-      const intent = await gateway.createIntent({
-        user,
-        accountId: account.accountId,
-        signal,
-        contractType,
-        contractFamily,
-        stake: Number(body.stake ?? 0),
-        basis: body.basis === 'payout' ? 'payout' : 'stake',
-        currency: String(body.currency ?? 'USD'),
-        parameters,
-        idempotencyKey,
-        manualApproval: { approvedAt: Date.now(), expiresAt: Date.now() + 15_000 }
-      });
-      const result = await gateway.submit(user, intent.id, tokenFor(deps, req));
+      const token = tokenFor(deps, req);
+      if (!token) {
+        throw new ExecutionError('token_expired', 'The Deriv authorization has expired.');
+      }
 
-      // Mirroring happens only after the master's trade was accepted by the
-      // broker, so a follower never copies a trade the manager did not get.
-      // A copy failure must not fail the manager's own trade, which has already
-      // been accepted; it is audited per follower inside the engine.
+      // Coordinated bulk execution: master and all followers propose in
+      // parallel, then all buys fire simultaneously. This replaces the old
+      // master-first-then-followers sequence so every account enters at
+      // effectively the same price.
+      let result: ExecutionResult | null = null;
       if (deps.copyEngine) {
         try {
-          await deps.copyEngine.mirrorMasterTrade({
+          const outcomes = await deps.copyEngine.mirrorMasterTrade({
             master: user,
+            masterAccessToken: token,
             signal,
-            masterIntentId: intent.id,
+            masterIntentId: idempotencyKey,
             stake: Number(body.stake ?? 0),
             basis: body.basis === 'payout' ? 'payout' : 'stake',
             currency: String(body.currency ?? 'USD'),
-            parameters
+            parameters,
+            includeMaster: true
           });
+          const masterOutcome = outcomes.find((o) => o.accountId === account.accountId);
+          if (masterOutcome?.intentId) {
+            result = {
+              intent: store.getTradeIntent(user.id, masterOutcome.intentId)!,
+              contractId: masterOutcome.contractId ?? null,
+              buy: masterOutcome.buy ?? null
+            };
+          }
         } catch {
-          // Swallowed deliberately: the manager's trade is already live.
+          // Mirror failure — fall through to a manual submit for the master alone.
         }
+      }
+
+      if (!result) {
+        const intent = await gateway.createIntent({
+          user,
+          accountId: account.accountId,
+          signal,
+          contractType,
+          contractFamily,
+          stake: Number(body.stake ?? 0),
+          basis: body.basis === 'payout' ? 'payout' : 'stake',
+          currency: String(body.currency ?? 'USD'),
+          parameters,
+          idempotencyKey,
+          manualApproval: { approvedAt: Date.now(), expiresAt: Date.now() + 15_000 }
+        });
+        result = await gateway.submit(user, intent.id, token);
       }
 
       res.status(200).json({
@@ -727,13 +750,25 @@ export function createExecutionRouter(deps: ExecutionRouterDeps): Router {
       confidence: s.confidence,
       executed: s.executedAt !== null
     }));
+    // Daily trade usage: count the user's demo account intents since UTC midnight.
+    const now = Date.now();
+    const demoAccount = req.user!.accounts.find((a) => a.type === 'demo');
+    const dailyTradesUsed = demoAccount
+      ? countTradesToday(store, userId, demoAccount.accountId, now)
+      : 0;
+    const dailyLimitReached = dailyTradesUsed >= DAILY_TRADE_LIMIT;
+    // If no other reason applies but the daily cap is hit, surface it.
+    const effectiveReason = reason ?? (dailyLimitReached ? 'daily_limit_reached' : null);
     res.json({
       // Automatic trading is "running" only when every switch permits it.
       running: executionEnabled && demoEnabled && automaticEnabled,
       executionEnabled,
       demoEnabled,
       automaticEnabled,
-      reason,
+      reason: effectiveReason,
+      dailyTradesUsed,
+      dailyTradeLimit: DAILY_TRADE_LIMIT,
+      dailyLimitReached,
       lastPassAt: current?.publishedAt ?? null,
       recent,
       // The dashboard owns the market universe; the server has none.

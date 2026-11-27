@@ -2,12 +2,13 @@ import { randomUUID } from 'node:crypto';
 
 import type { Store, UserRecord, DerivAccountRef } from '../store/store.js';
 import type { ServerConfig } from '../config.js';
-import type { ExecutionGateway } from '../execution/gateway.js';
-import { ExecutionError } from '../execution/gateway.js';
+import type { ExecutionGateway, BulkExecuteEntry } from '../execution/gateway.js';
+import type { BuyResult } from '../execution/broker/types.js';
 import type { ExecutionAuditor } from '../execution/audit.js';
 import type { SignalRecord, TradeIntentRecord } from '../execution/types.js';
 import { open } from '../lib/crypto.js';
-import { resolveContractType, SignalError } from '../services/signals.js';
+import { resolveContractType } from '../services/signals.js';
+import { countTradesToday, DAILY_TRADE_LIMIT } from '../execution/autoRunner.js';
 import type { CopyTradingFollowerRecord } from './types.js';
 
 /**
@@ -47,6 +48,7 @@ export interface CopyOutcome {
   reason: string | null;
   intentId: string | null;
   contractId: number | null;
+  buy: BuyResult | null;
 }
 
 /** A copied signal is only ever usable immediately; it mirrors a live trade. */
@@ -64,7 +66,9 @@ export interface CopyEngineDeps {
 export interface MirrorInput {
   /** The manager who placed the trade. */
   master: UserRecord;
-  /** The manager's signal, already consumed by the master's own intent. */
+  /** The manager's Deriv access token (server-side, from the sealed session). */
+  masterAccessToken: string;
+  /** The manager's signal, used as the template for all copy signals. */
   signal: SignalRecord;
   /** The master's accepted intent; also the idempotency anchor for copies. */
   masterIntentId: string;
@@ -72,6 +76,8 @@ export interface MirrorInput {
   basis: 'stake' | 'payout';
   currency: string;
   parameters: TradeIntentRecord['parameters'];
+  /** When true, the master is included in the bulk alongside followers. Default false; routes set true for coordinated master+follower execution. */
+  includeMaster?: boolean;
 }
 
 /**
@@ -123,8 +129,13 @@ export class CopyExecutionEngine {
 
   /**
    * Mirrors one accepted manager trade onto every eligible follower's DEMO
-   * accounts. Never throws for a normal skip or rejection, so one refused
-   * follower cannot prevent the rest from copying.
+   * account, executing the master and all followers in a coordinated bulk:
+   * proposals are fetched for every account in parallel, then all buys fire
+   * simultaneously. This replaces the old master-first-then-followers sequence,
+   * so followers no longer lag behind the master's entry price.
+   *
+   * Never throws for a normal skip or rejection, so one refused follower cannot
+   * prevent the rest from copying.
    */
   async mirrorMasterTrade(input: MirrorInput): Promise<CopyOutcome[]> {
     // Only a DEMO master trade is mirrored in this build. REAL stays untouched
@@ -140,150 +151,193 @@ export class CopyExecutionEngine {
       .listAllCopyTradingFollowers()
       .filter((f) => f.ownerUserId === input.master.id);
 
-    const outcomes: CopyOutcome[] = [];
-    for (const follower of followers) {
-      outcomes.push(...(await this.mirrorForFollower(follower, input)));
-    }
-    return outcomes;
-  }
-
-  private async mirrorForFollower(
-    follower: CopyTradingFollowerRecord,
-    input: MirrorInput
-  ): Promise<CopyOutcome[]> {
-    if (isHeld(follower)) {
-      return [await this.skip(follower, 'follower_held', input)];
-    }
-
-    const demoAccounts = follower.accounts.filter((a) => a.type === 'demo' && isTradable(a));
-    if (demoAccounts.length === 0) {
-      return [await this.skip(follower, 'no_demo_account', input)];
-    }
-
     const now = this.now();
-    if (follower.tokenExpiresAt > 0 && follower.tokenExpiresAt <= now) {
-      return [await this.skip(follower, 'token_expired', input)];
-    }
+    const entries: BulkExecuteEntry[] = [];
+    const skipped: CopyOutcome[] = [];
+    const includeMaster = input.includeMaster ?? false;
 
-    const accessToken = open(follower.tokenSealed, this.cfg.session.secret);
-    if (!accessToken) {
-      return [await this.skip(follower, 'token_unavailable', input)];
-    }
-
-    const principal = followerPrincipal(follower);
-    const outcomes: CopyOutcome[] = [];
-    for (const account of demoAccounts) {
-      outcomes.push(await this.copyToAccount(principal, follower, account, accessToken, input));
-    }
-    return outcomes;
-  }
-
-  private async copyToAccount(
-    principal: UserRecord,
-    follower: CopyTradingFollowerRecord,
-    account: DerivAccountRef,
-    accessToken: string,
-    input: MirrorInput
-  ): Promise<CopyOutcome> {
-    const now = this.now();
-    const currency = account.currency ?? input.currency;
-    const idempotencyKey = `copy:${input.masterIntentId}:${account.accountId}`;
-
-    const signal: SignalRecord = {
-      id: `sig_copy_${randomUUID()}`,
-      userId: principal.id,
-      accountId: account.accountId,
-      accountMode: 'demo',
-      symbol: input.signal.symbol,
-      timeframe: input.signal.timeframe,
-      direction: input.signal.direction,
-      contractFamily: input.signal.contractFamily,
-      ...(input.signal.contractType ? { contractType: input.signal.contractType } : {}),
-      analysisId: input.signal.analysisId,
-      zone: input.signal.zone,
-      entryPrice: input.signal.entryPrice,
-      confidence: input.signal.confidence,
-      reason: `copy:${input.signal.id}`,
-      createdAt: now,
-      expiresAt: Math.min(input.signal.expiresAt, now + COPY_SIGNAL_TTL_MS),
-      consumedByIntentId: null
-    };
-
-    let intentId: string | null = null;
-    try {
-      // A retried fan-out must not re-submit an intent that already bought.
-      // `createIntent` would return the existing one and `submit` would then
-      // fail on an illegal transition, so detect the completed copy up front and
-      // report it honestly instead of as an error.
-      const prior = this.store.findTradeIntentByIdempotencyKey(principal.id, idempotencyKey);
-      if (prior) {
-        return {
-          followerId: follower.id,
-          accountId: account.accountId,
-          outcome: 'skipped',
-          reason: 'already_copied',
-          intentId: prior.id,
-          contractId: prior.contractId
+    // Master entry: create a fresh signal copy (the original is already consumed
+    // by the master's intent, so we clone it with a new id).
+    if (includeMaster) {
+      const masterAccount = input.master.accounts.find((a) => a.accountId === input.signal.accountId);
+      if (masterAccount && masterAccount.type === 'demo' && isTradable(masterAccount)) {
+        const masterSignal: SignalRecord = {
+          ...input.signal,
+          id: `sig_copy_${randomUUID()}`,
+          userId: input.master.id,
+          consumedByIntentId: null
         };
+        await this.store.putSignal(masterSignal);
+        entries.push({
+          user: input.master,
+          accountId: input.signal.accountId,
+          signal: masterSignal,
+          contractType: resolveContractType({ ...input.signal, contractFamily: input.signal.contractFamily }),
+          contractFamily: input.signal.contractFamily,
+          stake: input.stake,
+          basis: input.basis,
+          currency: input.currency,
+          parameters: input.parameters,
+          idempotencyKey: `copy:${input.masterIntentId}:${input.signal.accountId}`,
+          asCopy: true,
+          manualApproval: { approvedAt: now, expiresAt: now + 15_000 },
+          accessToken: input.masterAccessToken
+        });
+      }
+    }
+
+    // Follower entries: one per demo account, all in the same bulk.
+    for (const follower of followers) {
+      if (isHeld(follower)) {
+        await this.skip(follower, 'follower_held', input);
+        skipped.push({
+          followerId: follower.id,
+          accountId: '',
+          outcome: 'skipped',
+          reason: 'follower_held',
+          intentId: null,
+          contractId: null,
+          buy: null
+        });
+        continue;
       }
 
-      await this.store.putSignal(signal);
-      const intent = await this.gateway.createIntent({
-        user: principal,
-        accountId: account.accountId,
-        signal,
-        contractType: resolveContractType(signal),
-        contractFamily: signal.contractFamily,
-        stake: input.stake,
-        basis: input.basis,
-        currency,
-        parameters: input.parameters,
-        idempotencyKey
-      });
-      intentId = intent.id;
-
-      const result = await this.gateway.submit(principal, intent.id, accessToken);
-      await this.auditor.record({
-        userId: principal.id,
-        action: 'execution.copy',
-        outcome: 'allowed',
-        accountId: account.accountId,
-        intentId: intent.id,
-        detail: {
+      const demoAccounts = follower.accounts.filter((a) => a.type === 'demo' && isTradable(a));
+      if (demoAccounts.length === 0) {
+        await this.skip(follower, 'no_demo_account', input);
+        skipped.push({
           followerId: follower.id,
-          masterUserId: input.master.id,
-          masterIntentId: input.masterIntentId,
-          signalId: input.signal.id,
-          contractId: result.contractId
+          accountId: '',
+          outcome: 'skipped',
+          reason: 'no_demo_account',
+          intentId: null,
+          contractId: null,
+          buy: null
+        });
+        continue;
+      }
+
+      if (follower.tokenExpiresAt > 0 && follower.tokenExpiresAt <= now) {
+        await this.skip(follower, 'token_expired', input);
+        skipped.push({
+          followerId: follower.id,
+          accountId: '',
+          outcome: 'skipped',
+          reason: 'token_expired',
+          intentId: null,
+          contractId: null,
+          buy: null
+        });
+        continue;
+      }
+
+      const accessToken = open(follower.tokenSealed, this.cfg.session.secret);
+      if (!accessToken) {
+        await this.skip(follower, 'token_unavailable', input);
+        skipped.push({
+          followerId: follower.id,
+          accountId: '',
+          outcome: 'skipped',
+          reason: 'token_unavailable',
+          intentId: null,
+          contractId: null,
+          buy: null
+        });
+        continue;
+      }
+
+      const principal = followerPrincipal(follower);
+      for (const account of demoAccounts) {
+        // Daily trade cap: each follower account gets at most 24 trades per
+        // UTC day (copies count toward the follower's own cap).
+        const followerTradesToday = countTradesToday(this.store, principal.id, account.accountId, now);
+        if (followerTradesToday >= DAILY_TRADE_LIMIT) {
+          await this.skip(follower, `daily_limit_reached (${followerTradesToday}/${DAILY_TRADE_LIMIT})`, input);
+          skipped.push({
+            followerId: follower.id,
+            accountId: account.accountId,
+            outcome: 'skipped',
+            reason: 'daily_limit_reached',
+            intentId: null,
+            contractId: null,
+            buy: null
+          });
+          continue;
         }
-      });
-      return {
-        followerId: follower.id,
-        accountId: account.accountId,
-        outcome: 'copied',
-        reason: null,
-        intentId: intent.id,
-        contractId: result.contractId
-      };
-    } catch (err) {
-      const reason = err instanceof ExecutionError || err instanceof SignalError ? err.code : 'copy_failed';
-      await this.auditor.record({
-        userId: principal.id,
-        action: 'execution.copy',
-        outcome: 'denied',
-        accountId: account.accountId,
-        intentId,
-        detail: { followerId: follower.id, masterIntentId: input.masterIntentId, reason }
-      });
-      return {
-        followerId: follower.id,
-        accountId: account.accountId,
-        outcome: reason === 'copy_failed' ? 'failed' : 'rejected',
-        reason,
-        intentId,
-        contractId: null
-      };
+
+        const followerSignal: SignalRecord = {
+          id: `sig_copy_${randomUUID()}`,
+          userId: principal.id,
+          accountId: account.accountId,
+          accountMode: 'demo',
+          symbol: input.signal.symbol,
+          timeframe: input.signal.timeframe,
+          direction: input.signal.direction,
+          contractFamily: input.signal.contractFamily,
+          ...(input.signal.contractType ? { contractType: input.signal.contractType } : {}),
+          analysisId: input.signal.analysisId,
+          zone: input.signal.zone,
+          entryPrice: input.signal.entryPrice,
+          confidence: input.signal.confidence,
+          reason: `copy:${input.signal.id}`,
+          createdAt: now,
+          expiresAt: Math.min(input.signal.expiresAt, now + COPY_SIGNAL_TTL_MS),
+          consumedByIntentId: null
+        };
+        await this.store.putSignal(followerSignal);
+        entries.push({
+          user: principal,
+          accountId: account.accountId,
+          signal: followerSignal,
+          contractType: resolveContractType({ ...input.signal, contractFamily: input.signal.contractFamily }),
+          contractFamily: input.signal.contractFamily,
+          stake: input.stake,
+          basis: input.basis,
+          currency: account.currency ?? input.currency,
+          parameters: input.parameters,
+          idempotencyKey: `copy:${input.masterIntentId}:${account.accountId}`,
+          asCopy: true,
+          accessToken
+        });
+      }
     }
+
+    // Coordinated bulk: proposals for all accounts in parallel, then all buys
+    // fire simultaneously.
+    const results = await this.gateway.bulkExecute(entries);
+
+    const outcomes: CopyOutcome[] = [...skipped];
+    for (const r of results) {
+      outcomes.push({
+        followerId: '',
+        accountId: r.accountId,
+        outcome: r.outcome as CopyOutcomeKind,
+        reason: r.reason,
+        intentId: r.intentId,
+        contractId: r.contractId,
+        buy: r.buy ?? null
+      });
+      if (r.outcome === 'copied' && r.contractId !== null) {
+        await this.auditor.record({
+          userId: `copy_follower_${r.accountId}`,
+          action: 'execution.copy',
+          outcome: 'allowed',
+          accountId: r.accountId,
+          intentId: r.intentId ?? null,
+          detail: { followerId: '', masterUserId: input.master.id, masterIntentId: input.masterIntentId, signalId: input.signal.id, contractId: r.contractId }
+        });
+      } else if (r.outcome !== 'copied') {
+        await this.auditor.record({
+          userId: `copy_follower_${r.accountId}`,
+          action: 'execution.copy',
+          outcome: 'denied',
+          accountId: r.accountId,
+          intentId: r.intentId ?? null,
+          detail: { followerId: '', masterUserId: input.master.id, masterIntentId: input.masterIntentId, reason: r.reason }
+        });
+      }
+    }
+    return outcomes;
   }
 
   private async skip(
@@ -303,7 +357,8 @@ export class CopyExecutionEngine {
       outcome: 'skipped',
       reason,
       intentId: null,
-      contractId: null
+      contractId: null,
+      buy: null
     };
   }
 }

@@ -89,6 +89,17 @@ function dayKey(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
+/**
+ * Deriv reports contract times (`purchase_time`, `date_start`, …) in Unix
+ * seconds, while a few fixtures and the monitor's `now()` fallback use ms.
+ * Normalise to ms so the cutoff comparison and day bucketing are correct
+ * regardless of which path produced the record. A ms timestamp is ~1.7e12
+ * today; a seconds one is ~1.7e9, so the 1e12 threshold separates them.
+ */
+function toMs(value: number): number {
+  return value < 1e12 ? value * 1000 : value;
+}
+
 function emptyRow(
   followerId: string | null,
   loginId: string | null,
@@ -180,7 +191,7 @@ export function buildCopyPerformance(
     }
 
     row.trades += 1;
-    row.lastTradeAt = Math.max(row.lastTradeAt ?? 0, contract.purchaseTime) || null;
+    row.lastTradeAt = Math.max(row.lastTradeAt ?? 0, toMs(contract.purchaseTime)) || null;
 
     if (SETTLED.has(contract.status)) {
       row.settledTrades += 1;
@@ -191,8 +202,8 @@ export function buildCopyPerformance(
         if (profit > 0) row.wins += 1;
         else if (profit < 0) row.losses += 1;
       }
-      if (contract.purchaseTime >= cutoff) {
-        const day = dayKey(contract.purchaseTime);
+      if (toMs(contract.purchaseTime) >= cutoff) {
+        const day = dayKey(toMs(contract.purchaseTime));
         const bucket = daily.get(day) ?? { date: day, realisedPnl: 0, trades: 0 };
         bucket.realisedPnl += profit !== null && Number.isFinite(profit) ? profit : 0;
         bucket.trades += 1;

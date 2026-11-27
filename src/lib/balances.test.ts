@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   BALANCE_STATE_LABEL,
   formatMoney,
+  isDerivTokenExpired,
   lastUpdatedLabel,
   lastUpdatedShort,
   pickAccount,
@@ -149,4 +150,18 @@ test('lastUpdatedLabel reads plainly for every age', () => {
   assert.equal(lastUpdatedLabel(T, T + 45_000), 'Updated 45s ago');
   assert.equal(lastUpdatedLabel(T, T + 5 * 60_000), 'Updated 5m ago');
   assert.equal(lastUpdatedLabel(T, T + 4 * 3_600_000), 'Updated 4h ago');
+});
+
+/* ------------------------- token expiry ------------------------------ */
+
+test('isDerivTokenExpired is true only once the expiry is in the past', () => {
+  assert.equal(isDerivTokenExpired(T - 1, T), true, 'expiry just passed is expired');
+  assert.equal(isDerivTokenExpired(T, T), true, 'expiry exactly now is expired');
+  assert.equal(isDerivTokenExpired(T + 1, T), false, 'a future expiry is still valid');
+});
+
+test('isDerivTokenExpired never fabricates an expiry from a missing value', () => {
+  assert.equal(isDerivTokenExpired(null, T), false, 'unknown expiry is not treated as expired');
+  assert.equal(isDerivTokenExpired(0, T), false, 'a zero/unset expiry is not expired');
+  assert.equal(isDerivTokenExpired(-1, T), false, 'a negative expiry is not expired');
 });
