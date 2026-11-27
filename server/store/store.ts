@@ -504,6 +504,21 @@ export class Store {
     return admin;
   }
 
+  /**
+   * Transactionally creates a Super Admin together with its audit event.
+   * Both writes commit together or roll back together.
+   */
+  async createSuperAdmin(admin: AdminUserRecord, audit: AuditRecord): Promise<void> {
+    this.ensureLoaded();
+    admin.updatedAt = Date.now();
+    await this.backend.transaction(async () => {
+      this.db.adminUsers[admin.id] = admin;
+      await this.backend.putKeyed('adminUsers', admin.id, admin as unknown as StoredRecord);
+      this.db.auditLogs.push(audit);
+      await this.backend.appendRecord('auditLogs', audit as unknown as StoredRecord);
+    });
+  }
+
   /* -------------------------- admin sessions ---------------------------- */
 
   async createAdminSession(session: AdminSessionRecord): Promise<void> {
@@ -537,6 +552,64 @@ export class Store {
         await this.backend.putKeyed('adminSessions', s.id, s as unknown as StoredRecord);
       }
     }
+  }
+
+  /**
+   * Permanently deletes one administrator account.
+   *
+   * Safety rules (enforced here, not by the caller):
+   *  - the target must exist and be an active SUPER_ADMIN;
+   *  - there must be exactly one active SUPER_ADMIN matching... no: the target
+   *    is selected by id; the caller must have verified identity out-of-band.
+   *  - refuses to delete the last remaining active SUPER_ADMIN.
+   *  - revokes all sessions and invalidates password-reset tokens for that admin.
+   *  - appends an audit record; auditLogs and all trader/trading records untouched.
+   */
+  async deleteAdmin(adminId: string, actorId: string): Promise<void> {
+    this.ensureLoaded();
+    const target = this.db.adminUsers[adminId];
+    if (!target) throw new Error('admin_not_found');
+    if (target.role !== 'SUPER_ADMIN' || target.status !== 'active') throw new Error('not_active_super_admin');
+    const activeSupers = Object.values(this.db.adminUsers).filter((a) => a.role === 'SUPER_ADMIN' && a.status === 'active');
+    if (activeSupers.length <= 1) throw new Error('cannot_delete_last_super_admin');
+
+    await this.backend.transaction(async () => {
+      // Revoke + delete sessions
+      for (const s of Object.values(this.db.adminSessions)) {
+        if (s.adminId === adminId) {
+          delete this.db.adminSessions[s.id];
+          await this.backend.deleteKeyed('adminSessions', s.id);
+        }
+      }
+      // Invalidate password reset tokens
+      for (const r of Object.values(this.db.adminPasswordResets)) {
+        if (r.adminId === adminId) {
+          delete this.db.adminPasswordResets[r.id];
+          await this.backend.deleteKeyed('adminPasswordResets', r.id);
+        }
+      }
+      // Delete admin record
+      delete this.db.adminUsers[adminId];
+      await this.backend.deleteKeyed('adminUsers', adminId);
+      // Audit
+      const audit: AuditRecord = {
+        id: `audit_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        timestamp: Date.now(),
+        actorAdminId: actorId,
+        actorEmail: null,
+        action: 'admin.deleted',
+        targetType: 'admin',
+        targetId: adminId,
+        previousState: null,
+        newState: null,
+        reason: 'cli_delete',
+        correlationId: `cli_${Date.now()}`,
+        sourceIp: null,
+        metadata: { email: target.email }
+      };
+      this.db.auditLogs.push(audit);
+      await this.backend.appendRecord('auditLogs', audit as unknown as StoredRecord);
+    });
   }
 
   /* ----------------------- invitations & resets ------------------------- */
