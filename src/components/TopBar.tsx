@@ -31,14 +31,14 @@ export function TopBar() {
     'h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-[var(--ws-hairline)] bg-surface text-fg-2 transition-colors hover:bg-surface-raised hover:text-fg-1 cursor-pointer';
 
   return (
-    <header className="relative z-40 h-16 shrink-0 border-b border-[var(--ws-hairline)] bg-app/85 backdrop-blur-xl pl-5 pr-2 sm:pl-8 sm:pr-4 flex items-center justify-between gap-2 sm:gap-4">
+    <header className="relative z-40 h-auto lg:h-16 shrink-0 border-b border-[var(--ws-hairline)] bg-app/85 backdrop-blur-xl pl-5 pr-2 sm:pl-8 sm:pr-4 py-2 lg:py-0 flex flex-wrap lg:flex-nowrap items-center justify-between gap-2 sm:gap-4">
       {/* Left: brand. */}
-      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+      <div className="order-1 lg:order-none flex flex-1 lg:flex-none shrink-0 items-center gap-2 sm:gap-3 min-w-0">
         <BrandLogo markClassName="h-8 w-8" onClick={() => ws.navigate('dashboard')} />
       </div>
 
       {/* Center: Deriv feed, refresh, manual/auto, theme and settings. */}
-      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+      <div className="order-3 basis-full lg:basis-auto lg:order-none flex items-center gap-1.5 sm:gap-2 shrink-0">
         {lifecycle && style && (
           <span
             className={`hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide border ${style.bg} ${style.text} ${style.border}`}
@@ -68,7 +68,7 @@ export function TopBar() {
           data-testid="theme-toggle"
           aria-label={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
           title={isDark ? 'Light theme' : 'Dark theme'}
-          className={`${iconButton} hidden sm:inline-flex`}
+          className={`${iconButton} inline-flex`}
         >
           {isDark ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
         </button>
@@ -85,7 +85,7 @@ export function TopBar() {
       </div>
 
       {/* Right: refresh, account mode and balances. */}
-      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 shrink-0">
+      <div className="order-2 lg:order-none flex items-center gap-1.5 sm:gap-2 min-w-0 justify-end">
         <div className="hidden sm:block">
           <ModeToggle />
         </div>

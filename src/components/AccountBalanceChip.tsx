@@ -130,7 +130,7 @@ export function AccountBalanceChip() {
   };
 
   const triggerClass =
-    'flex items-center gap-1 sm:gap-1.5 h-9 px-1.5 sm:px-2.5 rounded-lg bg-elevated border border-line text-muted hover:text-ink hover:border-accent/50 transition-colors cursor-pointer';
+    'flex items-center gap-1 sm:gap-1.5 h-9 px-1.5 sm:px-2.5 max-w-[52vw] sm:max-w-[13rem] lg:max-w-[12rem] rounded-lg bg-elevated border border-line text-muted hover:text-ink hover:border-accent/50 transition-colors cursor-pointer';
 
   if (status === 'loading' && accounts.length === 0) {
     return (
@@ -166,7 +166,7 @@ export function AccountBalanceChip() {
   }
 
   return (
-    <div className="relative flex items-center gap-1 shrink-0" ref={ref}>
+    <div className="relative flex min-w-0 items-center gap-1" ref={ref}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -180,7 +180,7 @@ export function AccountBalanceChip() {
         }
       >
         <ModePill mode={selected.mode} />
-        <span className="font-mono text-[12.5px] font-bold tabular-nums text-ink">
+        <span className="min-w-0 truncate font-mono text-[12.5px] font-bold tabular-nums text-ink">
           {formatMoney(selected.balance, null)}
           {selected.currency && (
             <span className="hidden md:inline text-faint"> {selected.currency}</span>

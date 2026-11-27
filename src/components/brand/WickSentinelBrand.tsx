@@ -54,7 +54,9 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
 }) => {
   const content = (
     <>
-      <WickSentinelMark className={markClassName} />
+      <span className="shrink-0">
+        <WickSentinelMark className={markClassName} />
+      </span>
       <span className="min-w-0 text-left">
         <span className="block truncate text-[15.5px] font-extrabold leading-tight tracking-[-0.02em] text-fg-1">
           Wick<span className="text-accent-strong">Sentinel</span>
@@ -76,7 +78,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
     return (
       <button
         onClick={onClick}
-        className={`flex max-sm:min-h-[44px] items-center gap-2.5 rounded-[10px] transition-opacity hover:opacity-90 ${className}`}
+        className={`flex min-w-0 max-sm:min-h-[44px] items-center gap-2.5 rounded-[10px] transition-opacity hover:opacity-90 ${className}`}
         aria-label="WickSentinel home"
       >
         {content}
