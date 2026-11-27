@@ -12,7 +12,9 @@ services:
       - key: PORT
         value: 8787
       - key: STORAGE_ENGINE
-        value: sqlite
+        value: postgres
+      - key: DATABASE_URL
+        sync: false
       - key: DERIV_APP_ID
         sync: false
       - key: DERIV_REDIRECT_URI

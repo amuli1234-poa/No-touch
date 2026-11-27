@@ -15,7 +15,7 @@ export interface ServerConfig {
    * Persistence engine. `auto` uses SQLite when a database file is present and
    * JSON otherwise; `sqlite`/`json` force one. Set STORAGE_ENGINE to pin it.
    */
-  storageEngine: 'auto' | 'json' | 'sqlite';
+  storageEngine: 'auto' | 'json' | 'sqlite' | 'postgres';
   /**
    * Optional Redis cache. When REDIS_URL is set the server keeps a shared,
    * in-memory cache in Redis for hot, recomputable data (the Deriv symbol
@@ -30,6 +30,15 @@ export interface ServerConfig {
     keyPrefix: string;
     /** Default entry TTL, in seconds, for cached values. */
     ttlSeconds: number;
+  };
+  /**
+   * PostgreSQL connection (Supabase). Required when STORAGE_ENGINE=postgres.
+   * The connection string is never logged.
+   */
+  database?: {
+    url: string | null;
+    /** SSL mode: 'require' for Supabase, 'disable' for local dev. */
+    ssl: boolean;
   };
   /** Client telemetry retention and liveness. */
   telemetry: {
@@ -95,13 +104,17 @@ function int(value: string | undefined, fallback: number): number {
 function parseEngine(value: string | undefined): ServerConfig['storageEngine'] {
   const v = value?.trim().toLowerCase();
   if (!v) return 'auto';
-  if (v === 'auto' || v === 'json' || v === 'sqlite') return v;
-  throw new Error(`STORAGE_ENGINE must be one of auto, json, sqlite (got "${value}").`);
+  if (v === 'auto' || v === 'json' || v === 'sqlite' || v === 'postgres') return v;
+  throw new Error(`STORAGE_ENGINE must be one of auto, json, sqlite, postgres (got "${value}").`);
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const isProduction = env.NODE_ENV === 'production';
   const appId = required('DERIV_APP_ID', env.DERIV_APP_ID);
+  const storageEngine = parseEngine(env.STORAGE_ENGINE);
+  if (storageEngine === 'postgres' && !env.DATABASE_URL?.trim()) {
+    throw new Error('DATABASE_URL is required when STORAGE_ENGINE=postgres. See .env.example.');
+  }
   const redirectUri = required('DERIV_REDIRECT_URI', env.DERIV_REDIRECT_URI);
   const secret = required('SESSION_SECRET', env.SESSION_SECRET);
 
@@ -122,7 +135,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     port: int(env.PORT, 8787),
     isProduction,
     dataDir: env.DATA_DIR ? path.resolve(env.DATA_DIR) : path.resolve(process.cwd(), 'data'),
-    storageEngine: parseEngine(env.STORAGE_ENGINE),
+    storageEngine,
     redis: {
       // Redis is opt-in: no URL means the in-process cache is used and the
       // server behaves exactly as before. A URL (redis:// or rediss://) turns on
@@ -130,6 +143,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       url: env.REDIS_URL?.trim() || null,
       keyPrefix: env.REDIS_KEY_PREFIX?.trim() || 'wicksentinel:',
       ttlSeconds: Math.max(1, int(env.REDIS_TTL_SECONDS, 60))
+    },
+    database: {
+      url: env.DATABASE_URL?.trim() || null,
+      ssl: env.NODE_ENV === 'production' || (env.DATABASE_URL ?? '').includes('supabase')
     },
     telemetry: {
       // 90 days is enough to compute 30-day DAU/MAU with history to spare.

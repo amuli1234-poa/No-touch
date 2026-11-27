@@ -45,27 +45,52 @@ export class PostgresBackend implements StorageBackend {
   private pool: Pool;
   private opened = false;
 
-  constructor(connectionString: string) {
-    this.pool = new Pool({ connectionString, max: 10, idleTimeoutMillis: 30000, connectionTimeoutMillis: 10000 });
+  constructor(connectionString: string, ssl?: boolean) {
+    this.pool = new Pool({
+      connectionString,
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+      ssl: ssl ? { rejectUnauthorized: false } : undefined
+    });
   }
 
   async open(): Promise<void> {
     if (this.opened) return;
-    const client = await this.pool.connect();
-    try {
-      // Create all tables
-      for (const spec of COLLECTION_SPECS) {
-        if (spec.kind === 'keyed') {
-          await client.query(KEYED_DDL(spec.name, spec.indexFields ?? []));
-        } else {
-          await client.query(APPEND_DDL(spec.name));
+    const maxAttempts = 5;
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const client = await this.pool.connect();
+        try {
+          for (const spec of COLLECTION_SPECS) {
+            if (spec.kind === 'keyed') {
+              await client.query(KEYED_DDL(spec.name, spec.indexFields ?? []));
+            } else {
+              await client.query(APPEND_DDL(spec.name));
+            }
+          }
+          await client.query(SINGLETON_DDL);
+          await client.query(`
+            CREATE TABLE IF NOT EXISTS _schema_migrations (
+              version TEXT PRIMARY KEY,
+              applied_at TIMESTAMPTZ DEFAULT NOW(),
+              description TEXT
+            );
+          `);
+          this.opened = true;
+          return;
+        } finally {
+          client.release();
+        }
+      } catch (err) {
+        lastErr = err;
+        if (attempt < maxAttempts) {
+          await new Promise((r) => setTimeout(r, Math.min(1000 * 2 ** (attempt - 1), 8000)));
         }
       }
-      await client.query(SINGLETON_DDL);
-      this.opened = true;
-    } finally {
-      client.release();
     }
+    throw lastErr instanceof Error ? lastErr : new Error('Failed to open postgres backend');
   }
 
   async close(): Promise<void> {
@@ -159,11 +184,9 @@ export class PostgresBackend implements StorageBackend {
   async transaction<T>(fn: () => Promise<T>): Promise<T> {
     await this.ensureOpen();
     const client = await this.pool.connect();
+    const prevClient = (this as any)._txClient;
     try {
       await client.query('BEGIN');
-      // Temporarily swap pool query to use client — but our methods use this.pool directly.
-      // Instead, we set a transaction client and run fn, then commit/rollback.
-      const prevClient = (this as any)._txClient;
       (this as any)._txClient = client;
       const result = await fn();
       await client.query('COMMIT');
@@ -171,11 +194,17 @@ export class PostgresBackend implements StorageBackend {
       return result;
     } catch (e) {
       await client.query('ROLLBACK');
-      (this as any)._txClient = null;
+      (this as any)._txClient = prevClient;
       throw e;
     } finally {
       client.release();
     }
+  }
+
+  /** Expose a read-only query for tooling. Never use for untrusted input. */
+  async query(sql: string, params: unknown[] = []): Promise<{ rows: any[] }> {
+    await this.ensureOpen();
+    return this.client.query(sql, params);
   }
 
   async counts(): Promise<Record<string, number>> {

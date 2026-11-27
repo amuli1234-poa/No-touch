@@ -77,6 +77,8 @@ export interface StoreOptions {
   engine?: StorageEngine;
   /** Postgres connection string. Required when engine is 'postgres'. */
   connectionString?: string;
+  /** Enable SSL for Postgres. Defaults to true in production or for Supabase. */
+  ssl?: boolean;
   /** Overrides backend selection entirely (used by the migration tooling). */
   backend?: StorageBackend;
 }
@@ -229,7 +231,8 @@ export function resolveBackend(dataDir: string, options: StoreOptions): StorageB
   if (engine === 'postgres') {
     const connStr = options.connectionString ?? process.env.DATABASE_URL;
     if (!connStr) throw new Error('DATABASE_URL is required for postgres engine');
-    return new PostgresBackend(connStr);
+    const ssl = options.ssl ?? (process.env.NODE_ENV === 'production' || connStr.includes('supabase'));
+    return new PostgresBackend(connStr, ssl);
   }
 
 

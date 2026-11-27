@@ -85,8 +85,14 @@ export function createApp(cfg: ServerConfig, store: Store, cache?: Cache, balanc
 
   app.use(attachSession(ctx));
 
-  app.get('/healthz', (_req, res) => {
-    res.json({ ok: true });
+  app.get('/healthz', async (_req, res) => {
+    try {
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000));
+      await Promise.race([store.storage.counts(), timeout]);
+      res.json({ ok: true });
+    } catch {
+      res.status(503).json({ ok: false });
+    }
   });
 
   app.use(createAuthRouter(ctx, balances));
@@ -257,7 +263,7 @@ async function reclassifyUnknownContracts(store: Store): Promise<void> {
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
-  const store = new Store(cfg.dataDir, { engine: cfg.storageEngine });
+  const store = new Store(cfg.dataDir, { engine: cfg.storageEngine, connectionString: cfg.database?.url ?? undefined, ssl: cfg.database?.ssl });
   await store.load();
   console.log(`[server] Storage engine: ${store.storage.kind}`);
   await store.pruneExpiredSessions();

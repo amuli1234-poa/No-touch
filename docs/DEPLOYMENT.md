@@ -149,3 +149,30 @@ curl https://your-app.onrender.com/healthz
 - WebSocket connections survive sleep
 
 **Do not enable live-money execution on Render Free.**
+
+## 13. PostgreSQL (Supabase) configuration
+
+Set STORAGE_ENGINE=postgres and DATABASE_URL in Render environment.
+
+The adapter creates all 53 tables on first startup (CREATE TABLE IF NOT EXISTS).
+
+Run schema initialization:
+
+    DATABASE_URL=... STORAGE_ENGINE=postgres npm run db:migrate:postgres
+
+Verify:
+
+    DATABASE_URL=... STORAGE_ENGINE=postgres npm run db:migrate:postgres -- --verify-only
+
+## 14. JSON/SQLite to PostgreSQL import
+
+A separate import command will be provided for migrating existing data.
+Until then, PostgreSQL starts with an empty schema.
+
+## 15. Render Free limitations with PostgreSQL
+
+- Render Free sleeps after 15 min inactivity.
+- Supabase free tier: 500MB, 2 projects, pauses after 1 week inactivity.
+- Database connections are pooled (max 10).
+- On wake, the app reconnects to Supabase automatically via pg.Pool.
+- No persistent filesystem needed (Postgres handles all data).
