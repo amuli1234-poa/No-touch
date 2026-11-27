@@ -92,14 +92,19 @@ async function startApp(opts: { botBuild: boolean }): Promise<Harness> {
     fs.writeFileSync(path.join(botAppDir, 'static', 'css', 'index.abc123.css'), '.bot{color:red}');
   }
 
-  // A dist/ shell so the SPA fallback is active and can be proven not to claim /bot.
-  const distDir = path.join(dataDir, 'dist');
+  // The server resolves the SPA shell as `<cwd>/dist`, not from config, so the
+  // fixture must own the working directory. Writing dist/ into a temp dir and
+  // leaving cwd alone would silently assert against the repo's real build.
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ws-botroute-cwd-'));
+  const distDir = path.join(cwd, 'dist');
   fs.mkdirSync(distDir, { recursive: true });
   fs.writeFileSync(path.join(distDir, 'index.html'), SHELL_INDEX);
 
   const cfg = makeConfig(dataDir, botAppDir);
   const store = new Store(cfg.dataDir, { engine: 'json' });
   await store.load();
+  const previousCwd = process.cwd();
+  process.chdir(cwd);
   const { app } = createApp(cfg, store);
   const server = http.createServer(app);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -107,7 +112,13 @@ async function startApp(opts: { botBuild: boolean }): Promise<Harness> {
 
   return {
     base: `http://127.0.0.1:${port}`,
-    close: () => new Promise<void>((r) => server.close(() => r()))
+    close: () =>
+      new Promise<void>((r) =>
+        server.close(() => {
+          process.chdir(previousCwd);
+          r();
+        })
+      )
   };
 }
 
@@ -274,4 +285,26 @@ test('deployment: the bot build script exists and targets the served output path
   );
   assert.match(rsbuild, /root:\s*'out\/bot'/, 'bot build must emit to out/bot');
   assert.match(rsbuild, /assetPrefix/, 'bot build must set an asset prefix so /bot/ assets resolve');
+});
+
+test('deployment: the bot build installs dev dependencies', () => {
+  const rootPkg = JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, '../../package.json'), 'utf8'));
+  const script: string = rootPkg.scripts['build:bot'];
+
+  // Render builds with NODE_ENV=production, and npm omits devDependencies in
+  // that mode. rsbuild is a devDependency of bot-app, so without --include=dev
+  // the install succeeds but the build dies with "rsbuild: not found" (exit
+  // 127) — which is how the bot build went missing in production once already.
+  assert.match(
+    script,
+    /--include=dev/,
+    'build:bot must install dev dependencies: production installs omit rsbuild'
+  );
+
+  const botPkg = JSON.parse(
+    fs.readFileSync(path.resolve(import.meta.dirname, '../../bot-app/package.json'), 'utf8')
+  );
+  const rsbuildDeclared =
+    botPkg.devDependencies?.['@rsbuild/core'] ?? botPkg.dependencies?.['@rsbuild/core'];
+  assert.ok(rsbuildDeclared, 'bot-app must declare @rsbuild/core, the build tool it invokes');
 });

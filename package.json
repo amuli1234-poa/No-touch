@@ -49,7 +49,7 @@
     "dev:admin": "vite --config admin/vite.config.ts --port=3001 --host=0.0.0.0",
     "build:admin": "vite build --config admin/vite.config.ts",
     "lint:admin": "tsc --noEmit -p admin/tsconfig.json",
-    "build:bot": "npm --prefix bot-app install --legacy-peer-deps && npm --prefix bot-app run build:bot",
+    "build:bot": "npm --prefix bot-app install --legacy-peer-deps --include=dev && npm --prefix bot-app run build:bot",
     "dev:bot": "npm --prefix bot-app run dev"
   },
   "dependencies": {
