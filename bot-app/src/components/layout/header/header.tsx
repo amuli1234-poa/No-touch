@@ -191,7 +191,7 @@ const AppHeader = observer(() => {
                 // They now always work: with no app id they hand off to
                 // WickSentinel's own Deriv login, which owns this deployment.
                 return (
-                    <div className='auth-actions'>
+                    <div className='auth-actions auth-actions--guest'>
                         <Button tertiary onClick={handleLogin}>
                             <Localize i18n_default_text='Log in' />
                         </Button>

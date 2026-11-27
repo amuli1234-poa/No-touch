@@ -334,6 +334,14 @@
     padding-block: 8px;
     align-items: center;
 
+    // Auth lives in the WickSentinel app on phones; showing Log in / Sign up here
+    // pushed the bot header past the viewport width.
+    &--guest {
+        @media (max-width: 767px) {
+            display: none;
+        }
+    }
+
     button {
         font-weight: 400;
         margin-inline-end: 1.6rem;

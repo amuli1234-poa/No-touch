@@ -162,7 +162,7 @@ export function SingleChartCanvas({
         />
 
         <div
-          className="inline-flex items-center gap-0.5 p-0.5 bg-elevated border border-line rounded-lg"
+          className="inline-flex max-w-full flex-wrap items-center gap-0.5 p-0.5 bg-elevated border border-line rounded-lg"
           role="group"
           aria-label="Timeframe"
         >

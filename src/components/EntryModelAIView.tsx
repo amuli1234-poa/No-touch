@@ -107,7 +107,7 @@ export function EntryModelAIView() {
               reports an entry when the strategy produced a valid opportunity.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="flex-1 min-w-[200px]">
               <VolatilitySelector
                 markets={ws.markets}
@@ -117,7 +117,7 @@ export function EntryModelAIView() {
                 onSelect={ws.selectMarket}
               />
             </div>
-            <div className="flex items-center gap-0.5 p-0.5 bg-elevated border border-line rounded-lg">
+            <div className="flex flex-wrap items-center gap-0.5 p-0.5 bg-elevated border border-line rounded-lg">
               {AI_TIMEFRAME_KEYS.map((tf) => (
                 <button
                   key={tf}

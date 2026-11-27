@@ -97,7 +97,7 @@ export function AiIntelligenceView() {
           <button
             type="button"
             onClick={() => ws.navigate('analyser')}
-            className="text-[12px] font-semibold text-accent hover:text-accent-soft cursor-pointer"
+            className="-my-1 inline-flex max-sm:min-h-[44px] items-center text-[12px] font-semibold text-accent hover:text-accent-soft cursor-pointer"
           >
             Open analyser
           </button>

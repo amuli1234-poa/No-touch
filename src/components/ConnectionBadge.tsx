@@ -67,7 +67,7 @@ export function ConnectionBadge({ status, onReconnect, compact = false }: Connec
         aria-label={`Deriv feed ${cfg.label}${showReconnect ? '. Tap to reconnect.' : ''}`}
         title={`Deriv Feed · ${cfg.label}`}
         data-testid="connection-status"
-        className={`inline-flex items-center justify-center w-9 h-9 rounded-lg bg-elevated border border-line transition-colors ${
+        className={`inline-flex items-center justify-center w-10 h-10 rounded-lg bg-elevated border border-line transition-colors ${
           showReconnect ? 'cursor-pointer hover:border-accent/50' : 'cursor-default'
         } ${cfg.textClass}`}
       >

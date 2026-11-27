@@ -371,7 +371,15 @@ export function Sidebar({ active, onSelect, statusBadge, badges, hidden = false 
 }
 
 /** Mobile bottom bar — primary modules plus a "More" sheet. */
-const MOBILE_PRIMARY: AppSection[] = ['dashboard', 'freebots', 'premiumbots', 'copytrading', 'scanner', 'chart', 'aiintelligence'];
+const MOBILE_PRIMARY: AppSection[] = ['dashboard', 'scanner', 'freebots', 'copytrading', 'aiintelligence'];
+
+/** Bottom-bar labels are shorter than `shortLabel` so they never truncate at 320px. */
+const MOBILE_BAR_LABEL: Partial<Record<AppSection, string>> = {
+  dashboard: 'Home',
+  freebots: 'Bots',
+  copytrading: 'Copy',
+  aiintelligence: 'AI',
+};
 
 interface MobileNavProps {
   active: AppSection;
@@ -390,17 +398,17 @@ export function MobileNav({ active, onSelect, badges, onOpenMenu }: MobileNavPro
       aria-label="Primary mobile"
       className="lg:hidden shrink-0 border-t border-line bg-nav pb-[env(safe-area-inset-bottom)]"
     >
-      <ul className="grid grid-cols-8">
+      <ul className="grid grid-cols-6">
         {items.map((tab) => {
           const isActive = tab.key === activeTabKey;
           const tabBadge = tab.sections.reduce((n, s) => Math.max(n, badges?.[s.key] ?? 0), 0);
           return (
-            <li key={tab.key}>
+            <li key={tab.key} className="min-w-0">
               <button
                 type="button"
                 onClick={() => onSelect(tab.defaultSection)}
                 aria-current={isActive ? 'page' : undefined}
-                className={`w-full flex flex-col items-center justify-center gap-1 py-2 min-h-[54px] transition-colors cursor-pointer ${
+                className={`w-full flex flex-col items-center justify-center gap-1 py-2 min-h-[56px] transition-colors cursor-pointer ${
                   isActive ? 'text-accent' : 'text-faint'
                 }`}
               >
@@ -412,20 +420,22 @@ export function MobileNav({ active, onSelect, badges, onOpenMenu }: MobileNavPro
                     </span>
                   )}
                 </span>
-                <span className="text-[10px] font-medium tracking-tight">{tab.shortLabel}</span>
+                <span className="w-full truncate px-0.5 text-center text-[11px] font-medium tracking-tight">
+                  {MOBILE_BAR_LABEL[tab.defaultSection] ?? tab.shortLabel}
+                </span>
               </button>
             </li>
           );
         })}
-        <li>
+        <li className="min-w-0">
           <button
             type="button"
             onClick={onOpenMenu}
             aria-label="Open all modules"
-            className="w-full flex flex-col items-center justify-center gap-1 py-2 min-h-[54px] text-faint cursor-pointer"
+            className="w-full flex flex-col items-center justify-center gap-1 py-2 min-h-[56px] text-faint cursor-pointer"
           >
             <Layers className="w-[18px] h-[18px]" />
-            <span className="text-[10px] font-medium tracking-tight">More</span>
+            <span className="w-full truncate px-0.5 text-center text-[11px] font-medium tracking-tight">More</span>
           </button>
         </li>
       </ul>

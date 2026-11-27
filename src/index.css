@@ -781,6 +781,18 @@
   }
 }
 
+/* Phones: lift compact action controls to a comfortable 44px touch target.
+   Square icon buttons keep their intrinsic size so toolbars stay balanced. */
+@media (max-width: 640px) {
+  main :is(button, select, [role='button'])[class*='h-7']:not([class*='w-7']),
+  main :is(button, select, [role='button'])[class*='h-8']:not([class*='w-8']),
+  main :is(button, select, [role='button'])[class*='h-9']:not([class*='w-9']),
+  main :is(button, select, [role='button'])[class*='py-1'][class*='text-'],
+  main :is(button, select, [role='button'])[class*='py-2'][class*='text-'] {
+    min-height: 44px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

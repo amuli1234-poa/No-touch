@@ -558,7 +558,7 @@ export function AlertsView({ manager }: AlertsViewProps) {
           <select
             value={manager.filters.symbol}
             onChange={(e) => manager.setFilters({ symbol: e.target.value })}
-            className="bg-elevated border border-line rounded-md px-2 py-1.5 text-[12px] text-ink"
+            className="max-sm:min-h-[44px] bg-elevated border border-line rounded-md px-2 py-1.5 text-[12px] text-ink"
             aria-label="Filter by index"
           >
             <option value="ALL">All indices</option>
@@ -571,7 +571,7 @@ export function AlertsView({ manager }: AlertsViewProps) {
           <select
             value={manager.filters.direction}
             onChange={(e) => manager.setFilters({ direction: e.target.value as never })}
-            className="bg-elevated border border-line rounded-md px-2 py-1.5 text-[12px] text-ink"
+            className="max-sm:min-h-[44px] bg-elevated border border-line rounded-md px-2 py-1.5 text-[12px] text-ink"
             aria-label="Filter by direction"
           >
             <option value="ALL">Both directions</option>
@@ -581,7 +581,7 @@ export function AlertsView({ manager }: AlertsViewProps) {
           <select
             value={manager.filters.module}
             onChange={(e) => manager.setFilters({ module: e.target.value })}
-            className="bg-elevated border border-line rounded-md px-2 py-1.5 text-[12px] text-ink"
+            className="max-sm:min-h-[44px] bg-elevated border border-line rounded-md px-2 py-1.5 text-[12px] text-ink"
             aria-label="Filter by module"
           >
             <option value="ALL">All modules</option>
@@ -594,7 +594,7 @@ export function AlertsView({ manager }: AlertsViewProps) {
           <select
             value={manager.filters.priority}
             onChange={(e) => manager.setFilters({ priority: e.target.value as never })}
-            className="bg-elevated border border-line rounded-md px-2 py-1.5 text-[12px] text-ink"
+            className="max-sm:min-h-[44px] bg-elevated border border-line rounded-md px-2 py-1.5 text-[12px] text-ink"
             aria-label="Filter by priority"
           >
             <option value="ALL">All priorities</option>
@@ -607,7 +607,7 @@ export function AlertsView({ manager }: AlertsViewProps) {
           <select
             value={manager.filters.timeframe}
             onChange={(e) => manager.setFilters({ timeframe: e.target.value as never })}
-            className="bg-elevated border border-line rounded-md px-2 py-1.5 text-[12px] text-ink"
+            className="max-sm:min-h-[44px] bg-elevated border border-line rounded-md px-2 py-1.5 text-[12px] text-ink"
             aria-label="Filter by timeframe"
           >
             <option value="ALL">All timeframes</option>
@@ -620,7 +620,7 @@ export function AlertsView({ manager }: AlertsViewProps) {
           <select
             value={manager.filters.status}
             onChange={(e) => manager.setFilters({ status: e.target.value as never })}
-            className="bg-elevated border border-line rounded-md px-2 py-1.5 text-[12px] text-ink"
+            className="max-sm:min-h-[44px] bg-elevated border border-line rounded-md px-2 py-1.5 text-[12px] text-ink"
             aria-label="Filter by status"
           >
             <option value="ALL">All statuses</option>
@@ -635,7 +635,7 @@ export function AlertsView({ manager }: AlertsViewProps) {
             onChange={(e) =>
               manager.setFilters({ since: e.target.value === 'ALL' ? null : Number(e.target.value) })
             }
-            className="bg-elevated border border-line rounded-md px-2 py-1.5 text-[12px] text-ink"
+            className="max-sm:min-h-[44px] bg-elevated border border-line rounded-md px-2 py-1.5 text-[12px] text-ink"
             aria-label="Filter by date"
           >
             <option value="ALL">Any time</option>
@@ -643,21 +643,21 @@ export function AlertsView({ manager }: AlertsViewProps) {
             <option value={String(Date.now() - 24 * 3_600_000)}>Last 24h</option>
             <option value={String(Date.now() - 7 * 24 * 3_600_000)}>Last 7 days</option>
           </select>
-          <label className="inline-flex items-center gap-1.5 text-[12px] text-muted cursor-pointer">
+          <label className="inline-flex max-sm:min-h-[44px] items-center gap-1.5 text-[12px] text-muted cursor-pointer">
             <input
               type="checkbox"
               checked={manager.filters.unreadOnly}
               onChange={(e) => manager.setFilters({ unreadOnly: e.target.checked })}
-              className="w-3.5 h-3.5 accent-sky-500"
+              className="h-4 w-4 shrink-0 accent-sky-500"
             />
             Unread only
           </label>
-          <label className="inline-flex items-center gap-1.5 text-[12px] text-muted cursor-pointer">
+          <label className="inline-flex max-sm:min-h-[44px] items-center gap-1.5 text-[12px] text-muted cursor-pointer">
             <input
               type="checkbox"
               checked={manager.filters.includeDismissed}
               onChange={(e) => manager.setFilters({ includeDismissed: e.target.checked })}
-              className="w-3.5 h-3.5 accent-sky-500"
+              className="h-4 w-4 shrink-0 accent-sky-500"
             />
             Show dismissed
           </label>

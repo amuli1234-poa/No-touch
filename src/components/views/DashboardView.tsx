@@ -186,10 +186,10 @@ export function DashboardView() {
             {clientLabel}
           </span>
         </h1>
-        <div className="mt-2 h-9 flex items-center justify-center overflow-hidden">
+        <div className="mt-2 flex h-[54px] items-center justify-center overflow-hidden px-1 sm:h-9">
           <div
             key={quoteIndex}
-            className="ws-fade whitespace-nowrap text-lg sm:text-xl font-bold tracking-tight text-accent"
+            className="ws-fade line-clamp-3 text-center text-[13px] leading-snug font-bold tracking-tight text-accent sm:line-clamp-1 sm:text-xl sm:whitespace-nowrap"
           >
             {QUOTES[quoteIndex]}
           </div>
@@ -208,7 +208,7 @@ export function DashboardView() {
             <button
               type="button"
               onClick={() => ws.navigate('scanner')}
-              className="text-[12px] font-semibold text-accent hover:text-accent-soft cursor-pointer"
+              className="-my-1 inline-flex min-h-[36px] max-sm:min-h-[44px] items-center px-1 text-[12px] font-semibold text-accent hover:text-accent-soft cursor-pointer"
             >
               Full scanner
             </button>

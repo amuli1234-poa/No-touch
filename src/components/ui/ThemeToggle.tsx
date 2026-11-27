@@ -40,7 +40,7 @@ export const ThemeToggle: React.FC<ThemeToggleProps> = ({ className = '', varian
       onClick={toggle}
       aria-label={`Switch to ${next} theme`}
       title={`Switch to ${next} theme`}
-      className={`inline-flex h-9 w-9 items-center justify-center rounded-[10px] border border-line bg-surface-raised text-fg-3 transition-colors hover:border-line-strong hover:text-fg-1 ${className}`}
+      className={`inline-flex h-9 w-9 max-sm:h-11 max-sm:w-11 items-center justify-center rounded-[10px] border border-line bg-surface-raised text-fg-3 transition-colors hover:border-line-strong hover:text-fg-1 ${className}`}
     >
       {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
     </button>

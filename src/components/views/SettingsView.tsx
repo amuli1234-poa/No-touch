@@ -121,7 +121,7 @@ export function SettingsView() {
                 type="button"
                 onClick={() => ws.setDirectionPreference(opt.key)}
                 aria-pressed={active}
-                className={`min-h-[34px] px-4 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+                className={`min-h-[34px] max-sm:min-h-[44px] px-4 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
                   active ? `${opt.cls} text-app ` : 'text-muted hover:text-ink hover:bg-surface'
                 }`}
               >
@@ -151,7 +151,7 @@ export function SettingsView() {
                 type="button"
                 onClick={() => ws.setMinQuality(opt.key)}
                 aria-pressed={active}
-                className={`min-h-[34px] px-4 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+                className={`min-h-[34px] max-sm:min-h-[44px] px-4 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
                   active ? 'bg-accent text-app ' : 'text-muted hover:text-ink hover:bg-surface'
                 }`}
               >
@@ -200,7 +200,7 @@ export function SettingsView() {
                   type="button"
                   onClick={() => ws.setTheme(mode)}
                   aria-pressed={active}
-                  className={`h-7 px-3 text-[12px] font-bold rounded-md capitalize transition-colors cursor-pointer ${
+                  className={`h-7 max-sm:h-9 px-3 text-[12px] font-bold rounded-md capitalize transition-colors cursor-pointer ${
                     active ? 'bg-accent text-app' : 'text-muted hover:text-ink hover:bg-surface'
                   }`}
                 >
@@ -303,7 +303,7 @@ export function SettingsView() {
             value={ws.settings.soundVolume}
             onChange={(e) => ws.setSoundVolume(Number(e.target.value))}
             aria-label="Chime volume"
-            className="w-40 accent-[var(--color-accent)] cursor-pointer"
+            className="max-sm:h-11 w-40 accent-[var(--color-accent)] cursor-pointer"
           />
         </div>
         <div className="flex flex-wrap items-center gap-2 pt-3">

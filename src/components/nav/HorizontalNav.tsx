@@ -38,7 +38,7 @@ export function HorizontalNav({ active, onSelect, badges, hidden = false }: Hori
   return (
     <nav
       aria-label="Primary"
-      className={`${hidden ? 'hidden' : 'flex'} relative items-center justify-center gap-1 h-12 shrink-0 border-b border-[var(--ws-hairline)] bg-app/85 backdrop-blur-xl px-2 sm:px-4 z-30`}
+      className={`${hidden ? 'hidden' : 'hidden lg:flex'} relative items-center justify-center gap-1 h-12 shrink-0 border-b border-[var(--ws-hairline)] bg-app/85 backdrop-blur-xl px-2 sm:px-4 z-30`}
     >
       {MAIN_TABS.map((tab) => {
         const isActive = tab.key === activeTabKey;

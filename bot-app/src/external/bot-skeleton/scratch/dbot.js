@@ -137,7 +137,13 @@ class DBot {
                     media: `${window.__webpack_public_path__}assets/media/`,
                     renderer: 'zelos',
                     trashcan: !is_mobile,
-                    zoom: { wheel: true, startScale: workspaceScale },
+                    zoom: {
+                        wheel: true,
+                        startScale: workspaceScale,
+                        // Touch devices have no wheel and the mobile gesture hook disables
+                        // pinch, so on-screen controls are the only way to zoom the canvas.
+                        controls: is_mobile,
+                    },
                     scrollbars: true,
                     theme: window.Blockly.Themes.zelos_renderer,
                 });

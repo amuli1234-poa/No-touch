@@ -25,8 +25,10 @@ export function TopBar() {
     }
   };
 
+  // No base `inline-flex` here: it would out-rank a `hidden` variant in the cascade
+  // and make the sm-only buttons visible on phones.
   const iconButton =
-    'inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-[var(--ws-hairline)] bg-surface text-fg-2 transition-colors hover:bg-surface-raised hover:text-fg-1 cursor-pointer';
+    'h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-[var(--ws-hairline)] bg-surface text-fg-2 transition-colors hover:bg-surface-raised hover:text-fg-1 cursor-pointer';
 
   return (
     <header className="relative z-40 h-16 shrink-0 border-b border-[var(--ws-hairline)] bg-app/85 backdrop-blur-xl pl-5 pr-2 sm:pl-8 sm:pr-4 flex items-center justify-between gap-2 sm:gap-4">
@@ -76,7 +78,7 @@ export function TopBar() {
           onClick={() => ws.navigate('settings')}
           aria-label="Open settings"
           title="Settings"
-          className={iconButton}
+          className={`${iconButton} inline-flex`}
         >
           <SettingsIcon className="h-[18px] w-[18px]" />
         </button>

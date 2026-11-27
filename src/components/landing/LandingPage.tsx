@@ -516,7 +516,7 @@ const LandingFooter: React.FC = () => (
           </p>
           <a
             href="mailto:contact@wicksentinel.app"
-            className="mt-4 inline-flex items-center gap-2 text-[13.5px] font-medium text-fg-3 transition-colors hover:text-fg-1"
+            className="mt-4 inline-flex max-sm:min-h-[44px] items-center gap-2 text-[13.5px] font-medium text-fg-3 transition-colors hover:text-fg-1"
           >
             <Mail className="h-3.5 w-3.5 text-accent-soft" />
             contact@wicksentinel.app
@@ -528,12 +528,12 @@ const LandingFooter: React.FC = () => (
             <h3 className="text-[12px] font-semibold uppercase tracking-[0.14em] text-fg-5">
               {col.heading}
             </h3>
-            <ul className="mt-4 space-y-2.5">
+            <ul className="mt-4 space-y-2.5 max-sm:space-y-1">
               {col.links.map((link) => (
                 <li key={link.label}>
                   <button
                     onClick={link.onClick}
-                    className="text-[13px] text-fg-3 transition-colors hover:text-fg-1"
+                    className="max-sm:block max-sm:min-h-[44px] max-sm:py-2 text-left text-[13px] text-fg-3 transition-colors hover:text-fg-1"
                   >
                     {link.label}
                   </button>

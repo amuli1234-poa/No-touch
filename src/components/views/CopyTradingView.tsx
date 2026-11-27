@@ -450,7 +450,7 @@ export function CopyTradingView() {
             {control?.enabled ? 'Stop copy trading' : 'Start copy trading'}
           </button>
         </div>
-        <div className="mt-4 grid grid-cols-3 gap-3">
+        <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-3">
           <div className="rounded-xl border border-line bg-elevated p-3">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Connected</p>
             <p className="mt-1 text-base font-bold text-ink">{control?.followers.total ?? followers.length}</p>
@@ -533,7 +533,7 @@ export function CopyTradingView() {
                 <h2 className="text-base font-bold text-ink">Connected demo accounts</h2>
                 <p className="mt-0.5 text-xs text-muted">{followers.length} client {followers.length === 1 ? 'connection' : 'connections'}</p>
               </div>
-              <button type="button" onClick={() => void refresh()} disabled={loading} aria-label="Refresh connected accounts" className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-line bg-surface text-muted hover:text-ink disabled:opacity-50">
+              <button type="button" onClick={() => void refresh()} disabled={loading} aria-label="Refresh connected accounts" className="inline-flex h-9 w-9 max-sm:h-11 max-sm:w-11 items-center justify-center rounded-lg border border-line bg-surface text-muted hover:text-ink disabled:opacity-50">
                 {loading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
               </button>
             </div>

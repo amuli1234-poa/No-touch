@@ -56,7 +56,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
     <>
       <WickSentinelMark className={markClassName} />
       <span className="min-w-0 text-left">
-        <span className="block text-[15.5px] font-extrabold leading-tight tracking-[-0.02em] text-fg-1">
+        <span className="block truncate text-[15.5px] font-extrabold leading-tight tracking-[-0.02em] text-fg-1">
           Wick<span className="text-accent-strong">Sentinel</span>
         </span>
         {showTagline ? (
@@ -64,7 +64,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
             {BRAND.category}
           </span>
         ) : (
-          <span className="block text-[10.5px] font-semibold uppercase tracking-[0.18em] text-fg-5">
+          <span className="hidden sm:block text-[10.5px] font-semibold uppercase tracking-[0.18em] text-fg-5">
             Market Intelligence
           </span>
         )}
@@ -76,7 +76,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
     return (
       <button
         onClick={onClick}
-        className={`flex items-center gap-2.5 rounded-[10px] transition-opacity hover:opacity-90 ${className}`}
+        className={`flex max-sm:min-h-[44px] items-center gap-2.5 rounded-[10px] transition-opacity hover:opacity-90 ${className}`}
         aria-label="WickSentinel home"
       >
         {content}
