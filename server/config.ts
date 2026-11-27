@@ -84,6 +84,8 @@ export interface ServerConfig {
   appOrigin: string;
   /** Built Deriv bot app served under /bot. Defaults to `bot-app/out/bot`. */
   botAppDir?: string;
+  /** Built admin console served under /admin. Defaults to `dist-admin`. */
+  adminAppDir?: string;
 }
 
 function required(name: string, value: string | undefined): string {

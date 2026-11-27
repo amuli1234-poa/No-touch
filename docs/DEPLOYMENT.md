@@ -87,7 +87,9 @@ Verify:
 NODE_ENV=production npm run server
 ```
 
-The server serves `dist/` as static files with SPA fallback. Admin at `dist-admin/` if configured.
+The server serves `dist/` (trader SPA), `dist-admin/` under `/admin`, and the bot build under
+`/bot`, each with its own SPA fallback. The admin console is therefore reachable at
+`https://<host>/admin/` on the same origin as the API.
 
 ## 7. Render deployment (when authorized)
 

@@ -16,6 +16,7 @@
     "test": "tsx --test $(find src -name '*.test.ts')",
     "test:auth": "tsx server/tests/auth.test.ts",
     "test:admin": "tsx server/tests/admin.test.ts",
+    "test:admin-routing": "tsx --test server/tests/admin_routing.test.ts",
     "test:copy-admin": "tsx server/tests/copy_trading_admin.test.ts",
     "test:store": "tsx server/tests/store_lock.test.ts",
     "test:migrate": "tsx server/tests/migration.test.ts",

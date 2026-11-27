@@ -14,7 +14,10 @@ import { defineConfig } from 'vite';
 export default defineConfig(() => {
   return {
     root: path.resolve(import.meta.dirname),
-    base: process.env.ADMIN_BASE ?? '/',
+    // Served under /admin/ by the Express server in production, so asset URLs
+    // must be prefixed or they would 404 (and collide with the trader app's own
+    // /assets/). Override with ADMIN_BASE for a separate-origin deployment.
+    base: process.env.ADMIN_BASE ?? '/admin/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: { '@': path.resolve(import.meta.dirname, 'src') }

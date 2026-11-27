@@ -29,6 +29,11 @@ services:
         value: "false"
       - key: ALLOW_AUTOMATIC_TRADING
         value: "false"
+      # The admin console is served by this same service under /admin/, so its
+      # API calls are same-origin and ADMIN_ALLOWED_ORIGINS stays unset on
+      # purpose. Do not add a wildcard: admin requests carry credentials.
+      - key: ADMIN_BASE
+        value: "/admin/"
     # NOTE: Persistent disk requires Render paid tier.
     # On Free tier, data is ephemeral (lost on sleep/restart).
     # For production, upgrade to paid and add:

@@ -8,7 +8,7 @@ WickSentinel is a monorepo with three deployable surfaces:
 |---|---|---|---|
 | Trader SPA | `vite build` | `dist/` | served by Express |
 | Backend API | `tsx server/index.ts` | n/a (Node) | `PORT` (default 8787) |
-| Admin console | `vite build --config admin/vite.config.ts` | `dist-admin/` | separate origin |
+| Admin console | `vite build --config admin/vite.config.ts` | `dist-admin/` | served by Express at `/admin` |
 | Bot app (vendored) | `npm run build:bot` | `bot-app/out/bot` | served at `/bot` |
 
 Storage: JSON file (`data/wicksentinel.json`) or SQLite (`data/wicksentinel.db`), selected by `STORAGE_ENGINE` (auto/json/sqlite). No PostgreSQL adapter exists.
@@ -31,7 +31,8 @@ Render Web Service (Node)
 └── Optional: Redis (if REDIS_URL set)
 ```
 
-Admin console (`dist-admin/`) can be served from the same service at `/admin` or a separate static site.
+Admin console (`dist-admin/`) is served by the same service at `/admin` (base path `/admin/`), so its
+API calls are same-origin and no CORS allowlist is needed.
 
 ## 3. Render Free assessment
 
@@ -217,7 +218,7 @@ Splitting web/worker would require: shared database, message queue or event bus 
 1. Postgres adapter — implement PostgresBackend implementing StorageBackend interface. Required for persistent data on Render.
 2. Health endpoint enhancement — add store/market/broker checks.
 3. Execution service separation — only if continuous trading needed on paid tier; requires message queue.
-4. Admin console hosting — serve dist-admin/ at /admin or separate origin.
+4. Admin console hosting — served at /admin by the Express server (build with `npm run build:admin`).
 5. Monitoring — add execution status to health endpoint or separate endpoint.
 6. Backup automation — Render disk snapshots or scheduled DB dumps.
 

@@ -180,6 +180,38 @@ export function createApp(cfg: ServerConfig, store: Store, cache?: Cache, balanc
     });
   }
 
+  /* --------------------------- admin console --------------------------- */
+
+  // The admin console is a separate React build served under /admin with its
+  // own router, base path and API namespace. It is mounted ahead of the trader
+  // static handler so its SPA fallback claims only its own subtree, and the
+  // trader fallback below excludes /admin for the same reason.
+  const adminAppDir = cfg.adminAppDir ?? path.resolve(process.cwd(), 'dist-admin');
+  const adminAppIndex = path.join(adminAppDir, 'index.html');
+  const hasAdminApp = fs.existsSync(adminAppIndex);
+
+  if (hasAdminApp) {
+    app.use('/admin', express.static(adminAppDir, { index: false, maxAge: '1h' }));
+    // express.static answers a bare /admin with a 301 to /admin/ (it is a
+    // directory), so only the slashed and deep paths need an SPA fallback.
+    app.get(/^\/admin(\/.*)?$/, (req, res, next) => {
+      if (/\.[a-z0-9]+$/i.test(req.path)) return next();
+      res.sendFile(adminAppIndex);
+    });
+  } else {
+    // Same reasoning as /bot: without this the trader SPA fallback would answer
+    // 200 with the trader shell for an admin route that was never built, which
+    // looks like a working page to a user who cannot possibly be an admin.
+    console.warn('[server] dist-admin/ not found — run `npm run build:admin` to serve /admin.');
+    app.use('/admin', (_req, res) => {
+      res.status(503).json({
+        error: 'admin_build_missing',
+        message:
+          'The admin console is unavailable because its build output is missing. Run `npm run build:admin` and redeploy.'
+      });
+    });
+  }
+
   /* --------------------------- static frontend -------------------------- */
 
   const distDir = path.resolve(process.cwd(), 'dist');
@@ -195,9 +227,9 @@ export function createApp(cfg: ServerConfig, store: Store, cache?: Cache, balanc
   // SPA fallback: any non-API GET without a file extension renders the app
   // shell, which then calls /auth/session and redirects to /login when
   // unauthenticated. Asset-like paths (with an extension) are left to 404.
-  // /bot is excluded: it is a separate application with its own router, and
-  // the shell has no route for it.
-  app.get(/^\/(?!api\/|auth\/|healthz|bot(?:\/|$)).*/, (req, res, next) => {
+  // /bot and /admin are excluded: they are separate applications with their own
+  // routers and base paths, and the shell has no route for either.
+  app.get(/^\/(?!api\/|auth\/|healthz|bot(?:\/|$)|admin(?:\/|$)).*/, (req, res, next) => {
     if (!hasDist) return next();
     if (/\.[a-z0-9]+$/i.test(req.path)) return next();
     res.sendFile(indexHtml);

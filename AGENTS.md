@@ -28,11 +28,12 @@ npm run test                      # frontend suite: every src/**/*.test.ts (259 
 Admin console (uses npm scripts; `tsx` for the server, `vite` for the app):
 
 ```bash
-npm run server        # backend on :8787 (serves trader API + /api/admin/v1)
+npm run server        # backend on :8787 (serves trader API + /api/admin/v1 + /admin + /bot)
 npm run dev:admin     # admin app on :3001, proxies /api/admin to :8787
-npm run build:admin   # → dist-admin/
+npm run build:admin   # → dist-admin/, built with base /admin/ (override: ADMIN_BASE=…)
 npm run lint:admin    # admin typecheck (tsc -p admin/tsconfig.json)
 npm run test:admin    # admin test suite (20 tests)
+npm run test:admin-routing # /admin hosting + security invariants (15 tests)
 npm run test:telemetry # telemetry ingest + admin read-path (8 tests)
 npm run test:balance   # account balances: isolation, DEMO/REAL, stale (16 tests)
 npm run test:copy-balance # client balances on the admin + manager copy surfaces (6 tests)

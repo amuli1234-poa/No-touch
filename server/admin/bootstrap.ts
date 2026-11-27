@@ -124,7 +124,7 @@ async function main(): Promise<void> {
   console.log(`  ${totpUri(secret, admin.email)}`);
   console.log(`  secret: ${secret}`);
   console.log('\n  Current TOTP code (for reference only):', currentTotp(secret));
-  console.log('\n  Sign in at /login on the admin application and confirm a code to finish enrolment.\n');
+  console.log('\n  Sign in at /admin/ and confirm a code to finish enrolment.\n');
 }
 
 main().catch((err) => {

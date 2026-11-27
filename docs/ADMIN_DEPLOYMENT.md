@@ -42,7 +42,8 @@ npm run server
 npm run dev:admin
 ```
 
-Open `http://localhost:3001`. The Vite dev proxy forwards `/api/admin/v1` and
+Open `http://localhost:3001/admin/` (the bare `:3001/` redirects there). The Vite
+dev proxy forwards `/api/admin/v1` and
 `/healthz` to the backend, so cookies are same-origin and no CORS is involved.
 
 ### Seed the first administrator
@@ -63,6 +64,41 @@ It prints an `otpauth://` URI and a secret. On first sign-in the console shows a
 enrolment step: confirm a TOTP code and it displays eight one-time recovery codes.
 **Those codes are shown once — store them in a password manager.**
 
+### Provisioning the first administrator in production
+
+The bootstrap command is deliberately **not** part of the build or start command.
+Seeding an administrator on every deploy would mean re-creating a known account
+each time the service restarts, and on Render the command would have to run with
+credentials present in the build environment. Run it manually, once.
+
+Use a Render Shell on the running service so it writes to the same `DATA_DIR`
+(the persistent disk) the server reads:
+
+```bash
+# In the Render dashboard: your service -> Shell
+ADMIN_EMAIL='you@example.com' \
+ADMIN_NAME='Your Name' \
+npm run admin:bootstrap
+```
+
+Omit `ADMIN_PASSWORD` so the CLI prompts for it with hidden input. Passing a
+password inline leaves it in the shell history and, depending on how the shell
+records commands, in the platform's logs. If you must automate, inject the
+password through a secret environment variable rather than a literal.
+
+The command refuses to run if an active Super Admin already exists, so a
+second run is safe and cannot silently reset credentials.
+
+Capture the printed `otpauth://` URI immediately: it is shown once, it is the
+only copy of the MFA secret, and it is never written to the frontend bundle or
+to application logs. Then open `https://wicksentinel.onrender.com/admin/`, sign
+in with that email and password, and complete enrolment by confirming a TOTP
+code. Recovery codes are displayed at that point — save them.
+
+If the shell cannot reach the persistent disk, the account will be written to an
+ephemeral path and will vanish on the next restart. Check that `DATA_DIR` is set
+to the mounted disk path in the service's environment before bootstrapping.
+
 ---
 
 ## 3. Production build and deploy
@@ -70,12 +106,38 @@ enrolment step: confirm a TOTP code and it displays eight one-time recovery code
 ```bash
 npm run build        # trader app  → dist/
 npm run build:admin  # admin app   → dist-admin/
+npm run build:bot    # bot builder → bot-app/out/bot
 ```
 
-`dist-admin/` is a self-contained static bundle. Serve it from its own origin (or
-its own path) — for example `admin.example.com`, or `/admin` on the same host with
-`ADMIN_BASE=/admin/`. Because it is a single-page app, rewrite unknown paths to
-`dist-admin/index.html`.
+### Same-origin hosting (default)
+
+`server/index.ts` serves `dist-admin/` itself under `/admin`, so a single Render
+service hosts the trader app, the admin console and the bot builder:
+
+| Path | Source | Served by |
+| --- | --- | --- |
+| `/` | `dist/` | Express static + SPA fallback |
+| `/admin/` | `dist-admin/` | Express static + admin SPA fallback |
+| `/bot/` | `bot-app/out/bot` | Express static + bot SPA fallback |
+| `/api/admin/v1/*` | `server/routes/admin/` | Express router |
+
+The admin build must use `base: '/admin/'` so its assets resolve under
+`/admin/assets/` rather than colliding with the trader app's `/assets/`. That is
+the default in `admin/vite.config.ts`; override with `ADMIN_BASE` only when
+deploying to a separate origin (e.g. `ADMIN_BASE=/` for `admin.example.com`).
+
+Routing contract:
+
+- `GET /admin` → `301` to `/admin/`
+- `GET /admin/` → `dist-admin/index.html`
+- `GET /admin/<deep link>` (no file extension) → `dist-admin/index.html`, so
+  refreshing a bookmarked admin route works
+- `GET /admin/assets/<missing>.js` → `404`, never the trader shell
+- Missing `dist-admin/` build → `503 {"error":"admin_build_missing"}`
+
+Because admin and API share an origin, no CORS is involved and
+`ADMIN_ALLOWED_ORIGINS` can stay empty. Leave it empty unless the console is
+moved to a different origin.
 
 ### Cross-origin deployment
 
@@ -83,7 +145,8 @@ If the admin app is on a different origin from the API, set an explicit allowlis
 (never `*`, since credentialed requests are used):
 
 ```bash
-ADMIN_ALLOWED_ORIGINS="https://admin.example.com"
+ADMIN_BASE="/"                                    # build-time, for the admin app
+ADMIN_ALLOWED_ORIGINS="https://admin.example.com" # server-side CORS allowlist
 ```
 
 The server echoes the origin only when it matches, and always with
