@@ -1316,19 +1316,31 @@ export async function tickBotRun(
     // manager's connected followers under the same rules as a manual or scanner
     // trade: the engine re-checks DEMO mode and the Start control, and a copy
     // failure is audited per follower instead of failing the bot's own entry.
+    //
+    // Fire-and-forget: the bot's own contract is already committed above, so the
+    // copy fan-out (each follower costs a balance read + proposal + buy round-trip)
+    // must NOT sit on the tick's critical path — that is what made rapid entries
+    // slow. mirrorMasterTrade never throws for a normal skip/rejection; the catch
+    // is a final safety net so an unexpected error can never surface here.
     if (deps.copyEngine) {
+      const masterIntentId = auto.result.intent.id;
       try {
         await deps.copyEngine.mirrorMasterTrade({
           master: user,
+          masterAccessToken: accessToken ?? '',
           signal,
-          masterIntentId: auto.result.intent.id,
+          masterIntentId,
           stake: auto.result.intent.stake,
           basis: auto.result.intent.basis,
           currency: auto.result.intent.currency,
-          parameters: auto.result.intent.parameters
+          parameters: auto.result.intent.parameters,
+          includeMaster: false
         });
-      } catch {
-        // Swallowed deliberately: the bot's own contract is already open.
+      } catch (err) {
+        console.error(
+          `[copy-engine] mirrorMasterTrade failed for run=${run.runId} intent=${masterIntentId}:`,
+          err instanceof Error ? err.message : err
+        );
       }
     }
 
