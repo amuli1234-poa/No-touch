@@ -1396,6 +1396,18 @@ variable, or it will escape into the WickSentinel shell. Build with
 `npm run build:bot`; the output (`bot-app/out/`) is git-ignored and
 `server/tests/bot_app.test.ts` covers the mount with a synthetic build.
 
+**The bot build needs dev dependencies.** Render builds with
+`NODE_ENV=production`, and npm omits `devDependencies` in that mode.
+`@rsbuild/core` is a devDependency of `bot-app`, so a plain
+`npm --prefix bot-app install` leaves no `rsbuild` binary and the build fails
+with `sh: 1: rsbuild: not found` (exit 127). `build:bot` therefore passes
+`--include=dev`; keep it. The root build is unaffected because `vite` is a
+runtime dependency. `server/tests/bot_routing.test.ts` pins this.
+
+A missing bot build is not silent: `/bot` answers `503 bot_build_missing`
+rather than letting the SPA fallback serve the WickSentinel shell, which has no
+`/bot` route and renders its own 404.
+
 ### The bot app reuses the WickSentinel session
 
 Because `/bot` is served from the same origin, a trader already signed in to the
