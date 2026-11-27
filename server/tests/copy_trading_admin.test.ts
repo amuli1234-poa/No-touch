@@ -970,3 +970,292 @@ test('copy performance: another manager cannot read this master\'s numbers', asy
     assert.equal(res.json.accounts.every((a: any) => a.followerId === null), true);
   });
 });
+
+/* ====================================================================== */
+/*  Switch safety                                                        */
+/*                                                                        */
+/*  The switch used to fail as "network error" while the write had in     */
+/*  fact persisted, because this Express version does not catch a reject  */
+/*  from an async handler: the request was left with no response at all.  */
+/*  These pin every outcome the operator can be shown, and the invariant  */
+/*  that matters most — the console must never be told "nothing changed"  */
+/*  about a write that did.                                               */
+/* ====================================================================== */
+
+const CONTROL = '/api/admin/v1/copy-trading/control';
+
+/** Seeds a master with one eligible client so the switch is allowed to start. */
+async function seedControllableMaster(store: Store, masterId = 'master_sw'): Promise<void> {
+  await seedTrader(store, { id: masterId, derivSub: `sub_${masterId}` });
+  await store.putCopyTradingFollower({
+    id: `f_${masterId}`,
+    ownerUserId: masterId,
+    derivSub: `sub_client_${masterId}`,
+    authMethod: 'pat',
+    loginId: `CRclient_${masterId}`,
+    accounts: [{ accountId: 'VRTC_SW', type: 'demo', currency: 'USD', status: 'active' }],
+    tokenSealed: seal(PAT, SECRET),
+    tokenExpiresAt: 0,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    status: 'active',
+    revision: 1
+  });
+}
+
+test('switch: an authorized admin can start, and the backend holds it afterwards', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedControllableMaster(app.store);
+
+    const started = await admin.post(CONTROL, { masterUserId: 'master_sw', enabled: true });
+    assert.equal(started.status, 200, JSON.stringify(started.json));
+    assert.equal(started.json.control.enabled, true);
+    assert.equal(app.store.getCopyTradingControl('master_sw')?.enabled, true, 'persisted, not just echoed');
+
+    // A fresh read is the authority the console refreshes from.
+    const refreshed = await admin.get(`${CONTROL}?masterUserId=master_sw`);
+    assert.equal(refreshed.status, 200);
+    assert.equal(refreshed.json.control.enabled, true);
+    assert.equal(refreshed.json.control.updatedByEmail, 'a@x.com');
+  });
+});
+
+test('switch: an authorized admin can pause, and the stop reason is persisted', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedControllableMaster(app.store);
+    await admin.post(CONTROL, { masterUserId: 'master_sw', enabled: true });
+
+    const stopped = await admin.post(CONTROL, { masterUserId: 'master_sw', enabled: false, reason: 'client asked' });
+    assert.equal(stopped.status, 200, JSON.stringify(stopped.json));
+    assert.equal(stopped.json.control.enabled, false);
+    assert.equal(stopped.json.control.stoppedReason, 'client asked');
+    assert.equal(app.store.getCopyTradingControl('master_sw')?.enabled, false);
+  });
+});
+
+test('switch: a missing control is reported off and is never created by reading', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedTrader(app.store, { id: 'master_sw', derivSub: 'sub_master_sw' });
+    assert.equal(app.store.getCopyTradingControl('master_sw'), null);
+
+    const read = await admin.get(`${CONTROL}?masterUserId=master_sw`);
+    assert.equal(read.status, 200);
+    assert.equal(read.json.control.enabled, false, 'absent reads as stopped');
+    assert.equal(app.store.getCopyTradingControl('master_sw'), null, 'reading must not create one');
+
+    // Readiness is read-only too: it must not create the record either.
+    await admin.get(`/api/admin/v1/copy-trading/readiness?masterUserId=master_sw`);
+    assert.equal(app.store.getCopyTradingControl('master_sw'), null);
+  });
+});
+
+test('switch: an admin without copytrading.control is refused and nothing is written', async () => {
+  await withApp(
+    async ({ app, admin }) => {
+      await seedControllableMaster(app.store);
+      const res = await admin.post(CONTROL, { masterUserId: 'master_sw', enabled: true });
+      assert.equal(res.status, 403);
+      assert.equal(res.json.error, 'forbidden');
+      assert.equal(app.store.getCopyTradingControl('master_sw'), null, 'a refused switch writes nothing');
+    },
+    { role: 'ANALYST' }
+  );
+});
+
+test('switch: an expired session is a 401, distinct from a network failure', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedControllableMaster(app.store);
+    // Expire the stored session rather than deleting it, so the cookie is still
+    // presented and the server has to reject it on its own merits.
+    const sessions = Object.values((app.store as any).db.adminSessions) as any[];
+    assert.ok(sessions.length > 0, 'the admin has a session to expire');
+    for (const s of sessions) {
+      await app.store.updateAdminSession({ ...s, expiresAt: Date.now() - 1000 });
+    }
+    const res = await admin.post(CONTROL, { masterUserId: 'master_sw', enabled: true });
+    assert.equal(res.status, 401);
+    assert.equal(res.json.error, 'admin_unauthorized');
+    assert.equal(app.store.getCopyTradingControl('master_sw'), null);
+  });
+});
+
+test('switch: a missing CSRF token is a 403 and writes nothing', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedControllableMaster(app.store);
+    const saved = admin.csrfToken;
+    admin.csrfToken = null;
+    try {
+      const res = await admin.post(CONTROL, { masterUserId: 'master_sw', enabled: true });
+      assert.equal(res.status, 403);
+      assert.equal(res.json.error, 'csrf_failed');
+      assert.equal(app.store.getCopyTradingControl('master_sw'), null);
+    } finally {
+      admin.csrfToken = saved;
+    }
+  });
+});
+
+test('switch: a wrong CSRF token is refused, and the right one still works after', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedControllableMaster(app.store);
+    const saved = admin.csrfToken;
+    admin.csrfToken = 'not-the-session-token';
+    const bad = await admin.post(CONTROL, { masterUserId: 'master_sw', enabled: true });
+    assert.equal(bad.status, 403);
+    assert.equal(bad.json.error, 'csrf_failed');
+    assert.equal(app.store.getCopyTradingControl('master_sw'), null);
+
+    admin.csrfToken = saved;
+    const good = await admin.post(CONTROL, { masterUserId: 'master_sw', enabled: true });
+    assert.equal(good.status, 200);
+    assert.equal(app.store.getCopyTradingControl('master_sw')?.enabled, true);
+  });
+});
+
+test('switch: an unavailable backend yields a real network error, not a hang', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedControllableMaster(app.store);
+    const base = app.base;
+    await app.close();
+    // The client keeps its cookie; nothing is listening any more.
+    const c = new Client(base);
+    await assert.rejects(
+      () => c.post(CONTROL, { masterUserId: 'master_sw', enabled: true }),
+      (err: unknown) => {
+        // The browser surfaces a rejected fetch; the console maps that to
+        // `network_error` and shows "state unknown", never "did not change".
+        assert.ok(err instanceof Error);
+        return true;
+      }
+    );
+  });
+});
+
+test('switch: a request that persists then loses its response is not reported as failed', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedControllableMaster(app.store);
+
+    // The control write succeeds, then the audit append throws — the real shape of
+    // a store conflict or a poisoned backend. Before the fix this left the request
+    // with no response at all: the write persisted and the client saw a timeout.
+    const original = app.store.appendAudit.bind(app.store);
+    (app.store as any).appendAudit = async () => {
+      throw new Error('data file changed by another process');
+    };
+    try {
+      const res = await admin.post(CONTROL, { masterUserId: 'master_sw', enabled: true });
+      // The switch really did change, so the honest answer is 200, not a 500.
+      assert.equal(res.status, 200, JSON.stringify(res.json));
+      assert.equal(res.json.control.enabled, true);
+      assert.equal(app.store.getCopyTradingControl('master_sw')?.enabled, true, 'the write persisted');
+    } finally {
+      (app.store as any).appendAudit = original;
+    }
+  });
+});
+
+test('switch: an unhandled async failure answers 500 instead of hanging', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedControllableMaster(app.store);
+    // Force the failure that previously stranded the request: the handler rejects
+    // after doing its work. Without terminal error middleware there is no response
+    // and `fetch` reports a network error for a request that persisted.
+    const original = app.store.putCopyTradingControl.bind(app.store);
+    let calls = 0;
+    (app.store as any).putCopyTradingControl = async (record: any) => {
+      calls += 1;
+      if (calls === 1) {
+        await original(record); // persisted
+        throw new Error('post-persist failure');
+      }
+      return original(record);
+    };
+    try {
+      const res = await admin.post(CONTROL, { masterUserId: 'master_sw', enabled: true });
+      assert.equal(res.status, 500, 'a real status, not a silent hang');
+      assert.equal(res.json.error, 'internal_error');
+      assert.equal(res.text.includes('post-persist failure'), false, 'internals are not leaked');
+      assert.equal(app.store.getCopyTradingControl('master_sw')?.enabled, true, 'the write had persisted');
+    } finally {
+      (app.store as any).putCopyTradingControl = original;
+    }
+  });
+});
+
+test('switch: a duplicate start request is idempotent and leaves it started once', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedControllableMaster(app.store);
+    const first = await admin.post(CONTROL, { masterUserId: 'master_sw', enabled: true });
+    const second = await admin.post(CONTROL, { masterUserId: 'master_sw', enabled: true });
+    assert.equal(first.status, 200);
+    assert.equal(second.status, 200, 'repeating a start is safe, not a conflict');
+    assert.equal(second.json.control.enabled, true);
+    assert.equal(app.store.getCopyTradingControl('master_sw')?.enabled, true);
+
+    const audit = app.store.listAudit().filter((a) => a.action === 'copytrading.control.started');
+    assert.equal(audit.length, 2, 'each accepted request is audited once');
+  });
+});
+
+test('switch: concurrent start and stop settle on one persisted value', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedControllableMaster(app.store);
+    await Promise.all([
+      admin.post(CONTROL, { masterUserId: 'master_sw', enabled: true }),
+      admin.post(CONTROL, { masterUserId: 'master_sw', enabled: false })
+    ]);
+    const final = app.store.getCopyTradingControl('master_sw');
+    assert.ok(final, 'a record exists');
+    // Whichever won, what the console refreshes must equal what is stored.
+    const read = await admin.get(`${CONTROL}?masterUserId=master_sw`);
+    assert.equal(read.json.control.enabled, final!.enabled);
+  });
+});
+
+test('switch: the audit records the previous state, not the new one twice', async () => {
+  await withApp(async ({ app, admin }) => {
+    await seedControllableMaster(app.store);
+    await admin.post(CONTROL, { masterUserId: 'master_sw', enabled: true });
+    await admin.post(CONTROL, { masterUserId: 'master_sw', enabled: false });
+
+    const stops = app.store.listAudit().filter((a) => a.action === 'copytrading.control.stopped');
+    assert.equal(stops.length, 1);
+    assert.deepEqual(stops[0].previousState, { enabled: true }, 'a reader can see what changed');
+    assert.deepEqual(stops[0].newState, { enabled: false });
+  });
+});
+
+test('switch: a cross-origin console is answered only from an allowlisted origin', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ws-cors-'));
+  const deriv = await startFakeDeriv();
+  const cfg = makeConfig(dataDir, deriv.url);
+  cfg.admin.allowedOrigins = ['https://admin.example.com'];
+  const app = await startApp(cfg);
+  try {
+    // Allowlisted: echo the origin and permit credentials.
+    const ok = await fetch(`${app.base}${CONTROL}`, {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'https://admin.example.com',
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'content-type,x-csrf-token'
+      }
+    });
+    assert.equal(ok.status, 204);
+    assert.equal(ok.headers.get('access-control-allow-origin'), 'https://admin.example.com');
+    assert.equal(ok.headers.get('access-control-allow-credentials'), 'true');
+
+    // Not allowlisted: an explicit refusal, not an opaque empty response the
+    // browser would surface as a network failure.
+    const bad = await fetch(`${app.base}${CONTROL}`, {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://evil.example', 'Access-Control-Request-Method': 'POST' }
+    });
+    assert.equal(bad.status, 403);
+    assert.equal(bad.headers.get('access-control-allow-origin'), null);
+    assert.equal((await bad.json()).error, 'origin_not_allowed');
+  } finally {
+    await app.close();
+    await deriv.close();
+  }
+});

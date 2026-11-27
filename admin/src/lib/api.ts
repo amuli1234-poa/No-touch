@@ -22,7 +22,14 @@ export interface AdminIdentity {
   lastLoginAt: number | null;
 }
 
-/** Thrown for any non-2xx response; carries the machine-readable code. */
+/**
+ * A request whose outcome could not be established.
+ *
+ * `network_error` means the browser never got a response. That is genuinely
+ * ambiguous for a mutation: the server may have committed the write and then
+ * failed to answer (a crash, a proxy reset, a dropped connection). Callers must
+ * not report it as "the change did not happen" — see `CopyControlSwitch`.
+ */
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -31,6 +38,11 @@ export class ApiError extends Error {
   ) {
     super(code);
   }
+}
+
+/** True when the request may or may not have been applied by the server. */
+export function isOutcomeUnknown(err: unknown): boolean {
+  return err instanceof ApiError && (err.status === 0 || err.status >= 500);
 }
 
 let csrfToken: string | null = null;

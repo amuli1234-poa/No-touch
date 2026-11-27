@@ -23,6 +23,7 @@ import { createCache, MemoryCache, type Cache } from './services/cache.js';
 import { attachSession, requireSession, type SessionContext, type AuthedRequest } from './lib/session.js';
 import { open } from './lib/crypto.js';
 import type { ContractStatus } from './execution/types.js';
+import { installAsyncErrorForwarding } from './lib/expressAsync.js';
 
 /**
  * WickSentinel server: serves the built SPA and provides the OAuth + session
@@ -48,6 +49,8 @@ export interface AppBundle {
 
 /** Builds the Express app. Exported separately so tests can drive it directly. */
 export function createApp(cfg: ServerConfig, store: Store, cache?: Cache, balancesOverride?: BalanceService): AppBundle {
+  // Must run before any router is mounted so every layer is patched.
+  installAsyncErrorForwarding();
   const ctx: SessionContext = { cfg, store };
   const telemetry = new Telemetry();
   // One balance service per process so the auth router and the balance router
@@ -188,6 +191,26 @@ export function createApp(cfg: ServerConfig, store: Store, cache?: Cache, balanc
 
   app.use((_req, res) => {
     res.status(404).json({ error: 'not_found' });
+  });
+
+  /*
+   * Terminal error handler. Express 4 does not catch a rejected promise from an
+   * async handler: the rejection is unhandled and the request is left with no
+   * response at all, so the socket eventually times out. From the browser that is
+   * indistinguishable from an unreachable network, which is exactly how a
+   * half-completed mutation gets reported as "network error" after it persisted.
+   *
+   * Answering here turns that hang into a real status the caller can act on. The
+   * body is deliberately generic: an internal message can name a file path, a
+   * record id or a store conflict, and this response reaches a browser.
+   */
+  app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
+    if (res.headersSent) {
+      next(err);
+      return;
+    }
+    console.error(`[server] Unhandled error on ${req.method} ${req.path}`, err);
+    res.status(500).json({ error: 'internal_error' });
   });
 
   return { app, cfg, store, telemetry, market, execution, cache: resolvedCache };

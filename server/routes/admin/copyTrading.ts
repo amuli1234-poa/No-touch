@@ -747,6 +747,9 @@ export function createCopyTradingAdminRouter(ctx: AdminRouteContext): Router {
 
     const now = Date.now();
     const reason = optionalText(body.reason, MAX_NOTE_LENGTH);
+    // Captured before the write: reading it afterwards would record the new value
+    // as the previous state and make the audit trail unable to show a change.
+    const previousEnabled = Boolean(store.getCopyTradingControl(ownerUserId)?.enabled);
     await store.putCopyTradingControl({
       ownerUserId,
       enabled: body.enabled,
@@ -756,14 +759,28 @@ export function createCopyTradingAdminRouter(ctx: AdminRouteContext): Router {
       stoppedReason: body.enabled ? null : reason
     });
 
-    await auditFromRequest(ctx, req, {
-      action: body.enabled ? 'copytrading.control.started' : 'copytrading.control.stopped',
-      targetType: 'copy_trading_control',
-      targetId: ownerUserId,
-      previousState: { enabled: Boolean(store.getCopyTradingControl(ownerUserId)?.enabled) },
-      newState: { enabled: body.enabled },
-      reason
-    });
+    /*
+     * The control write above has already committed, so nothing from here on may
+     * turn this into a failure: if the audit append throws (a poisoned store, a
+     * concurrent-writer conflict) the honest answer is still "the switch changed",
+     * and reporting an error would invite the operator to retry a mutation that
+     * already happened. The audit gap is logged loudly instead.
+     */
+    try {
+      await auditFromRequest(ctx, req, {
+        action: body.enabled ? 'copytrading.control.started' : 'copytrading.control.stopped',
+        targetType: 'copy_trading_control',
+        targetId: ownerUserId,
+        previousState: { enabled: previousEnabled },
+        newState: { enabled: body.enabled },
+        reason
+      });
+    } catch (err) {
+      console.error(
+        `[admin] Copy control for ${ownerUserId} was saved but its audit record failed`,
+        err
+      );
+    }
 
     return res.json({
       control: controlView(ownerUserId),

@@ -65,6 +65,17 @@ export function adminCors(ctx: AdminRouteContext) {
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-CSRF-Token');
     }
     if (req.method === 'OPTIONS') {
+      /*
+       * Answering 204 without the CORS headers above would let the browser show
+       * an opaque network failure, which reads like the server is down. When an
+       * origin is present but not allowlisted, say so explicitly: a cross-origin
+       * console needs ADMIN_ALLOWED_ORIGINS configured, and that is actionable.
+       * Requests with no Origin (same-origin, curl, server-to-server) still pass.
+       */
+      if (origin && !allowed.includes(origin)) {
+        res.status(403).json({ error: 'origin_not_allowed' });
+        return;
+      }
       res.status(204).end();
       return;
     }

@@ -1,10 +1,39 @@
 import { useEffect, useState } from 'react';
 import { Activity, AlertTriangle, Pause, Play, RefreshCw } from 'lucide-react';
 import { useAsync } from '../lib/hooks';
+import { isOutcomeUnknown } from '../lib/api';
 import { copyControlApi, copyTradingApi, type ClientBalanceAccount, type CopyControlView } from '../lib/copyTrading';
 import { Badge, Card, Empty, LoadingBlock, Notice, StatCard } from './UI';
 import { CopyReadinessPanel } from './CopyReadinessPanel';
 import { formatCurrency, formatDateTime, formatNumber } from '../lib/format';
+
+/**
+ * Operator-facing text for a switch request the backend definitively rejected.
+ *
+ * Only reachable for a real answer (4xx), never for an ambiguous outcome: those
+ * are reported as "state unknown" by the caller, which is a different thing to
+ * say and calls for a different action.
+ */
+function controlErrorMessage(code: string): string {
+  switch (code) {
+    case 'no_followers':
+      return 'Connect at least one client to this master before starting.';
+    case 'forbidden':
+      return 'Your administrator role may view copy trading but not start or stop it.';
+    case 'csrf_failed':
+      return 'Your security token was out of date. Reload the page and try again.';
+    case 'master_not_found':
+      return 'That master no longer exists. Reload the list and select another.';
+    case 'master_required':
+    case 'enabled_required':
+      return 'The request was incomplete. Reload the page and try again.';
+    case 'admin_unauthorized':
+    case 'unauthorized':
+      return 'Your administrator session has expired. Sign in again.';
+    default:
+      return code ? `The server rejected the change (${code.replace(/_/g, ' ')}).` : 'Please try again.';
+  }
+}
 
 /**
  * Start/Stop control and profit-and-loss dashboard for the copy engine.
@@ -18,7 +47,7 @@ export function CopyEnginePanel({
   onNotify
 }: {
   canControl: boolean;
-  onNotify: (kind: 'success' | 'error' | 'info', title: string, message?: string) => void;
+  onNotify: (kind: 'success' | 'error' | 'info' | 'warn', title: string, message?: string) => void;
 }) {
   const masters = useAsync(() => copyTradingApi.listMasters(), []);
   const [selected, setSelected] = useState<string>('');
@@ -74,24 +103,63 @@ export function CopyEnginePanel({
     return () => { cancelled = true; };
   }, [accountKey]);
 
+  /**
+   * Applies the switch and reports only what the backend can prove.
+   *
+   * The mutation is never applied optimistically: the button reflects
+   * `control.data`, which is re-read from the backend afterwards. A request that
+   * fails ambiguously (no response at all, or a 5xx) is *not* reported as a failed
+   * change, because the server may have committed it and then failed to answer —
+   * that is exactly how the switch used to end up enabled while the console said
+   * "network error". In that case the persisted state is re-read and the operator
+   * is told the state is unknown rather than being invited to retry a write that
+   * may already have landed.
+   */
   const toggle = async (next: boolean) => {
     if (!masterId) return;
     setBusy(true);
-    try {
-      const result = await copyControlApi.set({ masterUserId: masterId, enabled: next });
-      onNotify('success', next ? 'Copy trading started' : 'Copy trading stopped', result.note);
+    const reload = () => {
       control.reload();
       performance.reload();
       readiness.reload();
+    };
+    try {
+      const result = await copyControlApi.set({ masterUserId: masterId, enabled: next });
+      // The POST returns the persisted record, but re-read it so the panel shows
+      // what the backend actually holds rather than what it said it wrote.
+      const confirmed = await copyControlApi.get(masterId).catch(() => null);
+      const persisted = confirmed?.control.enabled ?? result.control.enabled;
+      if (persisted === next) {
+        onNotify('success', next ? 'Copy trading started' : 'Copy trading stopped', result.note);
+      } else {
+        onNotify(
+          'warn',
+          'The switch did not change',
+          `The server accepted the request but still reports ${persisted ? 'started' : 'stopped'}. Reload before trying again.`
+        );
+      }
+      reload();
     } catch (err) {
       const code = err && typeof err === 'object' && 'code' in err ? String((err as { code: unknown }).code) : '';
-      onNotify(
-        'error',
-        'The switch could not be changed',
-        code === 'no_followers'
-          ? 'Connect at least one client to this master before starting.'
-          : code.replace(/_/g, ' ') || 'Please try again.'
-      );
+      if (isOutcomeUnknown(err)) {
+        // Ambiguous: refresh what the backend holds, then say so plainly.
+        let observed: boolean | null = null;
+        try {
+          observed = (await copyControlApi.get(masterId)).control.enabled;
+        } catch {
+          observed = null;
+        }
+        reload();
+        onNotify(
+          'warn',
+          'Switch state unknown — verify status',
+          observed === null
+            ? 'The server could not be reached to confirm the change. Check the switch once the console reconnects.'
+            : `The change could not be confirmed. The backend currently reports copy trading as ${observed ? 'started' : 'stopped'}.`
+        );
+        return;
+      }
+      onNotify('error', 'The switch could not be changed', controlErrorMessage(code));
     } finally {
       setBusy(false);
     }
