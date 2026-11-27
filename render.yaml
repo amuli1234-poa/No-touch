@@ -3,7 +3,7 @@ services:
     name: wicksentinel
     env: node
     plan: free
-    buildCommand: npm install && npm run build && npm run build:admin
+    buildCommand: npm install && npm run build && npm run build:admin && npm run build:bot
     startCommand: npm run server
     healthCheckPath: /healthz
     envVars:

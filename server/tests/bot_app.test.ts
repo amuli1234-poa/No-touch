@@ -130,15 +130,17 @@ test('a missing bot build degrades instead of crashing', async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ws-bot-data-'));
   const ctx = await startApp(makeConfig(dataDir, path.join(dataDir, 'does-not-exist')));
   try {
-    // No bot assets are served; whether the request 404s or falls through to the
-    // WickSentinel shell depends on that build being present, so assert on the
-    // asset path, which no SPA fallback would ever answer.
+    // No bot assets are served. The route must fail explicitly rather than
+    // falling through to the WickSentinel shell, which would answer 200 with a
+    // page whose router has no /bot route (the original 404 report).
     const asset = await fetch(`${ctx.base}/bot/static/js/index.abc123.js`);
-    assert.equal(asset.status, 404);
+    assert.equal(asset.status, 503);
 
     const shell = await fetch(`${ctx.base}/bot/`);
-    assert.ok(shell.status === 404 || shell.status === 200);
-    assert.doesNotMatch(await shell.text(), /\/bot\/static\/js\/index\.abc123\.js/);
+    assert.equal(shell.status, 503);
+    const body = await shell.text();
+    assert.equal(JSON.parse(body).error, 'bot_build_missing');
+    assert.doesNotMatch(body, /\/bot\/static\/js\/index\.abc123\.js/);
   } finally {
     await ctx.close();
     fs.rmSync(dataDir, { recursive: true, force: true });

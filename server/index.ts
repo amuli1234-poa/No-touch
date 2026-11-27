@@ -165,7 +165,19 @@ export function createApp(cfg: ServerConfig, store: Store, cache?: Cache, balanc
       res.sendFile(botAppIndex);
     });
   } else {
+    // The bot build is a separate, gitignored artifact, so a deployment that
+    // skipped `npm run build:bot` has no /bot at all. Answering 503 explicitly
+    // keeps that diagnosable: without this the SPA fallback below would return
+    // 200 with the WickSentinel shell, whose router then renders its own 404 —
+    // a working-looking page for a route that cannot possibly work.
     console.warn('[server] bot-app/out/bot not found — run `npm run build:bot` to serve /bot.');
+    app.use('/bot', (_req, res) => {
+      res.status(503).json({
+        error: 'bot_build_missing',
+        message:
+          'The Bot Builder is unavailable because its build output is missing. Run `npm run build:bot` and redeploy.'
+      });
+    });
   }
 
   /* --------------------------- static frontend -------------------------- */
@@ -183,7 +195,9 @@ export function createApp(cfg: ServerConfig, store: Store, cache?: Cache, balanc
   // SPA fallback: any non-API GET without a file extension renders the app
   // shell, which then calls /auth/session and redirects to /login when
   // unauthenticated. Asset-like paths (with an extension) are left to 404.
-  app.get(/^\/(?!api\/|auth\/|healthz).*/, (req, res, next) => {
+  // /bot is excluded: it is a separate application with its own router, and
+  // the shell has no route for it.
+  app.get(/^\/(?!api\/|auth\/|healthz|bot(?:\/|$)).*/, (req, res, next) => {
     if (!hasDist) return next();
     if (/\.[a-z0-9]+$/i.test(req.path)) return next();
     res.sendFile(indexHtml);
