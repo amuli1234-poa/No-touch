@@ -34,6 +34,7 @@ npm run build:admin   # → dist-admin/, built with base /admin/ (override: ADMI
 npm run lint:admin    # admin typecheck (tsc -p admin/tsconfig.json)
 npm run test:admin    # admin test suite (20 tests)
 npm run test:admin-routing # /admin hosting + security invariants (15 tests)
+npm run test:admin-bootstrap # bootstrap backend selection, crypto, duplicate guard (23 tests)
 npm run test:telemetry # telemetry ingest + admin read-path (8 tests)
 npm run test:balance   # account balances: isolation, DEMO/REAL, stale (16 tests)
 npm run test:copy-balance # client balances on the admin + manager copy surfaces (6 tests)

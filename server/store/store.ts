@@ -239,6 +239,24 @@ export function resolveBackend(dataDir: string, options: StoreOptions): StorageB
   return sqliteFileExists(dataDir) ? new SqliteBackend(dataDir, disable) : new JsonBackend(dataDir, disable);
 }
 
+/**
+ * Storage options derived from the loaded server config.
+ *
+ * Every entry point that opens a store must go through this: the bootstrap CLI
+ * and the HTTP server then cannot resolve to different backends, which is how
+ * an administrator could be written to a JSON file the server never reads.
+ */
+export function storeOptionsFromConfig(cfg: {
+  storageEngine: StorageEngine;
+  database?: { url: string | null; ssl: boolean };
+}): StoreOptions {
+  return {
+    engine: cfg.storageEngine,
+    connectionString: cfg.database?.url ?? undefined,
+    ssl: cfg.database?.ssl
+  };
+}
+
 export class Store {
   private db: Database = structuredClone(EMPTY);
   private readonly backend: StorageBackend;

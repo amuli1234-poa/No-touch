@@ -71,8 +71,10 @@ Seeding an administrator on every deploy would mean re-creating a known account
 each time the service restarts, and on Render the command would have to run with
 credentials present in the build environment. Run it manually, once.
 
-Use a Render Shell on the running service so it writes to the same `DATA_DIR`
-(the persistent disk) the server reads:
+Use a Render Shell on the running service so it inherits the same environment the
+server runs with (`STORAGE_ENGINE`, `DATABASE_URL`, `SESSION_SECRET`). Bootstrap
+resolves its backend through `storeOptionsFromConfig`, so it writes to whichever
+engine the server uses:
 
 ```bash
 # In the Render dashboard: your service -> Shell
@@ -95,9 +97,11 @@ to application logs. Then open `https://wicksentinel.onrender.com/admin/`, sign
 in with that email and password, and complete enrolment by confirming a TOTP
 code. Recovery codes are displayed at that point — save them.
 
-If the shell cannot reach the persistent disk, the account will be written to an
-ephemeral path and will vanish on the next restart. Check that `DATA_DIR` is set
-to the mounted disk path in the service's environment before bootstrapping.
+Bootstrap prints `[bootstrap] Storage engine: <engine>` before creating anything.
+**Confirm it says `postgres`.** If it says `json` or `sqlite`, stop: the account
+would be written to a filesystem the server never reads, and on Render Free that
+filesystem is discarded on restart. `STORAGE_ENGINE=postgres` also makes the CLI
+fail rather than fall back when `DATABASE_URL` is missing or unreachable.
 
 ---
 

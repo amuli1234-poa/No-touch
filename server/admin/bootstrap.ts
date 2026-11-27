@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import readline from 'node:readline';
-import { loadConfig } from '../config.js';
-import { Store } from '../store/store.js';
+import { loadConfig, type ServerConfig } from '../config.js';
+import { Store, storeOptionsFromConfig } from '../store/store.js';
 import { hashPassword, validatePasswordStrength } from './passwords.js';
 import { generateTotpSecret, totpUri, currentTotp } from './totp.js';
 import { seal } from '../lib/crypto.js';
@@ -56,25 +56,24 @@ function ask(question: string, hidden = false): Promise<string> {
   });
 }
 
-async function main(): Promise<void> {
-  const cfg = loadConfig();
-  const store = new Store(cfg.dataDir);
-  await store.load();
-
+async function run(store: Store, cfg: ServerConfig): Promise<void> {
   if (store.countActiveSuperAdmins() > 0) {
     console.error('[bootstrap] An active Super Admin already exists. Refusing to create another.');
     console.error('            Use the admin dashboard to invite additional administrators.');
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   const email = (process.env.ADMIN_EMAIL ?? (await ask('Super Admin email: '))).trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     console.error('[bootstrap] Invalid email address.');
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
   if (store.getAdminByEmail(email)) {
     console.error('[bootstrap] An administrator with that email already exists.');
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   const displayName = (process.env.ADMIN_NAME ?? (await ask('Display name: '))).trim() || email.split('@')[0];
@@ -86,7 +85,8 @@ async function main(): Promise<void> {
   const strength = validatePasswordStrength(password);
   if (!strength.ok) {
     console.error(`[bootstrap] Weak password: ${strength.reason}`);
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   const secret = generateTotpSecret();
@@ -127,7 +127,32 @@ async function main(): Promise<void> {
   console.log('\n  Sign in at /admin/ and confirm a code to finish enrolment.\n');
 }
 
+async function main(): Promise<void> {
+  const cfg = loadConfig();
+  const store = new Store(cfg.dataDir, storeOptionsFromConfig(cfg));
+  try {
+    await store.load();
+    // Report the backend so an operator can see the account is going to the
+    // same place the server reads. The connection string is never printed.
+    console.log(`[bootstrap] Storage engine: ${store.storage.kind}`);
+    await run(store, cfg);
+  } finally {
+    // Postgres keeps a connection pool open; without this the CLI would hang
+    // until the pool idled out, and a failure path would leak connections.
+    await store.close().catch(() => undefined);
+  }
+}
+
 main().catch((err) => {
-  console.error('[bootstrap] fatal:', err instanceof Error ? err.message : err);
+  const message = err instanceof Error ? err.message : String(err);
+  if (message.includes('DATABASE_URL is required')) {
+    console.error('[bootstrap] fatal:', message);
+    console.error('[bootstrap] STORAGE_ENGINE=postgres requires DATABASE_URL. Refusing to fall back to JSON/SQLite.');
+  } else if (message.includes('Failed to open postgres backend') || message.toLowerCase().includes('econnrefused')) {
+    console.error('[bootstrap] fatal: could not connect to PostgreSQL:', message);
+    console.error('[bootstrap] Check DATABASE_URL and network reachability. Refusing to fall back to JSON/SQLite.');
+  } else {
+    console.error('[bootstrap] fatal:', message);
+  }
   process.exit(1);
 });

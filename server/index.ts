@@ -4,7 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { loadConfig, type ServerConfig } from './config.js';
-import { Store } from './store/store.js';
+import { Store, storeOptionsFromConfig } from './store/store.js';
 import { createAuthRouter } from './routes/auth.js';
 import { createWhatsAppRouter } from './routes/whatsapp.js';
 import { createTelemetryRouter } from './routes/telemetry.js';
@@ -332,7 +332,7 @@ async function reclassifyUnknownContracts(store: Store): Promise<void> {
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
-  const store = new Store(cfg.dataDir, { engine: cfg.storageEngine, connectionString: cfg.database?.url ?? undefined, ssl: cfg.database?.ssl });
+  const store = new Store(cfg.dataDir, storeOptionsFromConfig(cfg));
   await store.load();
   console.log(`[server] Storage engine: ${store.storage.kind}`);
   await store.pruneExpiredSessions();
