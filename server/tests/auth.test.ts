@@ -182,7 +182,8 @@ function makeConfig(deriv: FakeDeriv, dataDir: string): ServerConfig {
       maxFailedLogins: 5,
       lockoutSeconds: 60
     },
-    appOrigin: 'http://localhost:8787'
+    appOrigin: 'http://localhost:8787',
+    derivReferralUrl: 'https://t.deriv.link?t=J87L49ZA7FQU'
   };
 }
 
@@ -611,7 +612,24 @@ test('16. Copy Trading invitation connects a client account without replacing th
     const invitation = await invitationResponse.json() as { url: string; expiresAt: number };
     const invitationUrl = new URL(invitation.url);
 
-    const beginLink = await get(app.base, `${invitationUrl.pathname}${invitationUrl.search}`, clientCookies);
+    // The invitation now opens a choice page first: a client who has no Deriv
+    // account must be able to take the manager's referral link instead of being
+    // pushed straight into authorization.
+    const choicePage = await get(app.base, `${invitationUrl.pathname}${invitationUrl.search}`, clientCookies);
+    assert.equal(choicePage.status, 200);
+    assert.equal(choicePage.headers.get('location'), null, 'the invitation must not auto-redirect to Deriv');
+    const choiceHtml = await choicePage.text();
+    assert.match(choiceHtml, /I Already Have a Deriv Account/);
+    assert.match(choiceHtml, /Create a Deriv Account/);
+
+    // "I already have an account" posts the token back to start OAuth.
+    const beginLink = await fetch(`${app.base}${invitationUrl.pathname}`, {
+      method: 'POST',
+      headers: { Cookie: clientCookies.header(), 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token: invitationUrl.searchParams.get('token')! }).toString(),
+      redirect: 'manual'
+    });
+    clientCookies.absorb(beginLink);
     assert.equal(beginLink.status, 302);
     const authUrl = new URL(beginLink.headers.get('location')!);
     assert.equal(authUrl.searchParams.get('scope'), 'openid trade');

@@ -15,6 +15,7 @@
     "lint:server": "tsc --noEmit -p server/tsconfig.json",
     "test": "tsx --test $(find src -name '*.test.ts')",
     "test:auth": "tsx server/tests/auth.test.ts",
+    "test:copy-invitation": "tsx --test server/tests/copy_invitation_referral.test.ts",
     "test:admin": "tsx server/tests/admin.test.ts",
     "test:admin-routing": "tsx --test server/tests/admin_routing.test.ts",
     "test:admin-bootstrap": "tsx --test server/tests/admin_bootstrap.test.ts",

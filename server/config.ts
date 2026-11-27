@@ -82,6 +82,12 @@ export interface ServerConfig {
   };
   /** Public origin allowed for same-origin checks on the callback. */
   appOrigin: string;
+  /**
+   * Operator's official Deriv referral URL, used only when an invited client
+   * says they have no Deriv account yet. Absent means the invitation page hides
+   * the "Create a Deriv Account" action rather than inventing a link.
+   */
+  derivReferralUrl?: string;
   /** Built Deriv bot app served under /bot. Defaults to `bot-app/out/bot`. */
   botAppDir?: string;
   /** Built admin console served under /admin. Defaults to `dist-admin`. */
@@ -95,6 +101,24 @@ function required(name: string, value: string | undefined): string {
     );
   }
   return value.trim();
+}
+
+/**
+ * Accepts only an absolute https URL, so a typo or a relative value cannot turn
+ * the invitation page's signup button into an open redirect. The value is
+ * returned verbatim: referral attribution lives in the query string and must
+ * never be rewritten.
+ */
+function parseReferralUrl(value: string | undefined): string | undefined {
+  const raw = value?.trim();
+  if (!raw) return undefined;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== 'https:') return undefined;
+    return raw;
+  } catch {
+    return undefined;
+  }
 }
 
 function int(value: string | undefined, fallback: number): number {
@@ -200,6 +224,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       maxFailedLogins: int(env.ADMIN_MAX_FAILED_LOGINS, 5),
       lockoutSeconds: int(env.ADMIN_LOCKOUT_SECONDS, 15 * 60)
     },
-    appOrigin
+    appOrigin,
+    derivReferralUrl: parseReferralUrl(env.DERIV_REFERRAL_URL)
   };
 }

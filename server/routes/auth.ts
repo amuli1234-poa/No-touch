@@ -1,4 +1,4 @@
-import { Router, type Response } from 'express';
+import express, { Router, type Response } from 'express';
 import { createHash } from 'node:crypto';
 import type { ServerConfig } from '../config.js';
 import type { Store, UserRecord, SessionRecord } from '../store/store.js';
@@ -68,6 +68,43 @@ function copyTradingLinkResult(res: Response, success: boolean, message: string)
     .send(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WickSentinel account connection</title><body style="margin:0;background:#080d16;color:#e8edf5;font:16px system-ui,sans-serif"><main style="max-width:560px;margin:12vh auto;padding:32px;background:#162033;border:1px solid #26344b;border-radius:16px"><p style="color:#60a5fa;font-weight:700;letter-spacing:.12em;text-transform:uppercase">WickSentinel · Copy Trading</p><h1>${success ? 'Account connection complete' : 'Account connection failed'}</h1><p style="line-height:1.6;color:#bac5d5">${message}</p><p style="line-height:1.6;color:#bac5d5">You may close this page. The account manager can refresh their connected accounts list.</p></main></body></html>`);
 }
 
+/** Escapes text for HTML text and double-quoted attribute contexts. */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
+ * Renders the two-path invitation page.
+ *
+ * Both actions are deliberately separate: "I already have an account" posts the
+ * invitation token back to this origin to start OAuth, while "create an
+ * account" is a plain outbound link to the manager's official referral URL. The
+ * referral URL is emitted verbatim — attribution lives in its query string, so
+ * rewriting or appending to it would break the referral.
+ *
+ * The referral link is a link, not a redirect: a client who already has a Deriv
+ * account must be able to skip it. Nothing here claims the referral registered,
+ * because only Deriv can confirm that.
+ */
+function renderInvitationChoicePage(input: {
+  invitationId: string;
+  secret: string;
+  referralUrl?: string;
+}): string {
+  const action = `/auth/copy-trading/connect/${encodeURIComponent(input.invitationId)}`;
+  const referral = input.referralUrl
+    ? `<a class="secondary" href="${escapeHtml(input.referralUrl)}" target="_blank" rel="noopener noreferrer">Create a Deriv Account</a>
+        <p class="note">Opens Deriv's official registration page in a new tab. When you are done, come back to this page and choose "I Already Have a Deriv Account".</p>`
+    : `<p class="note">No Deriv registration link is configured for this invitation. Ask the account manager for one, then return here and choose "I Already Have a Deriv Account".</p>`;
+
+  return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WickSentinel · Copy Trading invitation</title><body style="margin:0;background:#080d16;color:#e8edf5;font:16px system-ui,-apple-system,sans-serif"><main style="max-width:600px;margin:8vh auto;padding:32px;background:#162033;border:1px solid #26344b;border-radius:16px"><p style="color:#60a5fa;font-weight:700;letter-spacing:.12em;text-transform:uppercase;font-size:12px">WickSentinel · Copy Trading</p><h1 style="margin:12px 0 8px;font-size:24px;line-height:1.25">You have been invited to copy a trading strategy</h1><p style="line-height:1.6;color:#bac5d5;margin:0 0 24px">To accept, WickSentinel needs permission to read your Deriv account. Choose the option that applies to you.</p><form method="post" action="${escapeHtml(action)}"><input type="hidden" name="token" value="${escapeHtml(input.secret)}"><button type="submit" style="display:block;width:100%;padding:14px 18px;margin:0 0 12px;border:0;border-radius:10px;background:#2878d0;color:#fff;font:600 15px system-ui,sans-serif;cursor:pointer">I Already Have a Deriv Account</button></form>${referral}<div style="margin-top:24px;padding-top:20px;border-top:1px solid #26344b"><p style="line-height:1.6;color:#93a4bd;font-size:13px;margin:0">Connecting does not start trading. After you connect, you will review the strategy and risk disclosures and must explicitly authorize copying. You can revoke access at any time, and WickSentinel never sees your Deriv password.</p></div></main></body></html>`;
+}
+
 /**
  * Accepts only a same-origin absolute path, so a crafted `returnTo` can never
  * turn the OAuth callback into an open redirect. `//host` and backslash forms are
@@ -109,12 +146,48 @@ export function createAuthRouter(ctx: SessionContext, balances?: BalanceService)
     res.redirect(buildAuthorizationUrl(cfg, { state, codeChallenge, mode }));
   });
 
-  /** A one-use invitation lets a client authorize their account without the manager's WickSentinel session. */
+  /**
+   * A one-use invitation lets a client authorize their account without the
+   * manager's WickSentinel session. This renders the choice page instead of
+   * redirecting straight to Deriv, so a client without a Deriv account can be
+   * sent to the manager's official referral link first.
+   */
   router.get('/auth/copy-trading/connect/:invitationId', async (req, res) => {
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('Cache-Control', 'no-store');
     const invitationId = req.params.invitationId;
     const secret = typeof req.query.token === 'string' ? req.query.token : '';
+    const invitation = store.getCopyTradingInvitation(invitationId);
+    const suppliedHash = createHash('sha256').update(secret).digest('base64url');
+    if (
+      !secret || !invitation || invitation.consumedAt !== null || invitation.expiresAt <= Date.now() ||
+      !timingSafeEqual(invitation.tokenHash, suppliedHash) || !store.getUserById(invitation.ownerUserId)
+    ) {
+      res.status(410).send('This Copy Trading invitation is invalid, expired, or already used. Ask the account manager for a new link.');
+      return;
+    }
+
+    // Self-contained page: inline styles only, no scripts, no framing.
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+    );
+    res
+      .status(200)
+      .type('html')
+      .send(renderInvitationChoicePage({ invitationId: invitation.id, secret, referralUrl: cfg.derivReferralUrl }));
+  });
+
+  /**
+   * Starts the real OAuth authorization for an invitation. Kept as a POST so the
+   * invitation token never appears in a form-action URL, and so the referral
+   * choice is an explicit user decision rather than a redirect chain.
+   */
+  router.post('/auth/copy-trading/connect/:invitationId', express.urlencoded({ extended: false, limit: '2kb' }), async (req, res) => {
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('Cache-Control', 'no-store');
+    const invitationId = req.params.invitationId;
+    const secret = typeof req.body?.token === 'string' ? req.body.token : '';
     const invitation = store.getCopyTradingInvitation(invitationId);
     const suppliedHash = createHash('sha256').update(secret).digest('base64url');
     if (
