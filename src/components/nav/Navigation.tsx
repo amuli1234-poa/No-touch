@@ -13,7 +13,6 @@ import {
   Gauge,
   GitBranch,
   GraduationCap,
-  Hash,
   HeartPulse,
   Layers,
   LayoutDashboard,
@@ -23,18 +22,9 @@ import {
   ShieldCheck,
   Sparkles,
   TrendingUp,
+  Wallet,
   Waves,
 } from 'lucide-react';
-import { DashboardIcon } from '../icons/DashboardIcon';
-import { ProScannerIcon } from '../icons/ProScannerIcon';
-import { BotIcon as BotSVG } from '../icons/BotIcon';
-import { CopyTradingIcon } from '../icons/CopyTradingIcon';
-import { MarketAnalysisIcon } from '../icons/MarketAnalysisIcon';
-import { AiIntelligenceIcon } from '../icons/AiIntelligenceIcon';
-import { DigitsManualTraderIcon } from '../icons/DigitsManualTraderIcon';
-import { BulkTraderIcon } from '../icons/BulkTraderIcon';
-import { AutomatedTraderIcon } from '../icons/AutomatedTraderIcon';
-import { BotBuilderIcon } from '../icons/BotBuilderIcon';
 
 /**
  * Every reachable section. These are NOT all main tabs — the app exposes seven
@@ -75,12 +65,8 @@ export type AppSection =
   /* ------------------- visual strategy workspace (Phase 1) ------------------- */
   | 'freebots'
   | 'premiumbots'
-  | 'botbuilder'
   | 'copytrading'
-  | 'aiintelligence'
-  | 'digits-manual-trader'
-  | 'bulk-trader'
-  | 'automated-trader';
+  | 'aiintelligence';
 
 export interface SectionMeta {
   key: AppSection;
@@ -113,20 +99,21 @@ export const MAIN_TABS: readonly MainTab[] = [
     key: 'dashboard',
     label: 'Dashboard',
     shortLabel: 'Dashboard',
-    icon: <DashboardIcon className={ICON} />,
+    icon: <LayoutDashboard className={ICON} />,
     defaultSection: 'dashboard',
     sections: [
-      { key: 'dashboard', label: 'Workspace', shortLabel: 'Workspace', icon: <DashboardIcon className={ICON} /> },
+      { key: 'dashboard', label: 'Workspace', shortLabel: 'Workspace', icon: <LayoutDashboard className={ICON} /> },
+      { key: 'trade', label: 'Trade', shortLabel: 'Trade', icon: <Wallet className={ICON} /> },
     ],
   },
   {
     key: 'proscanner',
     label: 'Pro Scanner',
     shortLabel: 'Scanner',
-    icon: <ProScannerIcon className={ICON} />,
+    icon: <Sparkles className={ICON} />,
     defaultSection: 'scanner',
     sections: [
-      { key: 'scanner', label: 'Market Scanner', shortLabel: 'Scanner', icon: <ProScannerIcon className={ICON} /> },
+      { key: 'scanner', label: 'Market Scanner', shortLabel: 'Scanner', icon: <Sparkles className={ICON} /> },
       { key: 'live', label: 'Live Market Scanner', shortLabel: 'Live', icon: <Radar className={ICON} /> },
       { key: 'trendlines', label: 'Trendline AI', shortLabel: 'Trendlines', icon: <TrendingUp className={ICON} /> },
       { key: 'demandsupply', label: 'Demand & Supply AI', shortLabel: 'D&S', icon: <Boxes className={ICON} /> },
@@ -147,40 +134,40 @@ export const MAIN_TABS: readonly MainTab[] = [
     key: 'freebots',
     label: 'Free Bots',
     shortLabel: 'Free Bots',
-    icon: <BotSVG className={ICON} />,
+    icon: <Bot className={ICON} />,
     defaultSection: 'freebots',
     sections: [
-      { key: 'freebots', label: 'Free Bots', shortLabel: 'Bots', icon: <BotSVG className={ICON} /> },
+      { key: 'freebots', label: 'Free Bots', shortLabel: 'Bots', icon: <Bot className={ICON} /> },
     ],
   },
   {
     key: 'premiumbots',
     label: 'Premium Bots',
     shortLabel: 'Premium',
-    icon: <BotSVG className={ICON} />,
+    icon: <Bot className={ICON} />,
     defaultSection: 'premiumbots',
     sections: [
-      { key: 'premiumbots', label: 'Premium Bots', shortLabel: 'Premium', icon: <BotSVG className={ICON} /> },
+      { key: 'premiumbots', label: 'Premium Bots', shortLabel: 'Premium', icon: <Bot className={ICON} /> },
     ],
   },
   {
     key: 'copytrading',
     label: 'Copy Trading',
     shortLabel: 'Copy',
-    icon: <CopyTradingIcon className={ICON} />,
+    icon: <Activity className={ICON} />,
     defaultSection: 'copytrading',
     sections: [
-      { key: 'copytrading', label: 'Copy Trading', shortLabel: 'Copy Trading', icon: <CopyTradingIcon className={ICON} /> },
+      { key: 'copytrading', label: 'Copy Trading', shortLabel: 'Copy Trading', icon: <Activity className={ICON} /> },
     ],
   },
   {
     key: 'marketanalysis',
     label: 'Market Analysis',
     shortLabel: 'Analysis',
-    icon: <MarketAnalysisIcon className={ICON} />,
+    icon: <CandlestickChart className={ICON} />,
     defaultSection: 'chart',
     sections: [
-      { key: 'chart', label: 'Chart Only', shortLabel: 'Chart Only', icon: <MarketAnalysisIcon className={ICON} /> },
+      { key: 'chart', label: 'Chart Only', shortLabel: 'Chart Only', icon: <CandlestickChart className={ICON} /> },
       { key: 'chartanalysis', label: 'Chart Analysis', shortLabel: 'Analysis', icon: <Crosshair className={ICON} /> },
       { key: 'analyser', label: 'Chart Analyser', shortLabel: 'Analyser', icon: <ScanSearch className={ICON} /> },
       { key: 'performance', label: 'Trade Performance', shortLabel: 'Performance', icon: <Award className={ICON} /> },
@@ -192,10 +179,10 @@ export const MAIN_TABS: readonly MainTab[] = [
     key: 'aiintelligence',
     label: 'AI Intelligence',
     shortLabel: 'AI',
-    icon: <AiIntelligenceIcon className={ICON} />,
+    icon: <BrainCircuit className={ICON} />,
     defaultSection: 'aiintelligence',
     sections: [
-      { key: 'aiintelligence', label: 'Intelligence Overview', shortLabel: 'Overview', icon: <AiIntelligenceIcon className={ICON} /> },
+      { key: 'aiintelligence', label: 'Intelligence Overview', shortLabel: 'Overview', icon: <BrainCircuit className={ICON} /> },
       { key: 'entrymodel', label: 'Entry Model AI', shortLabel: 'Entry Model', icon: <Crosshair className={ICON} /> },
       { key: 'alerts', label: 'AI Alerts & Notification Manager', shortLabel: 'Alerts', icon: <BellRing className={ICON} /> },
       { key: 'risk', label: 'Risk & Execution AI', shortLabel: 'Risk', icon: <ShieldCheck className={ICON} /> },
@@ -322,47 +309,6 @@ export function Sidebar({ active, onSelect, statusBadge, badges, hidden = false 
           </span>
           <span className="truncate">Bot Builder</span>
         </a>
-
-        {/* Copy-trading trader surfaces (replacing the old Manual Trader tab). */}
-        <a
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            onSelect('digits-manual-trader');
-          }}
-          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-semibold text-muted border border-transparent hover:bg-elevated hover:text-ink transition-colors duration-150"
-        >
-          <span className="text-faint">
-            <Activity className={ICON} />
-          </span>
-          <span className="truncate">Digits Manual Trader</span>
-        </a>
-        <a
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            onSelect('bulk-trader');
-          }}
-          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-semibold text-muted border border-transparent hover:bg-elevated hover:text-ink transition-colors duration-150"
-        >
-          <span className="text-faint">
-            <Activity className={ICON} />
-          </span>
-          <span className="truncate">Bulk Trader</span>
-        </a>
-        <a
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            onSelect('automated-trader');
-          }}
-          className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-semibold text-muted border border-transparent hover:bg-elevated hover:text-ink transition-colors duration-150"
-        >
-          <span className="text-faint">
-            <Activity className={ICON} />
-          </span>
-          <span className="truncate">Automated Trader</span>
-        </a>
       </div>
 
       {statusBadge && <div className="p-3 border-t border-line">{statusBadge}</div>}
@@ -371,7 +317,7 @@ export function Sidebar({ active, onSelect, statusBadge, badges, hidden = false 
 }
 
 /** Mobile bottom bar — primary modules plus a "More" sheet. */
-const MOBILE_PRIMARY: AppSection[] = ['dashboard', 'freebots', 'premiumbots', 'copytrading', 'scanner'];
+const MOBILE_PRIMARY: AppSection[] = ['dashboard', 'freebots', 'premiumbots', 'copytrading', 'scanner', 'chart', 'aiintelligence'];
 
 interface MobileNavProps {
   active: AppSection;
@@ -390,7 +336,7 @@ export function MobileNav({ active, onSelect, badges, onOpenMenu }: MobileNavPro
       aria-label="Primary mobile"
       className="lg:hidden shrink-0 border-t border-line bg-nav pb-[env(safe-area-inset-bottom)]"
     >
-      <ul className="grid grid-cols-6">
+      <ul className="grid grid-cols-8">
         {items.map((tab) => {
           const isActive = tab.key === activeTabKey;
           const tabBadge = tab.sections.reduce((n, s) => Math.max(n, badges?.[s.key] ?? 0), 0);
@@ -494,50 +440,6 @@ export function MobileMenuSheet({
             <Bot className="w-[18px] h-[18px]" />
           </span>
           <span className="truncate">Bot Builder</span>
-        </a>
-
-        {/* Copy-trading trader surfaces (replacing the old Manual Trader tab). */}
-        <a
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            onSelect('digits-manual-trader');
-            onClose();
-          }}
-          className="mt-1 w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-[13px] font-semibold text-muted border border-transparent"
-        >
-          <span className="text-faint">
-            <Activity className="w-[18px] h-[18px]" />
-          </span>
-          <span className="truncate">Digits Manual Trader</span>
-        </a>
-        <a
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            onSelect('bulk-trader');
-            onClose();
-          }}
-          className="mt-1 w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-[13px] font-semibold text-muted border border-transparent"
-        >
-          <span className="text-faint">
-            <Activity className="w-[18px] h-[18px]" />
-          </span>
-          <span className="truncate">Bulk Trader</span>
-        </a>
-        <a
-          href="#"
-          onClick={(e) => {
-            e.preventDefault();
-            onSelect('automated-trader');
-            onClose();
-          }}
-          className="mt-1 w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-[13px] font-semibold text-muted border border-transparent"
-        >
-          <span className="text-faint">
-            <Activity className="w-[18px] h-[18px]" />
-          </span>
-          <span className="truncate">Automated Trader</span>
         </a>
       </div>
     </div>
