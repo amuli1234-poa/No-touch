@@ -15,17 +15,35 @@ import { open } from '../lib/crypto.js';
  *   npm run admin:list
  */
 
+function describeDatabase(url: string | null): string {
+  if (!url) return 'none (DATABASE_URL is not set)';
+  try {
+    const parsed = new URL(url);
+    // Host and database name only: the URL carries the password.
+    const host = parsed.hostname;
+    const db = parsed.pathname.replace(/^\//, '') || '(none)';
+    const local = host === 'localhost' || host === '127.0.0.1';
+    return `${host}/${db}${local ? ' (LOCALHOST — not a deployed database)' : ''}`;
+  } catch {
+    return '(DATABASE_URL is not a parseable URL)';
+  }
+}
+
 function main(): Promise<void> {
   const cfg = loadConfig();
   const store = new Store(cfg.dataDir, storeOptionsFromConfig(cfg));
 
+  // Printed before connecting: when a connection fails, the target is the fact
+  // that matters most, and it would otherwise never be shown.
+  console.log(`[admin:list] Storage engine: ${store.storage.kind}`);
+  console.log(`[admin:list] Data directory: ${cfg.dataDir}`);
+  // Without the host, a CLI pointed at the wrong database looks exactly like a
+  // correctly seeded one whose account the server cannot see.
+  console.log(`[admin:list] Database: ${describeDatabase(cfg.database?.url ?? null)}`);
+
   return store
     .load()
     .then(async () => {
-      // Same line the bootstrap prints, so the two commands can be compared.
-      console.log(`[admin:list] Storage engine: ${store.storage.kind}`);
-      console.log(`[admin:list] Data directory: ${cfg.dataDir}`);
-
       const admins = store.listAdmins();
       console.log(`[admin:list] Administrators: ${admins.length}`);
 
