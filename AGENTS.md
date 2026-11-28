@@ -1647,3 +1647,36 @@ before any record is written, and that read-only roles cannot mutate. Deriv is
 faked at the HTTP level in `server/tests/copy_trading_admin.test.ts`; the real
 `server/config.ts` hardcodes the Deriv endpoints, so a live server cannot be
 pointed at a fake — use the test harness, not a running process, for token flow.
+
+### The invitation page must not send `form-action`
+
+`GET /auth/copy-trading/connect/:id` renders a two-button choice page; the
+"I Already Have a Deriv Account" button is a same-origin POST that answers 302
+into Deriv's authorization flow.
+
+CSP3 applies `form-action` to the form's request *and to every redirect that
+request follows*. This page once sent `form-action 'self'`, which silently
+blocked the redirect: the POST succeeded, a transaction was created, and the
+browser then refused to navigate, so the button looked dead. Widening the list
+does not fix it either — Deriv's chain moves to `home.deriv.com` when the visitor
+must sign in, and any host added later would break it again. The directive is
+deliberately absent; `default-src 'none'`, script-free markup, escaping,
+`no-store` and `no-referrer` are what protect the page. Do not reintroduce it
+without a browser click-through test; `curl` alone cannot see this bug.
+
+### Referral link has a code default
+
+`derivReferralUrl` resolves to a built-in referral link when
+`DERIV_REFERRAL_URL` is unset, so the signup button works on a fresh deployment
+with no configuration. A malformed override warns and falls back; it is never
+silently dropped, because dropping it previously hid the button with no
+explanation.
+
+### Production trades nothing by default
+
+`render.yaml` ships `ALLOW_EXECUTION`, `ALLOW_DEMO_EXECUTION`,
+`ALLOW_REAL_EXECUTION` and `ALLOW_AUTOMATIC_TRADING` all `false`. Connecting an
+account therefore does not move money: a copy requires the manager's
+`/api/copy-trading/control` switch *and* these server-side flags. They are read
+from the environment only and have no setter, so enabling them needs a deliberate
+env change and a restart.
