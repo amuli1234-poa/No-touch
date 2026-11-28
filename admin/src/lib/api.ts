@@ -73,11 +73,6 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     throw new ApiError(0, 'network_error', { message: 'Cannot reach the server.' });
   }
 
-  if (res.status === 401) {
-    onUnauthorized?.();
-    throw new ApiError(401, 'unauthorized');
-  }
-
   const text = await res.text();
   let payload: any = null;
   if (text) {
@@ -86,6 +81,15 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     } catch {
       payload = { raw: text };
     }
+  }
+
+  if (res.status === 401) {
+    onUnauthorized?.();
+    // Keep the server's reason: a failed sign-in is a 401 too, and collapsing
+    // every 401 to "unauthorized" left the login page with nothing to show but
+    // a generic failure, hiding whether the cause was the password or the MFA
+    // code. The session is still cleared above.
+    throw new ApiError(401, payload?.error ?? 'unauthorized', payload ?? undefined);
   }
 
   if (!res.ok) {

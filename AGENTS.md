@@ -1680,3 +1680,42 @@ account therefore does not move money: a copy requires the manager's
 `/api/copy-trading/control` switch *and* these server-side flags. They are read
 from the environment only and have no setter, so enabling them needs a deliberate
 env change and a restart.
+
+## Admin console troubleshooting (`/admin`)
+
+Symptom: the console loads and the form submits, but every attempt ends in
+`Sign-in failed`. Two independent causes have been confused in the past, so
+check them in this order.
+
+### 1. Does the admin exist in the store the server reads?
+
+Run, in the *same* environment as the server (Render shell, or the same `.env`):
+
+```bash
+npm run admin:list
+```
+
+It prints the resolved storage engine, the data directory, and every admin with
+role, status, MFA enrolment and last login. Compare its engine line against the
+server's own `[bootstrap] Storage engine:` output — `json` in a shell while the
+service runs `postgres` is the classic mismatch, and the account is then created
+somewhere the server never looks. On Render the free tier has no persistent
+disk, so a JSON store is wiped on every restart.
+
+### 2. Is MFA enrolment pending, or is the secret undecryptable?
+
+An admin created by `admin:bootstrap` has `mfa.enrolled === false`. The first
+sign-in must complete enrolment (`POST /auth/mfa/enroll`) before a normal login
+can succeed. The MFA secret is sealed with `SESSION_SECRET`; bootstrap and the
+running server must use the *same* value, otherwise enrolment fails with
+`mfa_not_initialised` and the account can never be used.
+
+### Failed sign-ins must say why
+
+`admin/src/lib/api.ts` used to throw a bare `'unauthorized'` for every 401
+before reading the body, so `LoginPage.messageFor` fell through to a generic
+"Sign-in failed. Please try again." and discarded `invalid_credentials`,
+`invalid_mfa_code` and `mfa_not_initialised`. The 401 path now parses the body
+first and keeps the server's error code; the generic branch prints the code so
+an unmapped error is still diagnosable. Do not move the 401 check back above the
+body read.

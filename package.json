@@ -49,6 +49,7 @@
     "db:migrate:postgres": "tsx server/store/migrate_postgres.ts",
     "db:import:postgres": "tsx server/store/import_to_postgres.ts",
     "admin:bootstrap": "tsx server/admin/bootstrap.ts",
+    "admin:list": "tsx server/admin/list_admins.ts",
     "admin:add-super": "tsx server/admin/add_super.ts",
     "admin:delete": "tsx server/admin/delete_admin.ts",
     "dev:admin": "vite --config admin/vite.config.ts --port=3001 --host=0.0.0.0",

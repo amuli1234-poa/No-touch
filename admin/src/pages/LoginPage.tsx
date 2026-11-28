@@ -243,8 +243,12 @@ function messageFor(err: unknown): string {
         return 'This administrator account is suspended.';
       case 'network_error':
         return 'Cannot reach the server. Is the backend running?';
+      case 'mfa_not_initialised':
+        // Bootstrap sealed the MFA secret with a different SESSION_SECRET than
+        // the running server uses, so it cannot be decrypted.
+        return 'This account cannot start MFA enrolment. Re-run the bootstrap command with the same SESSION_SECRET the server uses.';
       default:
-        return 'Sign-in failed. Please try again.';
+        return `Sign-in failed (${err.code}). Check the server logs for details.`;
     }
   }
   return 'Sign-in failed. Please try again.';
