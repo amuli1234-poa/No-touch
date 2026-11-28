@@ -508,7 +508,7 @@ test('a Deriv token failure surfaces as a connection failure and leaves no follo
 
 /* ------------------------------ page safety --------------------------- */
 
-test('the invitation page escapes the token and sets a restrictive CSP', async () => {
+test('the invitation page escapes the token and sets a CSP that does not block the Deriv redirect', async () => {
   const deriv = await startFakeDeriv();
   const app = await startApp(deriv, { derivReferralUrl: REFERRAL });
   try {
@@ -518,8 +518,15 @@ test('the invitation page escapes the token and sets a restrictive CSP', async (
 
     const csp = res.headers.get('content-security-policy') ?? '';
     assert.match(csp, /default-src 'none'/);
-    assert.match(csp, /form-action 'self'/);
     assert.match(csp, /frame-ancestors 'none'/);
+    assert.match(csp, /base-uri 'none'/);
+    // `form-action` is enforced on the POST's redirect chain, which hops across
+    // Deriv hosts, so no allowlist can express it; a strict one blocked the
+    // redirect silently and made the button look dead. Its absence is required.
+    assert.ok(
+      !/form-action/i.test(csp),
+      `form-action must not be restricted on this page; got: ${csp}`
+    );
     // No script is needed or permitted on this page.
     assert.ok(!/<script/i.test(html), 'page must not contain scripts');
     assert.ok(!html.includes('javascript:'), 'page must not contain javascript: URLs');

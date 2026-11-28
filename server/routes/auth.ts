@@ -68,6 +68,25 @@ function copyTradingLinkResult(res: Response, success: boolean, message: string)
     .send(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WickSentinel account connection</title><body style="margin:0;background:#080d16;color:#e8edf5;font:16px system-ui,sans-serif"><main style="max-width:560px;margin:12vh auto;padding:32px;background:#162033;border:1px solid #26344b;border-radius:16px"><p style="color:#60a5fa;font-weight:700;letter-spacing:.12em;text-transform:uppercase">WickSentinel · Copy Trading</p><h1>${success ? 'Account connection complete' : 'Account connection failed'}</h1><p style="line-height:1.6;color:#bac5d5">${message}</p><p style="line-height:1.6;color:#bac5d5">You may close this page. The account manager can refresh their connected accounts list.</p></main></body></html>`);
 }
 
+/**
+ * CSP for the invitation page. Deliberately omits `form-action`.
+ *
+ * CSP3 applies `form-action` to the form's request *and to every redirect that
+ * request follows*. The continue button posts here and this origin answers with
+ * a 302 into Deriv's authorization flow, which itself hops between Deriv hosts
+ * (auth.deriv.com, then home.deriv.com when the visitor must sign in). A
+ * `form-action` allowlist cannot express that chain reliably, and when it fell
+ * short the browser blocked the redirect silently: the button appeared to do
+ * nothing. Enumerating Deriv's current hosts would only move the breakage to
+ * the next host Deriv adds.
+ *
+ * The remaining directives carry the actual protection for this page: it is
+ * fully server-rendered with no scripts, every interpolated value is escaped,
+ * and `default-src 'none'` blocks any resource load.
+ */
+const INVITATION_PAGE_CSP =
+  "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'";
+
 /** Escapes text for HTML text and double-quoted attribute contexts. */
 function escapeHtml(value: string): string {
   return value
@@ -168,10 +187,7 @@ export function createAuthRouter(ctx: SessionContext, balances?: BalanceService)
     }
 
     // Self-contained page: inline styles only, no scripts, no framing.
-    res.setHeader(
-      'Content-Security-Policy',
-      "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
-    );
+    res.setHeader('Content-Security-Policy', INVITATION_PAGE_CSP);
     res
       .status(200)
       .type('html')
@@ -180,8 +196,8 @@ export function createAuthRouter(ctx: SessionContext, balances?: BalanceService)
 
   /**
    * Starts the real OAuth authorization for an invitation. Kept as a POST so the
-   * invitation token never appears in a form-action URL, and so the referral
-   * choice is an explicit user decision rather than a redirect chain.
+   * invitation token never appears in a URL, and so the referral choice is an
+   * explicit user decision rather than a redirect chain.
    */
   router.post('/auth/copy-trading/connect/:invitationId', express.urlencoded({ extended: false, limit: '2kb' }), async (req, res) => {
     res.setHeader('Referrer-Policy', 'no-referrer');
