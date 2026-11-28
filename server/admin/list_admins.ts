@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { loadConfig } from '../config.js';
 import { Store, storeOptionsFromConfig } from '../store/store.js';
+import { open } from '../lib/crypto.js';
 
 /**
  * Lists the administrators a deployment actually holds.
@@ -39,6 +40,16 @@ function main(): Promise<void> {
         const lastLogin = admin.lastLoginAt ? new Date(admin.lastLoginAt).toISOString() : 'never';
         console.log(`  - ${admin.email}`);
         console.log(`      role: ${admin.role} | status: ${admin.status} | ${mfa} | last login: ${lastLogin}`);
+        // A secret sealed under a different SESSION_SECRET is undecryptable and
+        // blocks enrolment, so report it rather than leaving it to be guessed.
+        if (!admin.mfa.enrolled) {
+          const readable = admin.mfa.secretSealed !== null && open(admin.mfa.secretSealed, cfg.session.secret) !== null;
+          console.log(
+            readable
+              ? '      mfa secret: readable with this SESSION_SECRET'
+              : '      mfa secret: CANNOT be decrypted with this SESSION_SECRET (sign-in will fail; run npm run admin:reseal-mfa)'
+          );
+        }
       }
 
       const activeSupers = store.countActiveSuperAdmins();

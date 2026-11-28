@@ -103,6 +103,76 @@ would be written to a filesystem the server never reads, and on Render Free that
 filesystem is discarded on restart. `STORAGE_ENGINE=postgres` also makes the CLI
 fail rather than fall back when `DATABASE_URL` is missing or unreachable.
 
+### Running admin commands without a Render Shell (Free tier)
+
+Render Free has no Shell, but every admin command works from your own machine
+against the database's **External** connection string (Render dashboard ->
+Postgres service -> Connect -> External Database URL). Use a separate terminal
+and set exactly the same values the service runs with:
+
+```bash
+export DATABASE_URL='postgresql://...external...'
+export STORAGE_ENGINE='postgres'
+export NODE_ENV='development'      # local machine: no SSL to the tunnel's host
+export SESSION_SECRET='<same value as the Render service>'
+export DERIV_APP_ID='<same as the service>'
+export DERIV_REDIRECT_URI='<same as the service>'
+npm run admin:list
+```
+
+`admin:list` needs `DERIV_APP_ID`, `DERIV_REDIRECT_URI` and `SESSION_SECRET` as
+well as `DATABASE_URL`, because it validates the full config. Missing any of them
+reports `Missing required environment variable` rather than a partial result.
+
+Two constraints follow from running the CLI over an external connection:
+
+- Set `NODE_ENV=development` locally. `production` forces SSL, which the
+  command-line Postgres client only accepts from a host that supports it.
+- Commands such as `admin:delete` additionally require `NODE_ENV=production`
+  and therefore need a host that speaks SSL. Against a plain external URL, prefer
+  `admin:reseal-mfa` (below), which has no such requirement.
+
+The server reads administrators **once at boot**. A row written by any CLI
+process is invisible to a running instance until it restarts, so after any admin
+command **restart the service** (Render dashboard -> Manual Deploy -> Restart)
+before testing sign-in. Without that step a correct account still returns
+`invalid_credentials`, which looks like a wrong password but is a stale read.
+
+### Recovering an account that cannot start MFA enrolment
+
+The MFA secret is sealed with `SESSION_SECRET` when the account is created.
+Changing that variable later does **not** re-encrypt existing rows, so the stored
+secret becomes undecryptable and sign-in fails with
+`This account cannot start MFA enrolment` (HTTP 500, `mfa_not_initialised`).
+The password is accepted in this case — the failure is after verification.
+
+`admin:list` reports this condition directly:
+
+```
+      mfa secret: CANNOT be decrypted with this SESSION_SECRET (sign-in will fail; run npm run admin:reseal-mfa)
+```
+
+Repair it by re-sealing the secret under the server's current value:
+
+```bash
+SESSION_SECRET='<the value the service runs with>' \
+npm run admin:reseal-mfa -- 'you@example.com' CONFIRM
+```
+
+It issues a fresh TOTP secret, rewrites the row, revokes pending MFA sessions and
+prints a new `otpauth://` URI. Password, role and permissions are untouched; the
+previous authenticator entry becomes invalid. Then **restart the service** and
+complete enrolment with the new code.
+
+Bootstrapping a replacement account is not an alternative here: `admin:bootstrap`
+refuses an email that already exists, and `admin:delete` refuses to remove the
+last active Super Admin (`cannot_delete_last_super_admin`). Re-sealing is the
+supported path.
+
+> Changing `SESSION_SECRET` also invalidates every sealed Deriv access token
+> (`server/routes/auth.ts`, `server/copyTrading/engine.ts`). Affected clients must
+> re-authenticate with Deriv. Re-sealing cannot recover those tokens.
+
 ---
 
 ## 3. Production build and deploy

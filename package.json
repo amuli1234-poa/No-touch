@@ -51,6 +51,7 @@
     "admin:bootstrap": "tsx server/admin/bootstrap.ts",
     "admin:list": "tsx server/admin/list_admins.ts",
     "admin:add-super": "tsx server/admin/add_super.ts",
+    "admin:reseal-mfa": "tsx server/admin/reseal_mfa.ts",
     "admin:delete": "tsx server/admin/delete_admin.ts",
     "dev:admin": "vite --config admin/vite.config.ts --port=3001 --host=0.0.0.0",
     "build:admin": "vite build --config admin/vite.config.ts",
