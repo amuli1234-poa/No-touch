@@ -83,9 +83,9 @@ export interface ServerConfig {
   /** Public origin allowed for same-origin checks on the callback. */
   appOrigin: string;
   /**
-   * Operator's official Deriv referral URL, used only when an invited client
-   * says they have no Deriv account yet. Absent means the invitation page hides
-   * the "Create a Deriv Account" action rather than inventing a link.
+   * Operator's official Deriv referral URL, offered to an invited client who
+   * says they have no Deriv account yet. Defaults to the built-in referral link
+   * when `DERIV_REFERRAL_URL` is unset; absent only when explicitly nulled.
    */
   derivReferralUrl?: string;
   /** Built Deriv bot app served under /bot. Defaults to `bot-app/out/bot`. */
@@ -104,20 +104,41 @@ function required(name: string, value: string | undefined): string {
 }
 
 /**
+ * The operator's official Deriv referral link. It is a default rather than a
+ * required setting so invitation onboarding works on a fresh deployment with no
+ * environment configuration at all; `DERIV_REFERRAL_URL` overrides it.
+ */
+const DEFAULT_DERIV_REFERRAL_URL = 'https://t.deriv.link?t=J87L49ZA7FQU';
+
+/**
  * Accepts only an absolute https URL, so a typo or a relative value cannot turn
  * the invitation page's signup button into an open redirect. The value is
  * returned verbatim: referral attribution lives in the query string and must
  * never be rewritten.
+ *
+ * A malformed override is reported and then ignored in favour of the default.
+ * Dropping it silently would hide the signup button on the invitation page with
+ * no way to tell why.
  */
 function parseReferralUrl(value: string | undefined): string | undefined {
   const raw = value?.trim();
-  if (!raw) return undefined;
+  if (!raw) return DEFAULT_DERIV_REFERRAL_URL;
   try {
     const url = new URL(raw);
-    if (url.protocol !== 'https:') return undefined;
+    if (url.protocol !== 'https:') {
+      console.warn(
+        `Ignoring DERIV_REFERRAL_URL: expected an absolute https URL, received "${raw}". ` +
+          `Falling back to the built-in referral link.`
+      );
+      return DEFAULT_DERIV_REFERRAL_URL;
+    }
     return raw;
   } catch {
-    return undefined;
+    console.warn(
+      `Ignoring DERIV_REFERRAL_URL: "${raw}" is not a valid absolute URL. ` +
+        `Falling back to the built-in referral link.`
+    );
+    return DEFAULT_DERIV_REFERRAL_URL;
   }
 }
 

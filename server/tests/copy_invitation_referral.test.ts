@@ -279,34 +279,45 @@ test('the page does not claim the referral succeeded', async () => {
   }
 });
 
-test('no referral link is rendered when the operator has not configured one', async () => {
+test('the built-in referral link is offered when the operator has not configured one', async () => {
+  // A fresh deployment with no DERIV_REFERRAL_URL must still offer the signup
+  // path, otherwise invited clients without an account have nowhere to go.
+  const env = {
+    DERIV_REDIRECT_URI: 'https://app.example.com/auth/deriv/callback',
+    SESSION_SECRET,
+    DERIV_APP_ID: '34WRcFqUqhHMuCW3O9NQy'
+  };
+  assert.equal(loadConfig(env as any).derivReferralUrl, REFERRAL);
+
   const deriv = await startFakeDeriv();
-  const app = await startApp(deriv); // no derivReferralUrl
+  const app = await startApp(deriv, { derivReferralUrl: loadConfig(env as any).derivReferralUrl });
   try {
     const { secret, record } = await seedInvitation(app.store);
     const html = await (await fetch(`${app.base}${invitationPath(record.id, secret)}`)).text();
 
-    assert.ok(!html.includes('t.deriv.link'));
     assert.match(html, /I Already Have a Deriv Account/);
-    // A clear fallback, not a broken or invented link.
-    assert.match(html, /No Deriv registration link is configured/i);
+    assert.match(html, /Create a Deriv Account/);
+    assert.ok(html.includes(REFERRAL), 'the built-in referral link must be rendered');
+    assert.ok(!/No Deriv registration link is configured/i.test(html));
   } finally {
     await app.close();
     await deriv.close();
   }
 });
 
-test('an insecure or malformed referral URL is rejected by config parsing', () => {
+test('an insecure or malformed referral URL falls back to the built-in link', () => {
   const base = {
     DERIV_REDIRECT_URI: 'https://app.example.com/auth/deriv/callback',
     SESSION_SECRET,
     DERIV_APP_ID: '34WRcFqUqhHMuCW3O9NQy'
   };
-  assert.equal(loadConfig({ ...base, DERIV_REFERRAL_URL: 'http://t.deriv.link?t=X' } as any).derivReferralUrl, undefined);
-  assert.equal(loadConfig({ ...base, DERIV_REFERRAL_URL: 'javascript:alert(1)' } as any).derivReferralUrl, undefined);
-  assert.equal(loadConfig({ ...base, DERIV_REFERRAL_URL: '/relative/path' } as any).derivReferralUrl, undefined);
-  assert.equal(loadConfig({ ...base } as any).derivReferralUrl, undefined);
-  assert.equal(loadConfig({ ...base, DERIV_REFERRAL_URL: REFERRAL } as any).derivReferralUrl, REFERRAL);
+  // A rejected override must fall back to the built-in link rather than vanish,
+  // which would hide the signup button with no explanation.
+  assert.equal(loadConfig({ ...base, DERIV_REFERRAL_URL: 'http://t.deriv.link?t=X' } as any).derivReferralUrl, REFERRAL);
+  assert.equal(loadConfig({ ...base, DERIV_REFERRAL_URL: 'javascript:alert(1)' } as any).derivReferralUrl, REFERRAL);
+  assert.equal(loadConfig({ ...base, DERIV_REFERRAL_URL: '/relative/path' } as any).derivReferralUrl, REFERRAL);
+  assert.equal(loadConfig({ ...base } as any).derivReferralUrl, REFERRAL);
+  assert.equal(loadConfig({ ...base, DERIV_REFERRAL_URL: 'https://t.deriv.link?t=CUSTOM' } as any).derivReferralUrl, 'https://t.deriv.link?t=CUSTOM');
 });
 
 /* ------------------------ Case 1: has an account ---------------------- */
